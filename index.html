@@ -149,11 +149,11 @@ var ADVENTURES = {
     {"id": "alchemist_fire", "name": "煉金火", "kind": "consumable", "damage": 6}
   ],
   "pregens": [
-    {"name": "布倫", "class": "戰士", "race": "人類", "str": 16, "dex": 12, "con": 15, "int": 8, "wis": 10, "cha": 10, "ac": 16, "hp_max": 12, "skills": ["athletics"], "attack": {"name": "長劍", "bonus": 5, "damage": "1d8+3"}, "inventory": ["potion_heal", "lantern"]},
-    {"name": "希薇", "class": "遊俠", "race": "精靈", "str": 12, "dex": 16, "con": 13, "int": 10, "wis": 14, "cha": 8, "ac": 14, "hp_max": 11, "skills": ["stealth", "perception"], "attack": {"name": "短弓", "bonus": 5, "damage": "1d8+3"}, "inventory": ["potion_heal", "alchemist_fire"]},
-    {"name": "芬恩", "class": "盜賊", "race": "半身人", "str": 8, "dex": 16, "con": 12, "int": 13, "wis": 12, "cha": 10, "ac": 14, "hp_max": 9, "skills": ["stealth"], "attack": {"name": "短劍", "bonus": 5, "damage": "1d6+3"}, "inventory": ["potion_heal", "lantern"]},
-    {"name": "米拉", "class": "牧師", "race": "人類", "str": 14, "dex": 10, "con": 14, "int": 8, "wis": 16, "cha": 12, "ac": 16, "hp_max": 10, "skills": ["insight"], "attack": {"name": "神聖打擊", "bonus": 4, "damage": "1d6+2"}, "inventory": ["cure_wounds", "potion_heal"]},
-    {"name": "奧爾", "class": "法師", "race": "精靈", "str": 8, "dex": 14, "con": 12, "int": 16, "wis": 12, "cha": 10, "ac": 12, "hp_max": 8, "skills": ["perception"], "attack": {"name": "火焰箭", "bonus": 4, "damage": "1d8+2"}, "inventory": ["burning_hands", "potion_heal"]}
+    {"name": "布倫", "class": "戰士", "race": "人類", "str": 16, "dex": 12, "con": 15, "int": 8, "wis": 10, "cha": 10, "ac": 16, "hp_max": 12, "skills": ["athletics"], "attack": {"name": "長劍", "bonus": 5, "damage": "1d8+3"}, "inventory": ["potion_heal", "lantern"], "features": [{"id": "power_strike", "name": "破甲重擊", "uses": 3, "effect": {"type": "damage", "amount": 10}}]},
+    {"name": "希薇", "class": "遊俠", "race": "精靈", "str": 12, "dex": 16, "con": 13, "int": 10, "wis": 14, "cha": 8, "ac": 14, "hp_max": 11, "skills": ["stealth", "perception"], "attack": {"name": "短弓", "bonus": 5, "damage": "1d8+3"}, "inventory": ["potion_heal", "alchemist_fire"], "features": [{"id": "aimed_shot", "name": "穿心一箭", "uses": 3, "effect": {"type": "damage", "amount": 8}}]},
+    {"name": "芬恩", "class": "盜賊", "race": "半身人", "str": 8, "dex": 16, "con": 12, "int": 13, "wis": 12, "cha": 10, "ac": 14, "hp_max": 9, "skills": ["stealth"], "attack": {"name": "短劍", "bonus": 5, "damage": "1d6+3"}, "inventory": ["potion_heal", "lantern"], "features": [{"id": "sneak_stab", "name": "暗影偷襲", "uses": 3, "effect": {"type": "damage", "amount": 9}}]},
+    {"name": "米拉", "class": "牧師", "race": "人類", "str": 14, "dex": 10, "con": 14, "int": 8, "wis": 16, "cha": 12, "ac": 16, "hp_max": 10, "skills": ["insight"], "attack": {"name": "神聖打擊", "bonus": 4, "damage": "1d6+2"}, "inventory": ["cure_wounds", "potion_heal"], "features": [{"id": "lay_on_hands", "name": "聖療", "uses": 3, "effect": {"type": "heal", "amount": 8}}]},
+    {"name": "奧爾", "class": "法師", "race": "精靈", "str": 8, "dex": 14, "con": 12, "int": 16, "wis": 12, "cha": 10, "ac": 12, "hp_max": 8, "skills": ["perception"], "attack": {"name": "火焰箭", "bonus": 4, "damage": "1d8+2"}, "inventory": ["burning_hands", "potion_heal"], "features": [{"id": "mage_armor", "name": "法師護甲", "uses": 3, "effect": {"type": "ac_bonus", "amount": 3, "duration": "combat"}}]}
   ],
   "scenes": [
     {"id": "gate", "type": "beat", "facts": ["林緣有一座廢塔。", "木門半掩。", "天色將晚。"], "choices": [{"id": "search", "label": "搜查門廊", "to": "rubble", "give": ["iron_key"]}, {"id": "rush", "label": "直接進塔", "to": "rubble"}]},
@@ -414,6 +414,32 @@ if (typeof module !== 'undefined' && module.exports) {
         }
         if (!Array.isArray(p.inventory)) err(pw + ' 的 inventory 必須是陣列。');
         else p.inventory.forEach(function (id) { checkItem(id, pw + ' 的 inventory'); });
+        if (!Array.isArray(p.features) || p.features.length !== 1) {
+          err(pw + ' 必須剛好有 1 個 features。');
+        } else {
+          var f = p.features[0];
+          if (!f || typeof f.id !== 'string' || !f.id) err(pw + ' 的 feature 缺少 id。');
+          if (!f || typeof f.name !== 'string' || !f.name) err(pw + ' 的 feature 缺少 name。');
+          if (!f || f.uses !== 3) err(pw + ' 的 feature.uses 必須是 3。');
+          if (!f || !f.effect || typeof f.effect !== 'object') err(pw + ' 的 feature 缺少 effect。');
+          else {
+            var et = f.effect.type;
+            if (et === 'damage' || et === 'heal') {
+              if (!Number.isInteger(f.effect.amount) || f.effect.amount < 1) {
+                err(pw + ' 的 feature.effect.amount 必須是正整數。');
+              }
+            } else if (et === 'ac_bonus') {
+              if (!Number.isInteger(f.effect.amount) || f.effect.amount < 1) {
+                err(pw + ' 的 feature.effect.amount 必須是正整數。');
+              }
+              if (f.effect.duration !== 'combat') {
+                err(pw + ' 的 feature.effect.duration 必須是 "combat"。');
+              }
+            } else {
+              err(pw + ' 的 feature.effect.type 必須是 damage / heal / ac_bonus。');
+            }
+          }
+        }
       });
     }
 
@@ -484,11 +510,25 @@ if (typeof module !== 'undefined' && module.exports) {
     return {
       name: p.name, cls: p['class'], race: p.race,
       str: p.str, dex: p.dex, con: p.con, int: p['int'], wis: p.wis, cha: p.cha,
-      ac: p.ac, hp: p.hp_max, hp_max: p.hp_max,
+      ac: p.ac, acBonus: 0, hp: p.hp_max, hp_max: p.hp_max,
       skills: p.skills.slice(),
       attack: { name: p.attack.name, bonus: p.attack.bonus, damage: p.attack.damage },
-      inventory: p.inventory.slice()
+      inventory: p.inventory.slice(),
+      features: (p.features || []).map(function (f) {
+        return {
+          id: f.id, name: f.name, uses: f.uses, usesMax: f.uses,
+          effect: JSON.parse(JSON.stringify(f.effect))
+        };
+      })
     };
+  };
+
+  Engine.prototype.effectiveAc = function () {
+    return this.character ? this.character.ac + (this.character.acBonus || 0) : 0;
+  };
+
+  Engine.prototype.clearCombatBonuses = function () {
+    if (this.character && this.character.acBonus) this.character.acBonus = 0;
   };
 
   // Fresh character state, flags cleared, back to the start scene.
@@ -531,6 +571,8 @@ if (typeof module !== 'undefined' && module.exports) {
   Engine.prototype.enterScene = function (id) {
     var sc = this.scenes[id];
     if (!sc) throw new Error('unknown scene: ' + id); // validator makes this unreachable
+    // Combat-only AC bonus ends when leaving combat (flee or all enemies dead).
+    this.clearCombatBonuses();
     this.sceneId = id;
     this.scene = sc;
     this.encounter = null;
@@ -611,6 +653,37 @@ if (typeof module !== 'undefined' && module.exports) {
     });
   };
 
+  // Class features with remaining uses, and whether use_feature is legal now.
+  // use_feature is always offered in beat / check / combat when uses remain;
+  // effect legality (combat-only damage/ac_bonus) gates enabled.
+  Engine.prototype.featureActions = function () {
+    var self = this;
+    var inCombat = this.scene && this.scene.type === 'combat';
+    var living = this.livingEnemies();
+    var features = (this.character && this.character.features) || [];
+    return features.filter(function (f) { return f.uses > 0; }).map(function (f) {
+      var act = {
+        type: 'use_feature', featureId: f.id, featureName: f.name, uses: f.uses,
+        usesMax: f.usesMax, effect: f.effect.type, amount: f.effect.amount,
+        enabled: false, needsTarget: false, reason: null
+      };
+      if (f.effect.type === 'heal') {
+        act.enabled = true;
+      } else if (f.effect.type === 'damage') {
+        if (!inCombat) act.reason = '只能在戰鬥中使用。';
+        else if (living.length === 0) act.reason = '沒有目標。';
+        else { act.enabled = true; act.needsTarget = living.length > 1; }
+      } else if (f.effect.type === 'ac_bonus') {
+        if (!inCombat) act.reason = '只能在戰鬥中使用。';
+        else if ((self.character.acBonus || 0) > 0) act.reason = '這一場已經有護甲加成。';
+        else act.enabled = true;
+      } else {
+        act.reason = '未知的特性效果。';
+      }
+      return act;
+    });
+  };
+
   Engine.prototype.legalActions = function () {
     if (this.status !== 'playing' || !this.scene) return [];
     var sc = this.scene, acts = [], self = this;
@@ -630,6 +703,7 @@ if (typeof module !== 'undefined' && module.exports) {
     }
     if (sc.type === 'beat' || sc.type === 'check' || sc.type === 'combat') {
       acts = acts.concat(this.itemActions());
+      acts = acts.concat(this.featureActions());
     }
     return acts;
   };
@@ -641,12 +715,13 @@ if (typeof module !== 'undefined' && module.exports) {
     if (action.type === 'restart') return this.restart();
     if (this.status !== 'playing') return this.reject('這一場已經結束了。');
     switch (action.type) {
-      case 'choice':   return this.doChoice(action.id);
-      case 'roll':     return this.doRoll();
-      case 'attack':   return this.doAttack(action.target);
-      case 'use_item': return this.doUseItem(action.slot, action.target);
-      case 'flee':     return this.doFlee();
-      default:         return this.reject('未知的行動。');
+      case 'choice':      return this.doChoice(action.id);
+      case 'roll':        return this.doRoll();
+      case 'attack':      return this.doAttack(action.target);
+      case 'use_item':    return this.doUseItem(action.slot, action.target);
+      case 'use_feature': return this.doUseFeature(action.featureId, action.target);
+      case 'flee':        return this.doFlee();
+      default:            return this.reject('未知的行動。');
     }
   };
 
@@ -783,6 +858,87 @@ if (typeof module !== 'undefined' && module.exports) {
     return this.ok();
   };
 
+  Engine.prototype.doUseFeature = function (featureId, targetIndex) {
+    var c = this.character, sc = this.scene;
+    if (sc.type !== 'beat' && sc.type !== 'check' && sc.type !== 'combat') {
+      return this.reject('現在不能使用特性。');
+    }
+    var features = c.features || [];
+    var usable = features.filter(function (f) { return f.uses > 0; });
+    if (usable.length === 0) return this.reject('沒有可用的特性。');
+    var feature = null;
+    if (featureId === undefined || featureId === null || featureId === '') {
+      if (usable.length > 1) return this.reject('要先選一個特性。');
+      feature = usable[0];
+    } else {
+      features.forEach(function (f) { if (f.id === featureId) feature = f; });
+      if (!feature) return this.reject('沒有這個特性。');
+      if (feature.uses <= 0) return this.reject(feature.name + '已經沒有次數了。');
+    }
+    var effect = feature.effect;
+
+    if (effect.type === 'damage') {
+      if (sc.type !== 'combat') return this.reject(feature.name + '只能在戰鬥中使用。');
+      var living = this.livingEnemies();
+      if (living.length === 0) return this.reject('沒有目標。');
+      var target = null;
+      if (targetIndex === undefined || targetIndex === null) {
+        if (living.length > 1) return this.reject('要先選一個目標。');
+        target = living[0].ref;
+      } else {
+        var e = this.encounter.enemies[targetIndex];
+        if (!e || e.hp <= 0) return this.reject('這個目標不能攻擊。');
+        target = e;
+      }
+      var before = target.hp;
+      target.hp = Math.max(0, target.hp - effect.amount); // automatic hit
+      feature.uses -= 1;
+      this.emit({
+        t: 'feature_damage', featureId: feature.id, featureName: feature.name,
+        amount: effect.amount, uses: feature.uses, usesMax: feature.usesMax,
+        targetName: target.name, targetHpBefore: before, targetHp: target.hp,
+        targetHpMax: target.hp_max, targetDown: target.hp <= 0
+      });
+      return this.endPlayerTurn();
+    }
+
+    if (effect.type === 'heal') {
+      if (c.hp >= c.hp_max) {
+        // Full HP: reject and do NOT deduct uses.
+        return this.reject(feature.name + '：生命已滿，沒有使用。');
+      }
+      var hpBefore = c.hp;
+      c.hp = Math.min(c.hp_max, c.hp + effect.amount);
+      feature.uses -= 1;
+      this.emit({
+        t: 'feature_heal', featureId: feature.id, featureName: feature.name,
+        amount: effect.amount, healed: c.hp - hpBefore,
+        uses: feature.uses, usesMax: feature.usesMax,
+        hp: c.hp, hp_max: c.hp_max
+      });
+      if (sc.type === 'combat') return this.endPlayerTurn();
+      return this.ok();
+    }
+
+    if (effect.type === 'ac_bonus') {
+      if (sc.type !== 'combat') return this.reject(feature.name + '只能在戰鬥中使用。');
+      // Already buffed this combat: reject, do not deduct uses, no stacking.
+      if ((c.acBonus || 0) > 0) {
+        return this.reject(feature.name + '：這一場已經有護甲加成。');
+      }
+      c.acBonus = effect.amount;
+      feature.uses -= 1;
+      this.emit({
+        t: 'feature_ac', featureId: feature.id, featureName: feature.name,
+        amount: effect.amount, uses: feature.uses, usesMax: feature.usesMax,
+        ac: this.effectiveAc(), acBase: c.ac, acBonus: c.acBonus
+      });
+      return this.endPlayerTurn();
+    }
+
+    return this.reject('未知的特性效果。');
+  };
+
   Engine.prototype.doFlee = function () {
     var sc = this.scene;
     if (sc.type !== 'combat') return this.reject('這裡沒有要逃走的東西。');
@@ -812,7 +968,8 @@ if (typeof module !== 'undefined' && module.exports) {
       var e = living[i].ref;
       var d20 = this.rng.die(20);
       var total = d20 + e.atk;
-      var hit = total >= c.ac;
+      var playerAc = self.effectiveAc();
+      var hit = total >= playerAc;
       var dmg = null;
       if (hit) {
         dmg = rollDice(e.damage, this.rng);
@@ -821,7 +978,7 @@ if (typeof module !== 'undefined' && module.exports) {
       }
       this.emit({
         t: 'enemy_attack', enemyName: e.name, d20: d20, bonus: e.atk, total: total,
-        ac: c.ac, hit: hit, damage: dmg, hp: c.hp, hp_max: c.hp_max
+        ac: playerAc, hit: hit, damage: dmg, hp: c.hp, hp_max: c.hp_max
       });
       if (c.hp <= 0) this.lose('hp');
     }
@@ -839,11 +996,16 @@ if (typeof module !== 'undefined' && module.exports) {
       sceneType: this.scene ? this.scene.type : null,
       round: this.round,
       character: c ? {
-        name: c.name, cls: c.cls, race: c.race, ac: c.ac, hp: c.hp, hp_max: c.hp_max,
+        name: c.name, cls: c.cls, race: c.race,
+        ac: this.effectiveAc(), acBase: c.ac, acBonus: c.acBonus || 0,
+        hp: c.hp, hp_max: c.hp_max,
         abilities: { str: c.str, dex: c.dex, con: c.con, int: c.int, wis: c.wis, cha: c.cha },
         skills: c.skills.slice(),
         inventory: c.inventory.slice(), inventoryNames: this.inventoryNames(),
-        attack: { name: c.attack.name, bonus: c.attack.bonus, damage: c.attack.damage }
+        attack: { name: c.attack.name, bonus: c.attack.bonus, damage: c.attack.damage },
+        features: (c.features || []).map(function (f) {
+          return { id: f.id, name: f.name, uses: f.uses, usesMax: f.usesMax, effect: f.effect.type, amount: f.effect.amount };
+        })
       } : null,
       enemies: this.enemySnapshot()
     };
@@ -979,6 +1141,31 @@ if (typeof module !== 'undefined' && module.exports) {
             text: '〔物品〕' + ev.itemName + '：回復 ' + ev.amount +
                   (ev.healed !== ev.amount ? '（上限只回 ' + ev.healed + '）' : '') +
                   '　→　生命 ' + ev.hp + '/' + ev.hp_max
+          });
+          break;
+        case 'feature_damage':
+          out.push({
+            tone: 'roll',
+            text: '〔特性〕' + ev.featureName + '：自動命中，傷害 ' + ev.amount +
+                  '　→　' + ev.targetName + ' ' + ev.targetHpBefore + ' → ' + ev.targetHp + '/' + ev.targetHpMax +
+                  '　（剩餘 ' + ev.uses + '/' + ev.usesMax + '）'
+          });
+          break;
+        case 'feature_heal':
+          out.push({
+            tone: 'good',
+            text: '〔特性〕' + ev.featureName + '：回復 ' + ev.amount +
+                  (ev.healed !== ev.amount ? '（上限只回 ' + ev.healed + '）' : '') +
+                  '　→　生命 ' + ev.hp + '/' + ev.hp_max +
+                  '　（剩餘 ' + ev.uses + '/' + ev.usesMax + '）'
+          });
+          break;
+        case 'feature_ac':
+          out.push({
+            tone: 'good',
+            text: '〔特性〕' + ev.featureName + '：本場戰鬥 AC +' + ev.amount +
+                  '　→　AC ' + ev.ac +
+                  '　（剩餘 ' + ev.uses + '/' + ev.usesMax + '）'
           });
           break;
         case 'enemy_phase':
@@ -1119,6 +1306,16 @@ if (typeof module !== 'undefined' && module.exports) {
         case 'item_heal':
           out.push({ tone: 'narr', text: view.name + '用掉一件消耗品，傷口收住了。（' + view.hp + '/' + view.hp_max + '）' });
           break;
+        case 'feature_damage':
+          out.push({ tone: 'narr', text: view.name + '使出職業招式，攻擊結結實實地打中了。' });
+          if (view.enemies.some(function (e) { return e.hp <= 0; })) out.push({ tone: 'good', text: '一個敵人垮了下去，不再動。' });
+          break;
+        case 'feature_heal':
+          out.push({ tone: 'narr', text: view.name + '運起職業能力，傷口收斂了。（' + view.hp + '/' + view.hp_max + '）' });
+          break;
+        case 'feature_ac':
+          out.push({ tone: 'narr', text: view.name + '運起職業能力，防禦暫時堅固起來。' });
+          break;
         case 'enemy_attack':
           if (d && d.outcome === 'hit') {
             out.push({ tone: 'narr', text: '敵人打中了' + view.name + '。（' + view.hp + '/' + view.hp_max + '）' });
@@ -1176,6 +1373,12 @@ if (typeof module !== 'undefined' && module.exports) {
         return { kind: 'item_damage', d20: 0, total: event.amount, outcome: 'hit', amount: event.amount };
       case 'item_heal':
         return { kind: 'item_heal', d20: 0, total: event.healed, outcome: 'heal', amount: event.healed };
+      case 'feature_damage':
+        return { kind: 'feature_damage', d20: 0, total: event.amount, outcome: 'hit', amount: event.amount };
+      case 'feature_heal':
+        return { kind: 'feature_heal', d20: 0, total: event.healed, outcome: 'heal', amount: event.healed };
+      case 'feature_ac':
+        return { kind: 'feature_ac', d20: 0, total: event.amount, outcome: 'buff', amount: event.amount };
       default:
         return null;
     }
@@ -1249,7 +1452,7 @@ if (typeof module !== 'undefined' && module.exports) {
   // ---------------------------------------------------------------- state
   var engine = null;
   var logEl = null, statusEl = null, actionsEl = null;
-  var trayMode = null; // null | 'items' | {slot:n} target picker
+  var trayMode = null; // null | 'items' | {slot:n} | {featureId:id} target picker
 
   // ---------------------------------------------------------- select screen
   function renderSelect() {
@@ -1309,6 +1512,17 @@ if (typeof module !== 'undefined' && module.exports) {
       kInv.appendChild(document.createTextNode('起始物品：'));
       kInv.appendChild(el('b', null, itemNames || '無'));
       card.appendChild(kInv);
+
+      if (p.features && p.features.length) {
+        var f = p.features[0];
+        var effectHint = f.effect.type === 'damage' ? ('傷害 ' + f.effect.amount)
+                        : f.effect.type === 'heal' ? ('回復 ' + f.effect.amount)
+                        : ('本場戰鬥 AC +' + f.effect.amount);
+        var kFeat = el('p', 'kv');
+        kFeat.appendChild(document.createTextNode('職業招式：'));
+        kFeat.appendChild(el('b', null, f.name + ' ×' + f.uses + '（' + effectHint + '）'));
+        card.appendChild(kFeat);
+      }
 
       var btn = el('button', 'btn primary', '選擇 ' + p.name);
       btn.type = 'button';
@@ -1415,8 +1629,19 @@ if (typeof module !== 'undefined' && module.exports) {
     bar.appendChild(fill);
     hp.appendChild(bar);
     hp.appendChild(el('span', null, c.hp + '/' + c.hp_max));
-    hp.appendChild(el('span', 'lab', '　AC ' + c.ac));
+    var acLab = '　AC ' + c.ac;
+    if (c.acBonus) acLab += '（+' + c.acBonus + '）';
+    hp.appendChild(el('span', 'lab', acLab));
     statusEl.appendChild(hp);
+
+    if (c.features && c.features.length) {
+      var feat = el('div', 'inv');
+      feat.appendChild(el('span', 'lab', '招式'));
+      c.features.forEach(function (f) {
+        feat.appendChild(el('span', 'chip' + (f.uses <= 0 ? ' none' : ''), f.name + ' ' + f.uses + '/' + f.usesMax));
+      });
+      statusEl.appendChild(feat);
+    }
 
     var inv = el('div', 'inv');
     inv.appendChild(el('span', 'lab', '行囊'));
@@ -1464,9 +1689,11 @@ if (typeof module !== 'undefined' && module.exports) {
     var acts = engine.legalActions();
     var main = el('div', 'row');
     var itemActs = [];
+    var featureActs = [];
 
     acts.forEach(function (a) {
       if (a.type === 'use_item') { itemActs.push(a); return; }
+      if (a.type === 'use_feature') { featureActs.push(a); return; }
       if (a.type === 'choice') {
         main.appendChild(button(a.label, null, null, function () { act({ type: 'choice', id: a.id }); }));
       } else if (a.type === 'roll') {
@@ -1496,14 +1723,38 @@ if (typeof module !== 'undefined' && module.exports) {
       }
     });
 
+    // use_feature is always offered in beat / check / combat when uses remain
+    if (st.sceneType === 'beat' || st.sceneType === 'check' || st.sceneType === 'combat') {
+      if (featureActs.length === 1) {
+        var fa = featureActs[0];
+        var fHint = fa.effect === 'heal' ? ('回復 ' + fa.amount + '　剩餘 ' + fa.uses + '/' + fa.usesMax)
+                  : fa.effect === 'damage' ? ('自動命中傷害 ' + fa.amount + '　剩餘 ' + fa.uses + '/' + fa.usesMax)
+                  : ('本場戰鬥 AC +' + fa.amount + '　剩餘 ' + fa.uses + '/' + fa.usesMax);
+        if (!fa.enabled && fa.reason) fHint = fa.reason + '　剩餘 ' + fa.uses + '/' + fa.usesMax;
+        main.appendChild(button(fa.featureName, fHint, null, function () {
+          if (!fa.enabled) { handle(engine.perform({ type: 'use_feature', featureId: fa.featureId })); return; }
+          if (fa.needsTarget) { trayMode = { featureId: fa.featureId }; refresh(); return; }
+          act({ type: 'use_feature', featureId: fa.featureId });
+        }, false));
+      } else if (featureActs.length > 1) {
+        featureActs.forEach(function (fa) {
+          main.appendChild(button(fa.featureName, '剩餘 ' + fa.uses + '/' + fa.usesMax, null, function () {
+            if (fa.needsTarget) { trayMode = { featureId: fa.featureId }; refresh(); return; }
+            act({ type: 'use_feature', featureId: fa.featureId });
+          }, !fa.enabled));
+        });
+      }
+    }
+
     // use_item is always offered in beat / check / combat scenes
     if (st.sceneType === 'beat' || st.sceneType === 'check' || st.sceneType === 'combat') {
       var usable = itemActs.filter(function (a) { return a.enabled; }).length;
+      var itemTrayOpen = trayMode === 'items' || (trayMode && trayMode.slot !== undefined);
       main.appendChild(button(
-        trayMode ? '收起物品' : '使用物品',
+        itemTrayOpen ? '收起物品' : '使用物品',
         itemActs.length ? '可用 ' + usable + ' / ' + itemActs.length + ' 件' : '行囊是空的',
         null,
-        function () { trayMode = trayMode ? null : 'items'; refresh(); },
+        function () { trayMode = itemTrayOpen ? null : 'items'; refresh(); },
         itemActs.length === 0
       ));
     }
@@ -1523,6 +1774,15 @@ if (typeof module !== 'undefined' && module.exports) {
           if (a.needsTarget) { trayMode = { slot: a.slot }; refresh(); return; }
           act({ type: 'use_item', slot: a.slot });
         }, !a.enabled));
+      });
+      tray.appendChild(button('取消', null, 'ghost', function () { trayMode = null; refresh(); }));
+    } else if (trayMode && trayMode.featureId) {
+      tray.appendChild(el('h3', null, '用在誰身上？'));
+      st.enemies.forEach(function (e) {
+        if (!e.alive) return;
+        tray.appendChild(button(e.name, '生命 ' + e.hp + '/' + e.hp_max, null, function () {
+          act({ type: 'use_feature', featureId: trayMode.featureId, target: e.index });
+        }));
       });
       tray.appendChild(button('取消', null, 'ghost', function () { trayMode = null; refresh(); }));
     } else {

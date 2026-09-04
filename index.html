@@ -1,0 +1,1552 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<title>廢塔一夜 — 單人一夜 TRPG</title>
+<!--
+  Solo one-shot TRPG, single self-contained file.
+  No build step, no framework, no CDN, no network calls, no external assets.
+  Works over http(s) and by double-clicking the file (file://).
+  Player-facing text: Traditional Chinese (Hong Kong). Code/comments: English.
+-->
+<style>
+:root{
+  --bg:#0d0f13; --panel:#161a21; --panel2:#1d222b; --line:#2a3140;
+  --ink:#e8eaee; --muted:#98a1af; --accent:#e3b04b; --roll:#9ec5ff;
+  --good:#7fc98a; --bad:#e8756b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Noto Sans CJK HK","Noto Sans HK","PingFang HK","PingFang TC",
+              "Hiragino Sans CNS","Microsoft JhengHei",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:16px; line-height:1.75; -webkit-text-size-adjust:100%;
+}
+#app{min-height:100%}
+.wrap{width:100%;max-width:960px;margin:0 auto;padding:16px 16px 40px}
+
+/* ---------- opening screen ---------- */
+.hero{padding:30px 8px 4px;text-align:center}
+.hero h1{margin:0 0 8px;font-size:36px;letter-spacing:.08em;color:var(--accent)}
+.hero .sub{margin:0;color:var(--muted);font-size:13.5px;letter-spacing:.14em}
+.hero .lead{margin:16px auto 0;max-width:640px;color:#c9d1dd;font-size:15px}
+.sectitle{margin:28px 0 10px;font-size:14px;letter-spacing:.16em;color:var(--muted)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:9px}
+.card h2{margin:0;font-size:23px;letter-spacing:.04em}
+.card .tag{color:var(--accent);font-size:13px;letter-spacing:.1em;margin-top:-6px}
+.stats{display:flex;gap:6px;flex-wrap:wrap}
+.pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:1px 10px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.pill b{color:var(--ink);font-weight:600}
+.kv{font-size:14px;color:var(--muted);margin:0}
+.kv b{color:var(--ink);font-weight:600}
+.card .btn{margin-top:4px}
+
+/* ---------- buttons ---------- */
+.btn{appearance:none;-webkit-appearance:none;border:1px solid var(--line);background:var(--panel2);
+  color:var(--ink);font:inherit;font-size:15px;line-height:1.45;padding:10px 14px;border-radius:10px;
+  cursor:pointer;text-align:left;transition:background .12s,border-color .12s}
+.btn:hover:not(:disabled){background:#28303c;border-color:#3d4a5c}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.primary{background:var(--accent);color:#20180a;border-color:var(--accent);font-weight:700;text-align:center}
+.btn.primary:hover:not(:disabled){background:#f2c467}
+.btn.ghost{background:transparent}
+.btn small{display:block;color:var(--muted);font-size:12.5px;font-weight:400}
+.btn.primary small{color:#4a3a12}
+
+/* ---------- play screen ---------- */
+.play{display:flex;flex-direction:column;height:100vh;height:100dvh;max-width:960px;margin:0 auto;width:100%}
+.status{flex:0 0 auto;background:#12161c;border-bottom:1px solid var(--line);
+  padding:9px 14px;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center}
+.status .who{font-weight:700;font-size:15px}
+.status .who span{color:var(--muted);font-weight:400;font-size:13px;margin-left:6px}
+.hpwrap{display:flex;align-items:center;gap:8px;font-size:14px;font-variant-numeric:tabular-nums}
+.hpwrap .lab{color:var(--muted);font-size:12.5px;letter-spacing:.1em}
+.hpbar{width:104px;height:9px;border-radius:6px;background:#232a34;border:1px solid var(--line);overflow:hidden}
+.hpfill{height:100%;background:var(--good);transition:width .2s}
+.hpfill.warn{background:var(--accent)}
+.hpfill.low{background:var(--bad)}
+.inv{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.inv .lab{color:var(--muted);font-size:12.5px;letter-spacing:.1em}
+.chip{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:1px 8px;font-size:12.5px;color:#c3ccd9}
+.chip.none{border-style:dashed;color:var(--muted)}
+
+#log{flex:1 1 auto;overflow-y:auto;padding:18px 16px 26px;-webkit-overflow-scrolling:touch}
+.line{margin:0 0 8px;max-width:72ch}
+.line.fact{color:var(--ink)}
+.line.narr{color:#c6cedb}
+.line.roll{color:var(--roll);font-size:14px;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.line.act{color:var(--accent);font-size:14.5px}
+.line.sys{color:var(--muted);font-size:13.5px}
+.line.good{color:var(--good)}
+.line.bad{color:var(--bad)}
+.divider{border:0;border-top:1px dashed var(--line);margin:18px 0 14px}
+.banner{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:14px 0;background:var(--panel)}
+.banner.win{border-color:#3f6a46;background:#16211a}
+.banner.lose{border-color:#6a3b36;background:#211615}
+.banner h2{margin:0 0 4px;font-size:20px;letter-spacing:.1em}
+.banner.win h2{color:var(--good)}
+.banner.lose h2{color:var(--bad)}
+.banner p{margin:0;color:var(--muted);font-size:14px}
+
+#actions{flex:0 0 auto;border-top:1px solid var(--line);background:#12161c;
+  padding:12px 14px;padding-bottom:calc(12px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;gap:8px;max-height:56vh;overflow-y:auto}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.row > .btn{flex:1 1 240px}
+.tray{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:6px}
+.tray h3{margin:0 0 2px;font-size:12.5px;letter-spacing:.14em;color:var(--muted);font-weight:600}
+.hint{color:var(--muted);font-size:13px;margin:0}
+
+/* ---------- fatal validator screen ---------- */
+.fatal{max-width:760px;margin:60px auto;padding:22px;background:var(--panel);border:1px solid #6a3b36;border-radius:14px}
+.fatal h1{margin:0 0 10px;font-size:22px;color:var(--bad)}
+.fatal p{color:var(--muted);font-size:14px}
+.fatal ul{margin:12px 0 0;padding-left:20px}
+.fatal li{margin:4px 0;color:#f0c9c4;font-size:14px;word-break:break-word}
+
+@media (max-width:640px){
+  .hero h1{font-size:28px}
+  .wrap{padding:12px 12px 32px}
+  .cards{grid-template-columns:1fr}
+  .row > .btn{flex:1 1 100%}
+  .line{max-width:none}
+  .status{gap:4px 12px;padding:8px 12px}
+  .hpbar{width:80px}
+  #log{padding:14px 12px 20px}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- ==========================================================================
+     ADVENTURE DATA BLOCK
+     Every adventure lives here, keyed by id. Embedded (not fetched) so the
+     file works from file:// with zero network calls.
+     To add an adventure: append `<id>: { ...adventure json... },` below and
+     point DEFAULT_ADVENTURE_ID at it. The startup validator checks it.
+     ========================================================================== -->
+<script id="adventure-data">
+var ADVENTURES = {
+
+  // ---- wasted_tower : verbatim copy of adventures/wasted_tower.json ----
+  wasted_tower:
+{
+  "title": "廢塔一夜",
+  "start": "gate",
+  "items": [
+    {"id": "lantern", "name": "提燈", "kind": "gear"},
+    {"id": "iron_key", "name": "鏽鐵鑰匙", "kind": "key"},
+    {"id": "potion_heal", "name": "治療藥水", "kind": "consumable", "heal": 8},
+    {"id": "cure_wounds", "name": "治療術卷軸", "kind": "consumable", "heal": 10},
+    {"id": "burning_hands", "name": "燃燒之手卷軸", "kind": "consumable", "damage": 8},
+    {"id": "alchemist_fire", "name": "煉金火", "kind": "consumable", "damage": 6}
+  ],
+  "pregens": [
+    {"name": "布倫", "class": "戰士", "race": "人類", "str": 16, "dex": 12, "con": 15, "int": 8, "wis": 10, "cha": 10, "ac": 16, "hp_max": 12, "skills": ["athletics"], "attack": {"name": "長劍", "bonus": 5, "damage": "1d8+3"}, "inventory": ["potion_heal", "lantern"]},
+    {"name": "希薇", "class": "遊俠", "race": "精靈", "str": 12, "dex": 16, "con": 13, "int": 10, "wis": 14, "cha": 8, "ac": 14, "hp_max": 11, "skills": ["stealth", "perception"], "attack": {"name": "短弓", "bonus": 5, "damage": "1d8+3"}, "inventory": ["potion_heal", "alchemist_fire"]},
+    {"name": "芬恩", "class": "盜賊", "race": "半身人", "str": 8, "dex": 16, "con": 12, "int": 13, "wis": 12, "cha": 10, "ac": 14, "hp_max": 9, "skills": ["stealth"], "attack": {"name": "短劍", "bonus": 5, "damage": "1d6+3"}, "inventory": ["potion_heal", "lantern"]},
+    {"name": "米拉", "class": "牧師", "race": "人類", "str": 14, "dex": 10, "con": 14, "int": 8, "wis": 16, "cha": 12, "ac": 16, "hp_max": 10, "skills": ["insight"], "attack": {"name": "神聖打擊", "bonus": 4, "damage": "1d6+2"}, "inventory": ["cure_wounds", "potion_heal"]},
+    {"name": "奧爾", "class": "法師", "race": "精靈", "str": 8, "dex": 14, "con": 12, "int": 16, "wis": 12, "cha": 10, "ac": 12, "hp_max": 8, "skills": ["perception"], "attack": {"name": "火焰箭", "bonus": 4, "damage": "1d8+2"}, "inventory": ["burning_hands", "potion_heal"]}
+  ],
+  "scenes": [
+    {"id": "gate", "type": "beat", "facts": ["林緣有一座廢塔。", "木門半掩。", "天色將晚。"], "choices": [{"id": "search", "label": "搜查門廊", "to": "rubble", "give": ["iron_key"]}, {"id": "rush", "label": "直接進塔", "to": "rubble"}]},
+    {"id": "rubble", "type": "beat", "facts": ["門廳地板塌了一角。", "塵土裡露出朽木梁。", "對面有向下的石階。"], "choices": [{"id": "climb", "label": "攀爬過塌陷處", "to": "rubble_athletics"}, {"id": "creep", "label": "貼牆潛行繞過", "to": "rubble_stealth"}, {"id": "scan", "label": "細看地板找穩固落腳點", "to": "rubble_perception"}]},
+    {"id": "rubble_athletics", "type": "check", "facts": ["你打算硬闖過去。"], "skill": "athletics", "dc": 12, "success_to": "bones", "fail_to": "bones", "fail_hp_delta": -2},
+    {"id": "rubble_stealth", "type": "check", "facts": ["你貼著牆邊找縫隙繞過去。"], "skill": "stealth", "dc": 12, "success_to": "bones", "fail_to": "bones", "fail_hp_delta": -2},
+    {"id": "rubble_perception", "type": "check", "facts": ["你仔細觀察哪塊地板還撐得住。"], "skill": "perception", "dc": 12, "success_to": "bones", "fail_to": "bones", "fail_hp_delta": -2},
+    {"id": "bones", "type": "combat", "facts": ["石階底有一具朽骨站起來。", "通道很窄，只有這一具敵人。", "再往裡是一扇鐵門。"], "enemies": [{"id": "bone_guard", "name": "朽骨守衛", "ac": 12, "hp": 9, "atk": 3, "damage": "1d4+1"}], "win_to": "vault", "flee_to": "rubble"},
+    {"id": "vault", "type": "beat", "facts": ["鐵門擋住內室。", "門上有鏽鎖。", "門後傳出冷風。"], "choices": [{"id": "unlock", "label": "用鏽鐵鑰匙開門", "to": "wight", "require_item": ["iron_key"], "take": ["iron_key"]}, {"id": "smash", "label": "撞開鐵門", "to": "wight", "hp_delta": -3}]},
+    {"id": "wight", "type": "combat", "facts": ["內室中央立著一個塔影怨靈。", "沒有其他出口。"], "enemies": [{"id": "tower_wight", "name": "塔影怨靈", "ac": 13, "hp": 16, "atk": 4, "damage": "1d6+1"}], "win_to": "win"},
+    {"id": "win", "type": "end", "end": "win", "facts": ["怨靈散成灰。", "你取下牆上的銅徽。", "廢塔恢復寂靜。", "這一夜結束了。"]}
+  ]
+}
+
+};
+
+var DEFAULT_ADVENTURE_ID = 'wasted_tower';
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { ADVENTURES: ADVENTURES, DEFAULT_ADVENTURE_ID: DEFAULT_ADVENTURE_ID };
+}
+</script>
+
+<!-- ==========================================================================
+     ENGINE
+     The deterministic rules engine. It owns ALL state: HP, inventory, dice,
+     combat, scene transitions, win/lose. It touches no DOM, so a node test
+     harness can load this exact block and drive it headlessly.
+     ========================================================================== -->
+<script id="engine">
+(function (global) {
+  'use strict';
+
+  // ---------------------------------------------------------------- constants
+  var PROFICIENCY_BONUS = 2;
+
+  // The only skills that exist, mapped to the ability they use.
+  var SKILL_ABILITY = {
+    athletics: 'str',
+    stealth: 'dex',
+    perception: 'wis',
+    insight: 'wis',
+    persuasion: 'cha'
+  };
+
+  var SKILL_LABEL = {
+    athletics: '運動', stealth: '隱匿', perception: '察覺',
+    insight: '洞察', persuasion: '說服'
+  };
+
+  var ABILITY_LABEL = {
+    str: '力量', dex: '敏捷', con: '體質', int: '智力', wis: '感知', cha: '魅力'
+  };
+
+  var SCENE_TYPES = ['beat', 'check', 'combat', 'end'];
+  var ITEM_KINDS = ['gear', 'key', 'consumable'];
+
+  // ---------------------------------------------------------------------- rng
+  // Every die in the game goes through an rng object exposing die(sides).
+  // makeRng is a seeded mulberry32 so a seed replays an identical run.
+  function makeRng(seed) {
+    var s = (seed >>> 0) || 0x9e3779b9;
+    var count = 0;
+    function next() {
+      s = (s + 0x6d2b79f5) | 0;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+    return {
+      kind: 'seeded',
+      seed: seed,
+      next: next,
+      rolled: function () { return count; },
+      die: function (sides) { count++; return Math.floor(next() * sides) + 1; }
+    };
+  }
+
+  // Fixed-sequence rng: same interface, used by tests that need exact faces.
+  function makeFixedRng(values) {
+    var i = 0;
+    return {
+      kind: 'fixed',
+      next: function () { return 0; },
+      rolled: function () { return i; },
+      die: function (sides) {
+        if (i >= values.length) throw new Error('fixed rng exhausted');
+        var v = values[i++];
+        return Math.max(1, Math.min(sides, v));
+      }
+    };
+  }
+
+  // --------------------------------------------------------------------- dice
+  var DICE_RE = /^\s*(\d+)\s*[dD]\s*(\d+)\s*(?:([+-])\s*(\d+))?\s*$/;
+
+  function parseDice(spec) {
+    if (typeof spec !== 'string') return null;
+    var m = DICE_RE.exec(spec);
+    if (!m) return null;
+    var count = parseInt(m[1], 10);
+    var sides = parseInt(m[2], 10);
+    var mod = m[4] ? parseInt(m[4], 10) * (m[3] === '-' ? -1 : 1) : 0;
+    if (!(count >= 1) || !(sides >= 2)) return null;
+    return { count: count, sides: sides, mod: mod };
+  }
+
+  function rollDice(spec, rng) {
+    var p = parseDice(spec);
+    if (!p) throw new Error('bad dice spec: ' + spec);
+    var rolls = [], total = 0;
+    for (var i = 0; i < p.count; i++) {
+      var r = rng.die(p.sides);
+      rolls.push(r);
+      total += r;
+    }
+    total += p.mod;
+    return { spec: spec, rolls: rolls, mod: p.mod, total: total };
+  }
+
+  function abilityMod(score) { return Math.floor((score - 10) / 2); }
+
+  // ---------------------------------------------------------------- validator
+  // Runs over the embedded data at startup. If it returns ok:false the UI
+  // refuses to start and prints the messages.
+  function validateAdventure(adv) {
+    var errors = [];
+    function err(msg) { errors.push(msg); }
+
+    if (!adv || typeof adv !== 'object') {
+      return { ok: false, errors: ['冒險資料不存在或格式錯誤。'] };
+    }
+    if (typeof adv.title !== 'string' || !adv.title) err('冒險缺少 title。');
+    if (typeof adv.start !== 'string' || !adv.start) err('冒險缺少 start（起始場景）。');
+
+    // --- items
+    var items = {};
+    if (!Array.isArray(adv.items)) {
+      err('冒險缺少 items 陣列。');
+    } else {
+      adv.items.forEach(function (it, i) {
+        var where = '物品 #' + i;
+        if (!it || typeof it.id !== 'string' || !it.id) { err(where + ' 缺少 id。'); return; }
+        where = '物品「' + it.id + '」';
+        if (items[it.id]) err(where + ' 的 id 重複。');
+        items[it.id] = it;
+        if (typeof it.name !== 'string' || !it.name) err(where + ' 缺少 name。');
+        if (ITEM_KINDS.indexOf(it.kind) < 0) err(where + ' 的 kind「' + it.kind + '」不合法（只能是 gear / key / consumable）。');
+        var hasHeal = it.heal !== undefined && it.heal !== null;
+        var hasDmg = it.damage !== undefined && it.damage !== null;
+        if (it.kind === 'consumable') {
+          if (hasHeal && hasDmg) err(where + ' 同時有 heal 和 damage，消耗品只能二擇其一。');
+          if (!hasHeal && !hasDmg) err(where + ' 既沒有 heal 也沒有 damage，消耗品必須二擇其一。');
+          if (hasHeal && !Number.isInteger(it.heal)) err(where + ' 的 heal 必須是整數。');
+          if (hasDmg && !Number.isInteger(it.damage)) err(where + ' 的 damage 必須是整數。');
+        } else if (hasHeal || hasDmg) {
+          err(where + ' 不是消耗品，卻有 heal / damage。');
+        }
+      });
+    }
+    function checkItem(id, where) {
+      if (!items[id]) err(where + ' 指向不存在的物品「' + id + '」。');
+    }
+
+    // --- scenes
+    var scenes = {};
+    if (!Array.isArray(adv.scenes) || adv.scenes.length === 0) {
+      err('冒險缺少 scenes 陣列。');
+    } else {
+      adv.scenes.forEach(function (sc, i) {
+        if (!sc || typeof sc.id !== 'string' || !sc.id) { err('場景 #' + i + ' 缺少 id。'); return; }
+        if (scenes[sc.id]) err('場景「' + sc.id + '」的 id 重複。');
+        scenes[sc.id] = sc;
+      });
+    }
+    function checkScene(id, where) {
+      if (typeof id !== 'string' || !scenes[id]) err(where + ' 指向不存在的場景「' + id + '」。');
+    }
+
+    if (typeof adv.start === 'string' && adv.start && !scenes[adv.start]) {
+      err('起始場景「' + adv.start + '」不存在。');
+    }
+
+    (Array.isArray(adv.scenes) ? adv.scenes : []).forEach(function (sc) {
+      if (!sc || typeof sc.id !== 'string') return;
+      var where = '場景「' + sc.id + '」';
+      if (SCENE_TYPES.indexOf(sc.type) < 0) { err(where + ' 的 type「' + sc.type + '」不合法。'); return; }
+      if (sc.facts !== undefined && !Array.isArray(sc.facts)) err(where + ' 的 facts 必須是字串陣列。');
+
+      if (sc.type === 'beat') {
+        if (!Array.isArray(sc.choices) || sc.choices.length === 0) { err(where + ' 沒有 choices。'); return; }
+        sc.choices.forEach(function (c, ci) {
+          var cw = where + ' 的選項 #' + ci;
+          if (!c || typeof c.id !== 'string' || !c.id) err(cw + ' 缺少 id。');
+          else cw = where + ' 的選項「' + c.id + '」';
+          if (!c || typeof c.label !== 'string' || !c.label) err(cw + ' 缺少 label。');
+          if (!c) return;
+          checkScene(c.to, cw + ' 的 to');
+          ['give', 'take', 'require_item'].forEach(function (f) {
+            if (c[f] === undefined) return;
+            if (!Array.isArray(c[f])) { err(cw + ' 的 ' + f + ' 必須是陣列。'); return; }
+            c[f].forEach(function (id) { checkItem(id, cw + ' 的 ' + f); });
+          });
+          ['require_flag', 'set_flag'].forEach(function (f) {
+            if (c[f] !== undefined && !Array.isArray(c[f])) err(cw + ' 的 ' + f + ' 必須是陣列。');
+          });
+          if (c.hp_delta !== undefined && !Number.isInteger(c.hp_delta)) err(cw + ' 的 hp_delta 必須是整數。');
+        });
+      } else if (sc.type === 'check') {
+        if (!SKILL_ABILITY[sc.skill]) {
+          err(where + ' 的 skill「' + sc.skill + '」不在允許的五項技能內（athletics / stealth / perception / insight / persuasion）。');
+        }
+        if (!Number.isInteger(sc.dc)) err(where + ' 的 dc 必須是整數。');
+        checkScene(sc.success_to, where + ' 的 success_to');
+        checkScene(sc.fail_to, where + ' 的 fail_to');
+        if (sc.fail_hp_delta !== undefined && !Number.isInteger(sc.fail_hp_delta)) err(where + ' 的 fail_hp_delta 必須是整數。');
+      } else if (sc.type === 'combat') {
+        if (!Array.isArray(sc.enemies) || sc.enemies.length === 0) err(where + ' 沒有 enemies。');
+        else sc.enemies.forEach(function (e, ei) {
+          var ew = where + ' 的敵人 #' + ei;
+          if (!e || typeof e.name !== 'string' || !e.name) err(ew + ' 缺少 name。');
+          if (!e) return;
+          ['ac', 'hp', 'atk'].forEach(function (f) {
+            if (!Number.isInteger(e[f])) err(ew + ' 的 ' + f + ' 必須是整數。');
+          });
+          if (!parseDice(e.damage)) err(ew + ' 的 damage「' + e.damage + '」不是合法骰子字串。');
+        });
+        checkScene(sc.win_to, where + ' 的 win_to');
+        if (sc.flee_to !== undefined && sc.flee_to !== null) checkScene(sc.flee_to, where + ' 的 flee_to');
+      } else if (sc.type === 'end') {
+        if (sc.end !== 'win' && sc.end !== 'lose') err(where + ' 的 end 必須是 win 或 lose。');
+      }
+    });
+
+    // --- pregens
+    if (!Array.isArray(adv.pregens) || adv.pregens.length === 0) {
+      err('冒險缺少 pregens 陣列。');
+    } else {
+      adv.pregens.forEach(function (p, i) {
+        var pw = '角色 #' + i;
+        if (!p || typeof p.name !== 'string' || !p.name) { err(pw + ' 缺少 name。'); return; }
+        pw = '角色「' + p.name + '」';
+        ['class', 'race'].forEach(function (f) {
+          if (typeof p[f] !== 'string' || !p[f]) err(pw + ' 缺少 ' + f + '。');
+        });
+        ['str', 'dex', 'con', 'int', 'wis', 'cha', 'ac', 'hp_max'].forEach(function (f) {
+          if (!Number.isInteger(p[f])) err(pw + ' 的 ' + f + ' 必須是整數。');
+        });
+        if (!Array.isArray(p.skills)) err(pw + ' 的 skills 必須是陣列。');
+        else p.skills.forEach(function (s) {
+          if (!SKILL_ABILITY[s]) err(pw + ' 的技能「' + s + '」不在允許的五項技能內。');
+        });
+        if (!p.attack || typeof p.attack !== 'object') err(pw + ' 缺少 attack。');
+        else {
+          if (typeof p.attack.name !== 'string' || !p.attack.name) err(pw + ' 的 attack 缺少 name。');
+          if (!Number.isInteger(p.attack.bonus)) err(pw + ' 的 attack.bonus 必須是整數。');
+          if (!parseDice(p.attack.damage)) err(pw + ' 的 attack.damage「' + p.attack.damage + '」不是合法骰子字串。');
+        }
+        if (!Array.isArray(p.inventory)) err(pw + ' 的 inventory 必須是陣列。');
+        else p.inventory.forEach(function (id) { checkItem(id, pw + ' 的 inventory'); });
+      });
+    }
+
+    return { ok: errors.length === 0, errors: errors };
+  }
+
+  // ------------------------------------------------------------------- engine
+  // status: 'idle' (no run yet) | 'playing' | 'won' | 'lost'
+  function Engine(adventure, options) {
+    options = options || {};
+    var report = validateAdventure(adventure);
+    if (!report.ok) throw new Error('invalid adventure: ' + report.errors.join(' / '));
+    this.adventure = adventure;
+    this.rng = options.rng || makeRng(options.seed == null ? 20260904 : options.seed);
+    this.items = {};
+    adventure.items.forEach(function (it) { this.items[it.id] = it; }, this);
+    this.scenes = {};
+    adventure.scenes.forEach(function (sc) { this.scenes[sc.id] = sc; }, this);
+    this.status = 'idle';
+    this.pregenIndex = null;
+    this.character = null;
+    this.scene = null;
+    this.sceneId = null;
+    this.flags = {};
+    this.encounter = null;
+    this.round = 0;
+    this.events = [];
+  }
+
+  // --- internal plumbing -----------------------------------------------------
+  // Every event carries the frozen narration allowlist exactly as it stood the
+  // moment the engine settled that event, so prose can never read later state.
+  Engine.prototype.emit = function (ev) {
+    ev.view = this.narrationView(null);
+    this.events.push(ev);
+    return ev;
+  };
+  Engine.prototype.ok = function () { return { ok: true, error: null, events: this.events.slice() }; };
+  // reject() never mutates game state; the caller's attempt simply did not happen.
+  Engine.prototype.reject = function (msg) { return { ok: false, error: msg, events: this.events.slice() }; };
+
+  Engine.prototype.itemName = function (id) {
+    return this.items[id] ? this.items[id].name : id;
+  };
+
+  Engine.prototype.inventoryNames = function () {
+    return this.character ? this.character.inventory.map(this.itemName, this) : [];
+  };
+
+  Engine.prototype.livingEnemies = function () {
+    if (!this.encounter) return [];
+    var out = [];
+    this.encounter.enemies.forEach(function (e, i) {
+      if (e.hp > 0) out.push({ index: i, ref: e, name: e.name, hp: e.hp, hp_max: e.hp_max });
+    });
+    return out;
+  };
+
+  Engine.prototype.enemySnapshot = function () {
+    if (!this.encounter) return [];
+    return this.encounter.enemies.map(function (e, i) {
+      return { index: i, name: e.name, hp: e.hp, hp_max: e.hp_max, alive: e.hp > 0 };
+    });
+  };
+
+  // --- run lifecycle ---------------------------------------------------------
+  Engine.prototype.characterFromPregen = function (p) {
+    return {
+      name: p.name, cls: p['class'], race: p.race,
+      str: p.str, dex: p.dex, con: p.con, int: p['int'], wis: p.wis, cha: p.cha,
+      ac: p.ac, hp: p.hp_max, hp_max: p.hp_max,
+      skills: p.skills.slice(),
+      attack: { name: p.attack.name, bonus: p.attack.bonus, damage: p.attack.damage },
+      inventory: p.inventory.slice()
+    };
+  };
+
+  // Fresh character state, flags cleared, back to the start scene.
+  Engine.prototype.beginRun = function (pregenIndex) {
+    var p = this.adventure.pregens[pregenIndex];
+    if (!p) return this.reject('沒有這個角色。');
+    this.pregenIndex = pregenIndex;
+    this.character = this.characterFromPregen(p);
+    this.flags = {};
+    this.encounter = null;
+    this.round = 0;
+    this.status = 'playing';
+    this.emit({
+      t: 'run_start',
+      name: this.character.name, cls: this.character.cls, race: this.character.race,
+      hp: this.character.hp, hp_max: this.character.hp_max,
+      inventory: this.inventoryNames()
+    });
+    this.enterScene(this.adventure.start);
+    return this.ok();
+  };
+
+  Engine.prototype.start = function (pregenIndex) {
+    this.events = [];
+    return this.beginRun(pregenIndex);
+  };
+
+  // Full restart from the start scene with fresh character state.
+  Engine.prototype.restart = function () {
+    this.events = [];
+    if (this.pregenIndex == null) return this.reject('還沒有選角色。');
+    return this.beginRun(this.pregenIndex);
+  };
+
+  Engine.prototype.lose = function (cause) {
+    this.status = 'lost';
+    this.emit({ t: 'end', outcome: 'lost', cause: cause || 'hp' });
+  };
+
+  Engine.prototype.enterScene = function (id) {
+    var sc = this.scenes[id];
+    if (!sc) throw new Error('unknown scene: ' + id); // validator makes this unreachable
+    this.sceneId = id;
+    this.scene = sc;
+    this.encounter = null;
+    if (sc.type === 'combat') {
+      this.round = 1;
+      this.encounter = {
+        enemies: sc.enemies.map(function (e) {
+          return { id: e.id, name: e.name, ac: e.ac, hp: e.hp, hp_max: e.hp, atk: e.atk, damage: e.damage };
+        })
+      };
+    }
+    this.emit({
+      t: 'scene',
+      sceneType: sc.type,
+      facts: (sc.facts || []).slice(),
+      enemies: this.enemySnapshot()
+    });
+    if (sc.type === 'end') {
+      this.status = sc.end === 'win' ? 'won' : 'lost';
+      this.emit({ t: 'end', outcome: this.status, cause: 'scene' });
+    }
+  };
+
+  // --- hp helper -------------------------------------------------------------
+  // Single place where player HP moves outside of combat damage.
+  Engine.prototype.applyHpDelta = function (delta, reason) {
+    var c = this.character;
+    c.hp = Math.min(c.hp_max, c.hp + delta);
+    if (c.hp < 0) c.hp = 0;
+    this.emit({ t: 'hp', delta: delta, hp: c.hp, hp_max: c.hp_max, reason: reason || null });
+    if (c.hp <= 0) { this.lose('hp'); return false; }
+    return true;
+  };
+
+  // --- legal actions ---------------------------------------------------------
+  Engine.prototype.choiceVisible = function (c) {
+    var i;
+    if (Array.isArray(c.require_flag)) {
+      for (i = 0; i < c.require_flag.length; i++) if (!this.flags[c.require_flag[i]]) return false;
+    }
+    if (Array.isArray(c.require_item)) {
+      for (i = 0; i < c.require_item.length; i++) {
+        if (this.character.inventory.indexOf(c.require_item[i]) < 0) return false;
+      }
+    }
+    return true;
+  };
+
+  // Every inventory slot, with whether use_item on it is legal right now.
+  // use_item is always offered in beat / check / combat scenes; it is never
+  // authored as a choice in the data.
+  Engine.prototype.itemActions = function () {
+    var self = this;
+    var inCombat = this.scene && this.scene.type === 'combat';
+    var living = this.livingEnemies();
+    return this.character.inventory.map(function (id, slot) {
+      var it = self.items[id];
+      var act = {
+        type: 'use_item', slot: slot, itemId: id, itemName: it.name, kind: it.kind,
+        effect: null, amount: 0, enabled: false, needsTarget: false, reason: null
+      };
+      if (it.kind !== 'consumable') {
+        act.reason = '這件物品不能使用。';
+        return act;
+      }
+      if (it.heal !== undefined && it.heal !== null) {
+        act.effect = 'heal';
+        act.amount = it.heal;
+        act.enabled = true;
+      } else {
+        act.effect = 'damage';
+        act.amount = it.damage;
+        if (!inCombat) act.reason = '只能在戰鬥中使用。';
+        else if (living.length === 0) act.reason = '沒有目標。';
+        else { act.enabled = true; act.needsTarget = living.length > 1; }
+      }
+      return act;
+    });
+  };
+
+  Engine.prototype.legalActions = function () {
+    if (this.status !== 'playing' || !this.scene) return [];
+    var sc = this.scene, acts = [], self = this;
+    if (sc.type === 'beat') {
+      (sc.choices || []).forEach(function (c) {
+        if (!self.choiceVisible(c)) return; // hidden when requirements unmet
+        acts.push({ type: 'choice', id: c.id, label: c.label });
+      });
+    } else if (sc.type === 'check') {
+      // No roll happens on entry: the player presses this.
+      acts.push({ type: 'roll', skill: sc.skill, dc: sc.dc });
+    } else if (sc.type === 'combat') {
+      this.livingEnemies().forEach(function (e) {
+        acts.push({ type: 'attack', target: e.index, targetName: e.name, targetHp: e.hp, targetHpMax: e.hp_max });
+      });
+      acts.push({ type: 'flee', to: sc.flee_to || null });
+    }
+    if (sc.type === 'beat' || sc.type === 'check' || sc.type === 'combat') {
+      acts = acts.concat(this.itemActions());
+    }
+    return acts;
+  };
+
+  // --- actions ---------------------------------------------------------------
+  Engine.prototype.perform = function (action) {
+    this.events = [];
+    if (!action || typeof action.type !== 'string') return this.reject('未知的行動。');
+    if (action.type === 'restart') return this.restart();
+    if (this.status !== 'playing') return this.reject('這一場已經結束了。');
+    switch (action.type) {
+      case 'choice':   return this.doChoice(action.id);
+      case 'roll':     return this.doRoll();
+      case 'attack':   return this.doAttack(action.target);
+      case 'use_item': return this.doUseItem(action.slot, action.target);
+      case 'flee':     return this.doFlee();
+      default:         return this.reject('未知的行動。');
+    }
+  };
+
+  Engine.prototype.doChoice = function (id) {
+    var sc = this.scene, self = this;
+    if (sc.type !== 'beat') return this.reject('現在不能做這個選擇。');
+    var choice = null;
+    (sc.choices || []).forEach(function (c) { if (c.id === id) choice = c; });
+    if (!choice) return this.reject('沒有這個選項。');
+    if (!this.choiceVisible(choice)) return this.reject('現在還做不到這件事。');
+
+    this.emit({ t: 'choice', label: choice.label });
+    (choice.set_flag || []).forEach(function (f) { self.flags[f] = true; });
+    (choice.give || []).forEach(function (itemId) {
+      self.character.inventory.push(itemId);
+      self.emit({ t: 'give', itemName: self.itemName(itemId) });
+    });
+    (choice.take || []).forEach(function (itemId) {
+      var i = self.character.inventory.indexOf(itemId);
+      if (i >= 0) {
+        self.character.inventory.splice(i, 1);
+        self.emit({ t: 'take', itemName: self.itemName(itemId) });
+      }
+    });
+    if (choice.hp_delta) {
+      if (!this.applyHpDelta(choice.hp_delta, 'choice')) return this.ok();
+    }
+    this.enterScene(choice.to);
+    return this.ok();
+  };
+
+  Engine.prototype.doRoll = function () {
+    var sc = this.scene, c = this.character;
+    if (sc.type !== 'check') return this.reject('現在不需要擲骰。');
+    var ability = SKILL_ABILITY[sc.skill];
+    var mod = abilityMod(c[ability]);
+    var prof = c.skills.indexOf(sc.skill) >= 0 ? PROFICIENCY_BONUS : 0;
+    var d20 = this.rng.die(20);
+    var total = d20 + mod + prof;
+    var success = total >= sc.dc; // landing exactly on the DC succeeds
+    this.emit({
+      t: 'check', skill: sc.skill, ability: ability,
+      d20: d20, mod: mod, prof: prof, total: total, dc: sc.dc, success: success
+    });
+    if (!success && sc.fail_hp_delta) {
+      if (!this.applyHpDelta(sc.fail_hp_delta, 'check_fail')) return this.ok();
+    }
+    this.enterScene(success ? sc.success_to : sc.fail_to);
+    return this.ok();
+  };
+
+  Engine.prototype.doAttack = function (targetIndex) {
+    var sc = this.scene, c = this.character;
+    if (sc.type !== 'combat') return this.reject('這裡沒有可以攻擊的對象。');
+    var living = this.livingEnemies();
+    if (living.length === 0) return this.reject('沒有目標。');
+    var target = null;
+    if (targetIndex === undefined || targetIndex === null) {
+      if (living.length > 1) return this.reject('要先選一個目標。');
+      target = living[0].ref;
+      targetIndex = living[0].index;
+    } else {
+      var e = this.encounter.enemies[targetIndex];
+      if (!e || e.hp <= 0) return this.reject('這個目標不能攻擊。');
+      target = e;
+    }
+    var d20 = this.rng.die(20);
+    var total = d20 + c.attack.bonus;
+    var hit = total >= target.ac; // natural 20 is just a normal hit
+    var dmg = null;
+    var before = target.hp;
+    if (hit) {
+      dmg = rollDice(c.attack.damage, this.rng);
+      target.hp = Math.max(0, target.hp - dmg.total);
+    }
+    this.emit({
+      t: 'attack', attackName: c.attack.name, attackerName: c.name,
+      d20: d20, bonus: c.attack.bonus, total: total, ac: target.ac, hit: hit,
+      damage: dmg, targetName: target.name, targetHpBefore: before,
+      targetHp: target.hp, targetHpMax: target.hp_max, targetDown: target.hp <= 0
+    });
+    return this.endPlayerTurn();
+  };
+
+  Engine.prototype.doUseItem = function (slot, targetIndex) {
+    var c = this.character, sc = this.scene;
+    if (sc.type !== 'beat' && sc.type !== 'check' && sc.type !== 'combat') {
+      return this.reject('現在不能使用物品。');
+    }
+    if (!Number.isInteger(slot) || slot < 0 || slot >= c.inventory.length) {
+      return this.reject('沒有這件物品。');
+    }
+    var item = this.items[c.inventory[slot]];
+    if (!item) return this.reject('沒有這件物品。');
+    if (item.kind !== 'consumable') return this.reject(item.name + '不能使用。');
+
+    var isDamage = item.damage !== undefined && item.damage !== null;
+    if (isDamage) {
+      // Damage items are combat-only. Outside combat the attempt is rejected
+      // and the item is NOT consumed.
+      if (sc.type !== 'combat') return this.reject(item.name + '只能在戰鬥中使用。');
+      var living = this.livingEnemies();
+      if (living.length === 0) return this.reject('沒有目標。');
+      var target = null;
+      if (targetIndex === undefined || targetIndex === null) {
+        if (living.length > 1) return this.reject('要先選一個目標。');
+        target = living[0].ref;
+      } else {
+        var e = this.encounter.enemies[targetIndex];
+        if (!e || e.hp <= 0) return this.reject('這個目標不能攻擊。');
+        target = e;
+      }
+      var before = target.hp;
+      target.hp = Math.max(0, target.hp - item.damage); // automatic hit, cannot miss
+      c.inventory.splice(slot, 1);                      // single use
+      this.emit({
+        t: 'item_damage', itemName: item.name, amount: item.damage,
+        targetName: target.name, targetHpBefore: before, targetHp: target.hp,
+        targetHpMax: target.hp_max, targetDown: target.hp <= 0,
+        inventory: this.inventoryNames()
+      });
+      return this.endPlayerTurn();
+    }
+
+    var hpBefore = c.hp;
+    c.hp = Math.min(c.hp_max, c.hp + item.heal); // capped at hp_max
+    c.inventory.splice(slot, 1);                 // single use
+    this.emit({
+      t: 'item_heal', itemName: item.name, amount: item.heal,
+      healed: c.hp - hpBefore, hp: c.hp, hp_max: c.hp_max,
+      inventory: this.inventoryNames()
+    });
+    if (sc.type === 'combat') return this.endPlayerTurn();
+    return this.ok();
+  };
+
+  Engine.prototype.doFlee = function () {
+    var sc = this.scene;
+    if (sc.type !== 'combat') return this.reject('這裡沒有要逃走的東西。');
+    if (sc.flee_to) {
+      this.emit({ t: 'flee', escaped: true });
+      this.enterScene(sc.flee_to);
+      return this.ok();
+    }
+    // No flee_to: the whole run restarts.
+    this.emit({ t: 'flee', escaped: false });
+    this.emit({ t: 'run_restart', reason: 'flee' });
+    return this.beginRun(this.pregenIndex);
+  };
+
+  // After the player's single action, every living enemy attacks.
+  Engine.prototype.endPlayerTurn = function () {
+    var c = this.character, self = this;
+    var living = this.livingEnemies();
+    if (living.length === 0) {
+      this.emit({ t: 'combat_win' });
+      this.enterScene(this.scene.win_to);
+      return this.ok();
+    }
+    this.emit({ t: 'enemy_phase', round: this.round });
+    for (var i = 0; i < living.length; i++) {
+      if (this.status !== 'playing') break;
+      var e = living[i].ref;
+      var d20 = this.rng.die(20);
+      var total = d20 + e.atk;
+      var hit = total >= c.ac;
+      var dmg = null;
+      if (hit) {
+        dmg = rollDice(e.damage, this.rng);
+        c.hp = c.hp - dmg.total;
+        if (c.hp < 0) c.hp = 0;
+      }
+      this.emit({
+        t: 'enemy_attack', enemyName: e.name, d20: d20, bonus: e.atk, total: total,
+        ac: c.ac, hit: hit, damage: dmg, hp: c.hp, hp_max: c.hp_max
+      });
+      if (c.hp <= 0) this.lose('hp');
+    }
+    if (this.status === 'playing') this.round++;
+    return this.ok();
+  };
+
+  // --- views -----------------------------------------------------------------
+  // Everything the UI needs to draw the screen.
+  Engine.prototype.uiState = function () {
+    var c = this.character;
+    return {
+      status: this.status,
+      sceneId: this.sceneId,
+      sceneType: this.scene ? this.scene.type : null,
+      round: this.round,
+      character: c ? {
+        name: c.name, cls: c.cls, race: c.race, ac: c.ac, hp: c.hp, hp_max: c.hp_max,
+        abilities: { str: c.str, dex: c.dex, con: c.con, int: c.int, wis: c.wis, cha: c.cha },
+        skills: c.skills.slice(),
+        inventory: c.inventory.slice(), inventoryNames: this.inventoryNames(),
+        attack: { name: c.attack.name, bonus: c.attack.bonus, damage: c.attack.damage }
+      } : null,
+      enemies: this.enemySnapshot()
+    };
+  };
+
+  // STRICT narration allowlist. The narrator sees nothing else: scene facts,
+  // name/class/race, hp/hp_max, inventory item names, encounter enemy
+  // names/HP, and this action's dice result. Frozen so it cannot be a channel
+  // back into engine state.
+  Engine.prototype.narrationView = function (dice) {
+    var c = this.character;
+    var enemies = (this.encounter ? this.encounter.enemies : []).map(function (e) {
+      return Object.freeze({ name: e.name, hp: e.hp });
+    });
+    return Object.freeze({
+      facts: Object.freeze((this.scene && this.scene.facts ? this.scene.facts : []).slice()),
+      name: c ? c.name : '', cls: c ? c.cls : '', race: c ? c.race : '',
+      hp: c ? c.hp : 0, hp_max: c ? c.hp_max : 0,
+      inventory: Object.freeze(this.inventoryNames()),
+      enemies: Object.freeze(enemies),
+      dice: dice ? Object.freeze(dice) : null
+    });
+  };
+
+  // ------------------------------------------------------------------- exports
+  var api = {
+    PROFICIENCY_BONUS: PROFICIENCY_BONUS,
+    SKILL_ABILITY: SKILL_ABILITY,
+    SKILL_LABEL: SKILL_LABEL,
+    ABILITY_LABEL: ABILITY_LABEL,
+    makeRng: makeRng,
+    makeFixedRng: makeFixedRng,
+    parseDice: parseDice,
+    rollDice: rollDice,
+    abilityMod: abilityMod,
+    validateAdventure: validateAdventure,
+    Engine: Engine
+  };
+  global.TOWER = global.TOWER || {};
+  for (var k in api) if (Object.prototype.hasOwnProperty.call(api, k)) global.TOWER[k] = api[k];
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+
+<!-- ==========================================================================
+     NARRATION LAYER
+     Two very different things live here, on purpose:
+
+     1) Mechanics  — the engine's own report of what it already settled
+                     (dice faces, modifiers, totals vs DC/AC, HP moves).
+                     Verbatim numbers, no prose, no choices.
+
+     2) Narrator   — prose. It CANNOT change numbers or state: it is a pure
+                     function of (cue, view) where `view` is the frozen
+                     allowlist from Engine#narrationView — scene facts,
+                     name/class/race, HP/HP max, inventory item names,
+                     encounter enemy names/HP, and this action's dice result.
+                     Nothing else is reachable from here.
+
+     Narrator interface: { id, name, narrate(cue, view) -> [{tone, text}] }
+     An LLM-backed narrator would implement the same shape; only the offline
+     deterministic one ships.
+     ========================================================================== -->
+<script id="narrator">
+(function (global) {
+  'use strict';
+
+  var T = global.TOWER;
+
+  function sign(n) { return (n >= 0 ? '+' : '−') + Math.abs(n); }
+  function diceText(d) {
+    // "[5,3] +2" style breakdown of a rolled dice string
+    var s = '[' + d.rolls.join('、') + ']';
+    if (d.mod) s += ' ' + sign(d.mod);
+    return s;
+  }
+
+  // ------------------------------------------------------------- Mechanics
+  // Turns a settled engine event into the mechanical log lines.
+  var Mechanics = {
+    format: function (ev) {
+      var out = [];
+      switch (ev.t) {
+        case 'run_start':
+          out.push({ tone: 'sys', text: '〔開始〕' + ev.name + '（' + ev.cls + '／' + ev.race + '）　生命 ' + ev.hp + '/' + ev.hp_max });
+          break;
+        case 'choice':
+          out.push({ tone: 'act', text: '〔行動〕' + ev.label });
+          break;
+        case 'give':
+          out.push({ tone: 'sys', text: '〔物品〕獲得　' + ev.itemName });
+          break;
+        case 'take':
+          out.push({ tone: 'sys', text: '〔物品〕失去　' + ev.itemName });
+          break;
+        case 'hp':
+          out.push({ tone: ev.delta < 0 ? 'bad' : 'good', text: '〔狀態〕生命 ' + sign(ev.delta) + ' → ' + ev.hp + '/' + ev.hp_max });
+          break;
+        case 'check':
+          out.push({
+            tone: 'roll',
+            text: '〔擲骰〕' + (T.SKILL_LABEL[ev.skill] || ev.skill) + '檢定：d20(' + ev.d20 + ') ' +
+                  sign(ev.mod) + '（' + (T.ABILITY_LABEL[ev.ability] || ev.ability) + '）' +
+                  (ev.prof ? ' ' + sign(ev.prof) + '（熟練）' : '') +
+                  ' ＝ ' + ev.total + '　／　DC ' + ev.dc + ' → ' + (ev.success ? '成功' : '失敗')
+          });
+          break;
+        case 'attack':
+          out.push({
+            tone: 'roll',
+            text: '〔擲骰〕' + ev.attackName + '：d20(' + ev.d20 + ') ' + sign(ev.bonus) +
+                  ' ＝ ' + ev.total + '　／　' + ev.targetName + ' AC ' + ev.ac +
+                  ' → ' + (ev.hit ? '命中' : '落空')
+          });
+          if (ev.hit) {
+            out.push({
+              tone: 'roll',
+              text: '〔傷害〕' + ev.damage.spec + '：' + diceText(ev.damage) + ' ＝ ' + ev.damage.total +
+                    '　→　' + ev.targetName + ' ' + ev.targetHpBefore + ' → ' + ev.targetHp + '/' + ev.targetHpMax
+            });
+          }
+          break;
+        case 'item_damage':
+          out.push({
+            tone: 'roll',
+            text: '〔物品〕' + ev.itemName + '：自動命中，傷害 ' + ev.amount +
+                  '　→　' + ev.targetName + ' ' + ev.targetHpBefore + ' → ' + ev.targetHp + '/' + ev.targetHpMax
+          });
+          break;
+        case 'item_heal':
+          out.push({
+            tone: 'good',
+            text: '〔物品〕' + ev.itemName + '：回復 ' + ev.amount +
+                  (ev.healed !== ev.amount ? '（上限只回 ' + ev.healed + '）' : '') +
+                  '　→　生命 ' + ev.hp + '/' + ev.hp_max
+          });
+          break;
+        case 'enemy_phase':
+          out.push({ tone: 'sys', text: '〔第 ' + ev.round + ' 回合〕敵方行動' });
+          break;
+        case 'enemy_attack':
+          out.push({
+            tone: 'roll',
+            text: '〔擲骰〕' + ev.enemyName + '攻擊：d20(' + ev.d20 + ') ' + sign(ev.bonus) +
+                  ' ＝ ' + ev.total + '　／　你的 AC ' + ev.ac + ' → ' + (ev.hit ? '命中' : '落空')
+          });
+          if (ev.hit) {
+            out.push({
+              tone: 'bad',
+              text: '〔傷害〕' + ev.damage.spec + '：' + diceText(ev.damage) + ' ＝ ' + ev.damage.total +
+                    '　→　生命 ' + ev.hp + '/' + ev.hp_max
+            });
+          }
+          break;
+        case 'combat_win':
+          out.push({ tone: 'good', text: '〔戰鬥〕敵人全部倒下。' });
+          break;
+        case 'flee':
+          out.push({ tone: 'act', text: ev.escaped ? '〔行動〕逃走' : '〔行動〕逃走　—　這裡沒有退路' });
+          break;
+        case 'run_restart':
+          out.push({ tone: 'sys', text: '〔重來〕整場冒險從頭開始。' });
+          break;
+        default:
+          break;
+      }
+      return out;
+    }
+  };
+
+  // ------------------------------------------------- offline narrator (ships)
+  // Deterministic templating over the allowlist. Same inputs -> same prose.
+  function pick(list, n) { return list[((n % list.length) + list.length) % list.length]; }
+
+  function tick(view, event) {
+    // Deterministic variation index built only from allowlisted numbers.
+    var d = view.dice;
+    var n = view.hp + view.hp_max + (view.facts.length * 3) + (view.inventory.length * 5);
+    if (d) n += (d.d20 || 0) + (d.total || 0) + (d.amount || 0);
+    n += (event.t || '').length;
+    return n;
+  }
+
+  var OfflineNarrator = {
+    id: 'offline',
+    name: '離線敘事器',
+
+    // `cue` selects a template but carries no authored text or game values.
+    // Every word/value inserted into prose comes only from the frozen view.
+    narrate: function (cue, view) {
+      var out = [];
+      var n = tick(view, { t: cue });
+      var names = view.enemies.map(function (e) { return e.name; }).join('、');
+      var d = view.dice;
+
+      switch (cue) {
+        case 'scene_beat':
+          view.facts.forEach(function (f) { out.push({ tone: 'fact', text: f }); });
+          out.push({ tone: 'narr', text: pick([
+            view.name + '停下來，把眼前的東西看清楚。',
+            view.name + '按住呼吸，先看清楚再決定。',
+            view.name + '站著沒動，先把地方看一遍。'
+          ], n) });
+          break;
+        case 'scene_check':
+          view.facts.forEach(function (f) { out.push({ tone: 'fact', text: f }); });
+          out.push({ tone: 'narr', text: pick([
+            view.name + '深吸一口氣，準備動手。',
+            '成不成，就看這一下了。',
+            view.name + '把重心放低，準備出手。'
+          ], n) });
+          break;
+        case 'scene_combat':
+          view.facts.forEach(function (f) { out.push({ tone: 'fact', text: f }); });
+          out.push({ tone: 'narr', text: names + '擋在' + view.name + '面前，退不得了。' });
+          break;
+        case 'scene_end':
+          view.facts.forEach(function (f) { out.push({ tone: 'fact', text: f }); });
+          break;
+
+        case 'give':
+          if (view.inventory.length) {
+            out.push({ tone: 'narr', text: view.inventory[view.inventory.length - 1] + '進了' + view.name + '的行囊。' });
+          }
+          break;
+        case 'take':
+          out.push({ tone: 'narr', text: view.name + '手上的東西用完了。' });
+          break;
+        case 'hp_loss':
+          out.push({ tone: 'narr', text: pick([
+            view.name + '悶哼一聲，撐住了。',
+            '一陣鈍痛，' + view.name + '咬牙站穩。'
+          ], n) + '（' + view.hp + '/' + view.hp_max + '）' });
+          break;
+        case 'hp_gain':
+          out.push({ tone: 'narr', text: view.name + '緩過一口氣。（' + view.hp + '/' + view.hp_max + '）' });
+          break;
+
+        case 'check':
+          if (d && d.outcome === 'success') {
+            out.push({ tone: 'narr', text: pick([
+              '骰面 ' + d.d20 + '，' + view.name + '辦到了。',
+              '骰面 ' + d.d20 + '，動作剛好夠穩，過去了。',
+              '骰面 ' + d.d20 + '，' + view.name + '一次過關。'
+            ], n) });
+          } else if (d) {
+            out.push({ tone: 'narr', text: pick([
+              '骰面 ' + d.d20 + '，差了一點。',
+              '骰面 ' + d.d20 + '，' + view.name + '沒有抓穩。',
+              '骰面 ' + d.d20 + '，這一下沒能成事。'
+            ], n) });
+          }
+          break;
+
+        case 'attack':
+          if (d && d.outcome === 'hit') {
+            out.push({ tone: 'narr', text: pick([
+              view.name + '的一擊實打實地落在敵人身上。',
+              view.name + '看準空隙出手，打中了。'
+            ], n) });
+            if (view.enemies.some(function (e) { return e.hp <= 0; })) out.push({ tone: 'good', text: '一個敵人垮了下去，不再動。' });
+          } else {
+            out.push({ tone: 'narr', text: pick([
+              view.name + '揮空了，敵人閃開半步。',
+              '這一下擦邊而過，敵人沒有受影響。'
+            ], n) });
+          }
+          break;
+        case 'item_damage':
+          out.push({ tone: 'narr', text: '攻擊用的消耗品在敵人身上炸開。' });
+          if (view.enemies.some(function (e) { return e.hp <= 0; })) out.push({ tone: 'good', text: '一個敵人垮了下去，不再動。' });
+          break;
+        case 'item_heal':
+          out.push({ tone: 'narr', text: view.name + '用掉一件消耗品，傷口收住了。（' + view.hp + '/' + view.hp_max + '）' });
+          break;
+        case 'enemy_attack':
+          if (d && d.outcome === 'hit') {
+            out.push({ tone: 'narr', text: '敵人打中了' + view.name + '。（' + view.hp + '/' + view.hp_max + '）' });
+          } else {
+            out.push({ tone: 'narr', text: pick([
+              '敵人撲了個空。',
+              view.name + '側身避開了敵人。'
+            ], n) });
+          }
+          break;
+        case 'flee':
+          out.push({ tone: 'narr', text: view.name + '退回原路，心跳還沒平。' });
+          break;
+        case 'flee_restart':
+          out.push({ tone: 'narr', text: view.name + '轉身想走，四面卻沒有出口。' });
+          break;
+        case 'run_restart':
+          out.push({ tone: 'sys', text: '——這一夜重新開始——' });
+          break;
+        case 'end_won':
+          out.push({ tone: 'good', text: view.name + '活著走出廢塔。' });
+          break;
+        case 'end_lost':
+          out.push({ tone: 'bad', text: view.name + '倒在原地，這一夜到此為止。' });
+          break;
+        default:
+          break;
+      }
+      return out;
+    }
+  };
+
+  // Convert a settled event to a value-free template cue. This adapter lives
+  // outside the narrator; the narrator itself receives no engine event object.
+  function cueOf(event) {
+    if (event.t === 'scene') return 'scene_' + event.sceneType;
+    if (event.t === 'hp') return event.delta < 0 ? 'hp_loss' : 'hp_gain';
+    if (event.t === 'flee') return event.escaped ? 'flee' : 'flee_restart';
+    if (event.t === 'end') return event.outcome === 'won' ? 'end_won' : 'end_lost';
+    return event.t;
+  }
+
+  // The dice result of THIS action, in the shape the narrator is allowed to see.
+  function diceOf(event) {
+    switch (event.t) {
+      case 'check':
+        return { kind: 'check', d20: event.d20, total: event.total, outcome: event.success ? 'success' : 'fail' };
+      case 'attack':
+        return { kind: 'attack', d20: event.d20, total: event.total, outcome: event.hit ? 'hit' : 'miss',
+                 amount: event.hit ? event.damage.total : 0 };
+      case 'enemy_attack':
+        return { kind: 'enemy_attack', d20: event.d20, total: event.total, outcome: event.hit ? 'hit' : 'miss',
+                 amount: event.hit ? event.damage.total : 0 };
+      case 'item_damage':
+        return { kind: 'item_damage', d20: 0, total: event.amount, outcome: 'hit', amount: event.amount };
+      case 'item_heal':
+        return { kind: 'item_heal', d20: 0, total: event.healed, outcome: 'heal', amount: event.healed };
+      default:
+        return null;
+    }
+  }
+
+  global.TOWER = global.TOWER || {};
+  global.TOWER.Mechanics = Mechanics;
+  global.TOWER.OfflineNarrator = OfflineNarrator;
+  global.TOWER.narrator = OfflineNarrator; // the shipped narrator
+  global.TOWER.diceOf = diceOf;
+  global.TOWER.cueOf = cueOf;
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { Mechanics: Mechanics, OfflineNarrator: OfflineNarrator, diceOf: diceOf, cueOf: cueOf };
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+
+<!-- ==========================================================================
+     UI
+     Pure rendering + click routing. It never computes a rule: it asks the
+     engine what is legal, draws those buttons, sends the chosen action back,
+     and prints the events the engine returns.
+     ========================================================================== -->
+<script id="ui">
+(function () {
+  'use strict';
+
+  var T = window.TOWER;
+  var app = document.getElementById('app');
+
+  // ------------------------------------------------------------ dom helpers
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = text;
+    return e;
+  }
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+  function sign(n) { return (n >= 0 ? '+' : '−') + Math.abs(n); }
+
+  // -------------------------------------------------- startup loader/validator
+  // Refuses to start when the embedded data is wrong, with a clear message.
+  var problems = [];
+  if (typeof ADVENTURES !== 'object' || !ADVENTURES) {
+    problems.push('找不到冒險資料區塊（ADVENTURES）。');
+  } else {
+    Object.keys(ADVENTURES).forEach(function (id) {
+      var r = T.validateAdventure(ADVENTURES[id]);
+      if (!r.ok) r.errors.forEach(function (m) { problems.push('【' + id + '】' + m); });
+    });
+    if (!ADVENTURES[DEFAULT_ADVENTURE_ID]) {
+      problems.push('找不到預設冒險「' + DEFAULT_ADVENTURE_ID + '」。');
+    }
+  }
+
+  function renderFatal(list) {
+    clear(app);
+    var box = el('div', 'fatal');
+    box.appendChild(el('h1', null, '冒險資料有問題，無法開始'));
+    box.appendChild(el('p', null, '啟動檢查在內嵌資料中找到以下問題，請修正 index.html 的資料區塊後重新載入：'));
+    var ul = el('ul');
+    list.forEach(function (m) { ul.appendChild(el('li', null, m)); });
+    box.appendChild(ul);
+    app.appendChild(box);
+  }
+
+  if (problems.length) { renderFatal(problems); return; }
+
+  var adventure = ADVENTURES[DEFAULT_ADVENTURE_ID];
+
+  // ---------------------------------------------------------------- state
+  var engine = null;
+  var logEl = null, statusEl = null, actionsEl = null;
+  var trayMode = null; // null | 'items' | {slot:n} target picker
+
+  // ---------------------------------------------------------- select screen
+  function renderSelect() {
+    clear(app);
+    trayMode = null;
+    var wrap = el('div', 'wrap');
+
+    var hero = el('div', 'hero');
+    hero.appendChild(el('h1', null, adventure.title));
+    hero.appendChild(el('p', 'sub', '單人一場．無需主持人．約 30–60 分鐘'));
+    hero.appendChild(el('p', 'lead', '規則由程式判定：骰子、生命、物品、勝負全部由引擎結算，敘述只負責把結果講出來。倒下就從頭再來，不會存檔。'));
+    wrap.appendChild(hero);
+
+    wrap.appendChild(el('h2', 'sectitle', '選一個角色開始'));
+
+    var cards = el('div', 'cards');
+    adventure.pregens.forEach(function (p, i) {
+      var card = el('div', 'card');
+      card.appendChild(el('h2', null, p.name));
+      card.appendChild(el('div', 'tag', p['class'] + '　·　' + p.race));
+
+      var stats = el('div', 'stats');
+      [['生命', p.hp_max], ['防禦 AC', p.ac]].forEach(function (kv) {
+        var pill = el('span', 'pill');
+        pill.appendChild(document.createTextNode(kv[0] + ' '));
+        pill.appendChild(el('b', null, String(kv[1])));
+        stats.appendChild(pill);
+      });
+      card.appendChild(stats);
+
+      var ab = el('div', 'stats');
+      ['str', 'dex', 'con', 'int', 'wis', 'cha'].forEach(function (k) {
+        var pill = el('span', 'pill');
+        pill.appendChild(document.createTextNode(T.ABILITY_LABEL[k] + ' '));
+        pill.appendChild(el('b', null, p[k] + '（' + sign(T.abilityMod(p[k])) + '）'));
+        ab.appendChild(pill);
+      });
+      card.appendChild(ab);
+
+      var skills = p.skills.map(function (s) { return T.SKILL_LABEL[s] || s; }).join('、');
+      var kSkill = el('p', 'kv');
+      kSkill.appendChild(document.createTextNode('熟練技能：'));
+      kSkill.appendChild(el('b', null, skills || '無'));
+      card.appendChild(kSkill);
+
+      var kAtk = el('p', 'kv');
+      kAtk.appendChild(document.createTextNode('攻擊：'));
+      kAtk.appendChild(el('b', null, p.attack.name + ' ' + sign(p.attack.bonus) + '（' + p.attack.damage + '）'));
+      card.appendChild(kAtk);
+
+      var itemNames = p.inventory.map(function (id) {
+        var it = null;
+        adventure.items.forEach(function (x) { if (x.id === id) it = x; });
+        return it ? it.name : id;
+      }).join('、');
+      var kInv = el('p', 'kv');
+      kInv.appendChild(document.createTextNode('起始物品：'));
+      kInv.appendChild(el('b', null, itemNames || '無'));
+      card.appendChild(kInv);
+
+      var btn = el('button', 'btn primary', '選擇 ' + p.name);
+      btn.type = 'button';
+      btn.addEventListener('click', function () { startRun(i); });
+      card.appendChild(btn);
+
+      cards.appendChild(card);
+    });
+    wrap.appendChild(cards);
+    app.appendChild(wrap);
+  }
+
+  // ------------------------------------------------------------ play screen
+  function renderPlayShell() {
+    clear(app);
+    var play = el('div', 'play');
+    statusEl = el('div', 'status');
+    logEl = el('div', null);
+    logEl.id = 'log';
+    actionsEl = el('div', null);
+    actionsEl.id = 'actions';
+    play.appendChild(statusEl);
+    play.appendChild(logEl);
+    play.appendChild(actionsEl);
+    app.appendChild(play);
+  }
+
+  function startRun(pregenIndex) {
+    // Seeded rng; the seed is just "whatever this session is".
+    var seed = ((Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0);
+    engine = new T.Engine(adventure, { seed: seed });
+    renderPlayShell();
+    trayMode = null;
+    handle(engine.start(pregenIndex));
+  }
+
+  // -------------------------------------------------------------- log output
+  function appendLines(lines) {
+    lines.forEach(function (l) {
+      var p = el('p', 'line ' + (l.tone || 'narr'), l.text);
+      logEl.appendChild(p);
+    });
+  }
+  function addDivider() {
+    if (!logEl.firstChild) return;
+    logEl.appendChild(el('hr', 'divider'));
+  }
+  function addBanner(outcome) {
+    var b = el('div', 'banner ' + (outcome === 'won' ? 'win' : 'lose'));
+    b.appendChild(el('h2', null, outcome === 'won' ? '通關' : '失敗'));
+    b.appendChild(el('p', null, outcome === 'won'
+      ? '這一夜結束了。可以再玩一次，或換個角色重來。'
+      : '這一場到此為止。從頭再來一次吧。'));
+    logEl.appendChild(b);
+  }
+
+  // Compose the frozen narration allowlist for this event: the snapshot the
+  // engine took when it settled the event, plus this action's dice result.
+  function viewFor(ev) {
+    var dice = T.diceOf(ev);
+    if (!dice) return ev.view;
+    var v = {}, k;
+    for (k in ev.view) if (Object.prototype.hasOwnProperty.call(ev.view, k)) v[k] = ev.view[k];
+    v.dice = Object.freeze(dice);
+    return Object.freeze(v);
+  }
+
+  function renderEvents(events) {
+    events.forEach(function (ev) {
+      if (ev.t === 'scene') addDivider();
+      appendLines(T.Mechanics.format(ev));
+      appendLines(T.narrator.narrate(T.cueOf(ev), viewFor(ev)));
+      if (ev.t === 'end') addBanner(ev.outcome);
+    });
+  }
+
+  function handle(res) {
+    if (!res.ok) appendLines([{ tone: 'sys', text: '（' + res.error + '）' }]);
+    renderEvents(res.events);
+    refresh();
+  }
+
+  function act(action) {
+    trayMode = null;
+    handle(engine.perform(action));
+  }
+
+  // ------------------------------------------------------------- status bar
+  function renderStatus(st) {
+    clear(statusEl);
+    var c = st.character;
+    if (!c) return;
+
+    var who = el('div', 'who', c.name);
+    who.appendChild(el('span', null, c.cls + '　·　' + c.race));
+    statusEl.appendChild(who);
+
+    var hp = el('div', 'hpwrap');
+    hp.appendChild(el('span', 'lab', '生命'));
+    var bar = el('div', 'hpbar');
+    var ratio = c.hp_max ? Math.max(0, Math.min(1, c.hp / c.hp_max)) : 0;
+    var fill = el('div', 'hpfill' + (ratio <= 0.25 ? ' low' : (ratio <= 0.6 ? ' warn' : '')));
+    fill.style.width = (ratio * 100) + '%';
+    bar.appendChild(fill);
+    hp.appendChild(bar);
+    hp.appendChild(el('span', null, c.hp + '/' + c.hp_max));
+    hp.appendChild(el('span', 'lab', '　AC ' + c.ac));
+    statusEl.appendChild(hp);
+
+    var inv = el('div', 'inv');
+    inv.appendChild(el('span', 'lab', '行囊'));
+    if (!c.inventoryNames.length) {
+      inv.appendChild(el('span', 'chip none', '空'));
+    } else {
+      var counts = [], order = [];
+      c.inventoryNames.forEach(function (n) {
+        if (counts[n] === undefined) { counts[n] = 0; order.push(n); }
+        counts[n]++;
+      });
+      order.forEach(function (n) {
+        inv.appendChild(el('span', 'chip', n + (counts[n] > 1 ? ' ×' + counts[n] : '')));
+      });
+    }
+    statusEl.appendChild(inv);
+  }
+
+  // ---------------------------------------------------------------- actions
+  function button(label, hint, cls, onClick, disabled) {
+    var b = el('button', 'btn' + (cls ? ' ' + cls : ''), null);
+    b.type = 'button';
+    b.appendChild(document.createTextNode(label));
+    if (hint) b.appendChild(el('small', null, hint));
+    if (disabled) b.disabled = true;
+    else b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function renderActions(st) {
+    clear(actionsEl);
+
+    if (st.status === 'won' || st.status === 'lost') {
+      var row = el('div', 'row');
+      row.appendChild(button('從頭再玩一次', '同一個角色，全新狀態，回到起點', 'primary', function () {
+        act({ type: 'restart' });
+      }));
+      row.appendChild(button('換一個角色', '回到選角畫面', 'ghost', function () {
+        renderSelect();
+      }));
+      actionsEl.appendChild(row);
+      return;
+    }
+
+    var acts = engine.legalActions();
+    var main = el('div', 'row');
+    var itemActs = [];
+
+    acts.forEach(function (a) {
+      if (a.type === 'use_item') { itemActs.push(a); return; }
+      if (a.type === 'choice') {
+        main.appendChild(button(a.label, null, null, function () { act({ type: 'choice', id: a.id }); }));
+      } else if (a.type === 'roll') {
+        var ability = T.SKILL_ABILITY[a.skill];
+        var mod = T.abilityMod(st.character.abilities[ability]);
+        var prof = st.character.skills.indexOf(a.skill) >= 0 ? T.PROFICIENCY_BONUS : 0;
+        main.appendChild(button(
+          '擲骰：' + (T.SKILL_LABEL[a.skill] || a.skill) + '檢定（DC ' + a.dc + '）',
+          'd20 ' + sign(mod) + '（' + T.ABILITY_LABEL[ability] + '）' + (prof ? ' ' + sign(prof) + '（熟練）' : ''),
+          'primary',
+          function () { act({ type: 'roll' }); }
+        ));
+      } else if (a.type === 'attack') {
+        main.appendChild(button(
+          '攻擊：' + a.targetName,
+          st.character.attack.name + ' ' + sign(st.character.attack.bonus) + '（' + st.character.attack.damage + '）　目標生命 ' + a.targetHp + '/' + a.targetHpMax,
+          'primary',
+          function () { act({ type: 'attack', target: a.target }); }
+        ));
+      } else if (a.type === 'flee') {
+        main.appendChild(button(
+          '逃走',
+          a.to ? '退回上一個地方' : '這裡沒有退路：整場冒險重來',
+          'danger',
+          function () { act({ type: 'flee' }); }
+        ));
+      }
+    });
+
+    // use_item is always offered in beat / check / combat scenes
+    if (st.sceneType === 'beat' || st.sceneType === 'check' || st.sceneType === 'combat') {
+      var usable = itemActs.filter(function (a) { return a.enabled; }).length;
+      main.appendChild(button(
+        trayMode ? '收起物品' : '使用物品',
+        itemActs.length ? '可用 ' + usable + ' / ' + itemActs.length + ' 件' : '行囊是空的',
+        null,
+        function () { trayMode = trayMode ? null : 'items'; refresh(); },
+        itemActs.length === 0
+      ));
+    }
+    actionsEl.appendChild(main);
+
+    if (!trayMode) return;
+
+    var tray = el('div', 'tray');
+    if (trayMode === 'items') {
+      tray.appendChild(el('h3', null, '使用哪一件？'));
+      itemActs.forEach(function (a) {
+        var hint = a.effect === 'heal' ? ('回復 ' + a.amount + ' 點生命')
+                 : a.effect === 'damage' ? ('戰鬥中自動命中，傷害 ' + a.amount)
+                 : '不能使用';
+        if (!a.enabled && a.reason) hint = a.reason;
+        tray.appendChild(button(a.itemName, hint, null, function () {
+          if (a.needsTarget) { trayMode = { slot: a.slot }; refresh(); return; }
+          act({ type: 'use_item', slot: a.slot });
+        }, !a.enabled));
+      });
+      tray.appendChild(button('取消', null, 'ghost', function () { trayMode = null; refresh(); }));
+    } else {
+      tray.appendChild(el('h3', null, '用在誰身上？'));
+      st.enemies.forEach(function (e) {
+        if (!e.alive) return;
+        tray.appendChild(button(e.name, '生命 ' + e.hp + '/' + e.hp_max, null, function () {
+          act({ type: 'use_item', slot: trayMode.slot, target: e.index });
+        }));
+      });
+      tray.appendChild(button('取消', null, 'ghost', function () { trayMode = 'items'; refresh(); }));
+    }
+    actionsEl.appendChild(tray);
+  }
+
+  function refresh() {
+    var st = engine.uiState();
+    renderStatus(st);
+    renderActions(st);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  renderSelect();
+})();
+</script>
+</body>
+</html>

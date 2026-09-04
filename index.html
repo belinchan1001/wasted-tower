@@ -88,9 +88,11 @@ body{
 .divider{border:0;border-top:1px dashed var(--line);margin:18px 0 14px}
 .banner{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:14px 0;background:var(--panel)}
 .banner.win{border-color:#3f6a46;background:#16211a}
+.banner.secret{border-color:#6a5a36;background:#211c15}
 .banner.lose{border-color:#6a3b36;background:#211615}
 .banner h2{margin:0 0 4px;font-size:20px;letter-spacing:.1em}
 .banner.win h2{color:var(--good)}
+.banner.secret h2{color:#e0c56a}
 .banner.lose h2{color:var(--bad)}
 .banner p{margin:0;color:var(--muted);font-size:14px}
 
@@ -139,32 +141,756 @@ var ADVENTURES = {
   wasted_tower:
 {
   "title": "廢塔一夜",
-  "start": "gate",
+  "start": "f1_gate",
+  "meta": {
+    "required_for_secret": [
+      "f1_rats",
+      "f1_bandit",
+      "f2_bones",
+      "f2_ooze",
+      "f3_cult",
+      "f3_wight",
+      "hide_vault",
+      "hide_crypt"
+    ]
+  },
   "items": [
-    {"id": "lantern", "name": "提燈", "kind": "gear"},
-    {"id": "iron_key", "name": "鏽鐵鑰匙", "kind": "key"},
-    {"id": "potion_heal", "name": "治療藥水", "kind": "consumable", "heal": 8},
-    {"id": "cure_wounds", "name": "治療術卷軸", "kind": "consumable", "heal": 10},
-    {"id": "burning_hands", "name": "燃燒之手卷軸", "kind": "consumable", "damage": 8},
-    {"id": "alchemist_fire", "name": "煉金火", "kind": "consumable", "damage": 6}
+    {
+      "id": "lantern",
+      "name": "提燈",
+      "kind": "gear"
+    },
+    {
+      "id": "iron_key",
+      "name": "鏽鐵鑰匙",
+      "kind": "key"
+    },
+    {
+      "id": "rust_key",
+      "name": "銅鏽鑰匙",
+      "kind": "key"
+    },
+    {
+      "id": "potion_heal",
+      "name": "治療藥水",
+      "kind": "consumable",
+      "heal": 8
+    },
+    {
+      "id": "potion_heal_2",
+      "name": "治療藥水",
+      "kind": "consumable",
+      "heal": 8
+    },
+    {
+      "id": "cure_wounds",
+      "name": "治療術卷軸",
+      "kind": "consumable",
+      "heal": 10
+    },
+    {
+      "id": "burning_hands",
+      "name": "燃燒之手卷軸",
+      "kind": "consumable",
+      "damage": 8
+    },
+    {
+      "id": "alchemist_fire",
+      "name": "煉金火",
+      "kind": "consumable",
+      "damage": 6
+    },
+    {
+      "id": "holy_water",
+      "name": "聖水",
+      "kind": "consumable",
+      "damage": 7
+    }
   ],
   "pregens": [
-    {"name": "布倫", "class": "戰士", "race": "人類", "str": 16, "dex": 12, "con": 15, "int": 8, "wis": 10, "cha": 10, "ac": 16, "hp_max": 12, "skills": ["athletics"], "attack": {"name": "長劍", "bonus": 5, "damage": "1d8+3"}, "inventory": ["potion_heal", "lantern"], "features": [{"id": "power_strike", "name": "破甲重擊", "uses": 3, "effect": {"type": "damage", "amount": 10}}]},
-    {"name": "希薇", "class": "遊俠", "race": "精靈", "str": 12, "dex": 16, "con": 13, "int": 10, "wis": 14, "cha": 8, "ac": 14, "hp_max": 11, "skills": ["stealth", "perception"], "attack": {"name": "短弓", "bonus": 5, "damage": "1d8+3"}, "inventory": ["potion_heal", "alchemist_fire"], "features": [{"id": "aimed_shot", "name": "穿心一箭", "uses": 3, "effect": {"type": "damage", "amount": 8}}]},
-    {"name": "芬恩", "class": "盜賊", "race": "半身人", "str": 8, "dex": 16, "con": 12, "int": 13, "wis": 12, "cha": 10, "ac": 14, "hp_max": 9, "skills": ["stealth"], "attack": {"name": "短劍", "bonus": 5, "damage": "1d6+3"}, "inventory": ["potion_heal", "lantern"], "features": [{"id": "sneak_stab", "name": "暗影偷襲", "uses": 3, "effect": {"type": "damage", "amount": 9}}]},
-    {"name": "米拉", "class": "牧師", "race": "人類", "str": 14, "dex": 10, "con": 14, "int": 8, "wis": 16, "cha": 12, "ac": 16, "hp_max": 10, "skills": ["insight"], "attack": {"name": "神聖打擊", "bonus": 4, "damage": "1d6+2"}, "inventory": ["cure_wounds", "potion_heal"], "features": [{"id": "lay_on_hands", "name": "聖療", "uses": 3, "effect": {"type": "heal", "amount": 8}}]},
-    {"name": "奧爾", "class": "法師", "race": "精靈", "str": 8, "dex": 14, "con": 12, "int": 16, "wis": 12, "cha": 10, "ac": 12, "hp_max": 8, "skills": ["perception"], "attack": {"name": "火焰箭", "bonus": 4, "damage": "1d8+2"}, "inventory": ["burning_hands", "potion_heal"], "features": [{"id": "mage_armor", "name": "法師護甲", "uses": 3, "effect": {"type": "ac_bonus", "amount": 3, "duration": "combat"}}]}
+    {
+      "name": "布倫",
+      "class": "戰士",
+      "race": "人類",
+      "str": 16,
+      "dex": 12,
+      "con": 15,
+      "int": 8,
+      "wis": 10,
+      "cha": 10,
+      "ac": 16,
+      "hp_max": 12,
+      "skills": [
+        "athletics"
+      ],
+      "attack": {
+        "name": "長劍",
+        "bonus": 5,
+        "damage": "1d8+3"
+      },
+      "inventory": [
+        "potion_heal",
+        "lantern"
+      ],
+      "features": [
+        {
+          "id": "power_strike",
+          "name": "破甲重擊",
+          "uses": 3,
+          "effect": {
+            "type": "damage",
+            "amount": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "希薇",
+      "class": "遊俠",
+      "race": "精靈",
+      "str": 12,
+      "dex": 16,
+      "con": 13,
+      "int": 10,
+      "wis": 14,
+      "cha": 8,
+      "ac": 14,
+      "hp_max": 11,
+      "skills": [
+        "stealth",
+        "perception"
+      ],
+      "attack": {
+        "name": "短弓",
+        "bonus": 5,
+        "damage": "1d8+3"
+      },
+      "inventory": [
+        "potion_heal",
+        "alchemist_fire"
+      ],
+      "features": [
+        {
+          "id": "aimed_shot",
+          "name": "穿心一箭",
+          "uses": 3,
+          "effect": {
+            "type": "damage",
+            "amount": 8
+          }
+        }
+      ]
+    },
+    {
+      "name": "芬恩",
+      "class": "盜賊",
+      "race": "半身人",
+      "str": 8,
+      "dex": 16,
+      "con": 12,
+      "int": 13,
+      "wis": 12,
+      "cha": 10,
+      "ac": 14,
+      "hp_max": 9,
+      "skills": [
+        "stealth"
+      ],
+      "attack": {
+        "name": "短劍",
+        "bonus": 5,
+        "damage": "1d6+3"
+      },
+      "inventory": [
+        "potion_heal",
+        "lantern"
+      ],
+      "features": [
+        {
+          "id": "sneak_stab",
+          "name": "暗影偷襲",
+          "uses": 3,
+          "effect": {
+            "type": "damage",
+            "amount": 9
+          }
+        }
+      ]
+    },
+    {
+      "name": "米拉",
+      "class": "牧師",
+      "race": "人類",
+      "str": 14,
+      "dex": 10,
+      "con": 14,
+      "int": 8,
+      "wis": 16,
+      "cha": 12,
+      "ac": 16,
+      "hp_max": 10,
+      "skills": [
+        "insight"
+      ],
+      "attack": {
+        "name": "神聖打擊",
+        "bonus": 4,
+        "damage": "1d6+2"
+      },
+      "inventory": [
+        "cure_wounds",
+        "potion_heal"
+      ],
+      "features": [
+        {
+          "id": "lay_on_hands",
+          "name": "聖療",
+          "uses": 3,
+          "effect": {
+            "type": "heal",
+            "amount": 8
+          }
+        }
+      ]
+    },
+    {
+      "name": "奧爾",
+      "class": "法師",
+      "race": "精靈",
+      "str": 8,
+      "dex": 14,
+      "con": 12,
+      "int": 16,
+      "wis": 12,
+      "cha": 10,
+      "ac": 12,
+      "hp_max": 8,
+      "skills": [
+        "perception"
+      ],
+      "attack": {
+        "name": "火焰箭",
+        "bonus": 4,
+        "damage": "1d8+2"
+      },
+      "inventory": [
+        "burning_hands",
+        "potion_heal"
+      ],
+      "features": [
+        {
+          "id": "mage_armor",
+          "name": "法師護甲",
+          "uses": 3,
+          "effect": {
+            "type": "ac_bonus",
+            "amount": 3,
+            "duration": "combat"
+          }
+        }
+      ]
+    }
   ],
   "scenes": [
-    {"id": "gate", "type": "beat", "facts": ["林緣有一座廢塔。", "木門半掩。", "天色將晚。"], "choices": [{"id": "search", "label": "搜查門廊", "to": "rubble", "give": ["iron_key"]}, {"id": "rush", "label": "直接進塔", "to": "rubble"}]},
-    {"id": "rubble", "type": "beat", "facts": ["門廳地板塌了一角。", "塵土裡露出朽木梁。", "對面有向下的石階。"], "choices": [{"id": "climb", "label": "攀爬過塌陷處", "to": "rubble_athletics"}, {"id": "creep", "label": "貼牆潛行繞過", "to": "rubble_stealth"}, {"id": "scan", "label": "細看地板找穩固落腳點", "to": "rubble_perception"}]},
-    {"id": "rubble_athletics", "type": "check", "facts": ["你打算硬闖過去。"], "skill": "athletics", "dc": 12, "success_to": "bones", "fail_to": "bones", "fail_hp_delta": -2},
-    {"id": "rubble_stealth", "type": "check", "facts": ["你貼著牆邊找縫隙繞過去。"], "skill": "stealth", "dc": 12, "success_to": "bones", "fail_to": "bones", "fail_hp_delta": -2},
-    {"id": "rubble_perception", "type": "check", "facts": ["你仔細觀察哪塊地板還撐得住。"], "skill": "perception", "dc": 12, "success_to": "bones", "fail_to": "bones", "fail_hp_delta": -2},
-    {"id": "bones", "type": "combat", "facts": ["石階底有一具朽骨站起來。", "通道很窄，只有這一具敵人。", "再往裡是一扇鐵門。"], "enemies": [{"id": "bone_guard", "name": "朽骨守衛", "ac": 12, "hp": 9, "atk": 3, "damage": "1d4+1"}], "win_to": "vault", "flee_to": "rubble"},
-    {"id": "vault", "type": "beat", "facts": ["鐵門擋住內室。", "門上有鏽鎖。", "門後傳出冷風。"], "choices": [{"id": "unlock", "label": "用鏽鐵鑰匙開門", "to": "wight", "require_item": ["iron_key"], "take": ["iron_key"]}, {"id": "smash", "label": "撞開鐵門", "to": "wight", "hp_delta": -3}]},
-    {"id": "wight", "type": "combat", "facts": ["內室中央立著一個塔影怨靈。", "沒有其他出口。"], "enemies": [{"id": "tower_wight", "name": "塔影怨靈", "ac": 13, "hp": 16, "atk": 4, "damage": "1d6+1"}], "win_to": "win"},
-    {"id": "win", "type": "end", "end": "win", "facts": ["怨靈散成灰。", "你取下牆上的銅徽。", "廢塔恢復寂靜。", "這一夜結束了。"]}
+    {
+      "id": "f1_gate",
+      "type": "beat",
+      "facts": [
+        "林緣有一座廢塔。",
+        "木門半掩。",
+        "天色將晚。"
+      ],
+      "choices": [
+        {
+          "id": "search",
+          "label": "搜查門廊",
+          "to": "f1_rats",
+          "give": [
+            "iron_key"
+          ]
+        },
+        {
+          "id": "rush",
+          "label": "直接進塔",
+          "to": "f1_rats"
+        }
+      ]
+    },
+    {
+      "id": "f1_rats",
+      "type": "combat",
+      "facts": [
+        "門廳竄出腐鼠。",
+        "地上有齧過的布條。",
+        "對面有走廊。"
+      ],
+      "enemies": [
+        {
+          "id": "rat_1",
+          "name": "腐鼠",
+          "ac": 11,
+          "hp": 4,
+          "atk": 2,
+          "damage": "1d4"
+        },
+        {
+          "id": "rat_2",
+          "name": "腐鼠",
+          "ac": 11,
+          "hp": 4,
+          "atk": 2,
+          "damage": "1d4"
+        },
+        {
+          "id": "rat_3",
+          "name": "腐鼠",
+          "ac": 11,
+          "hp": 3,
+          "atk": 2,
+          "damage": "1d4"
+        }
+      ],
+      "win_to": "f1_hall",
+      "flee_to": "f1_gate"
+    },
+    {
+      "id": "f1_hall",
+      "type": "beat",
+      "facts": [
+        "走廊地板塌了一角。",
+        "塵土裡露出朽木梁。",
+        "盡頭有向下的石階。"
+      ],
+      "choices": [
+        {
+          "id": "climb",
+          "label": "攀爬過塌陷處",
+          "to": "f1_ath"
+        },
+        {
+          "id": "creep",
+          "label": "貼牆潛行繞過",
+          "to": "f1_stl"
+        },
+        {
+          "id": "scan",
+          "label": "細看地板找落腳點",
+          "to": "f1_per"
+        }
+      ]
+    },
+    {
+      "id": "f1_ath",
+      "type": "check",
+      "facts": [
+        "你打算硬闖過去。"
+      ],
+      "skill": "athletics",
+      "dc": 12,
+      "success_to": "f1_bandit",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2
+    },
+    {
+      "id": "f1_stl",
+      "type": "check",
+      "facts": [
+        "你貼著牆邊找縫隙繞過去。"
+      ],
+      "skill": "stealth",
+      "dc": 12,
+      "success_to": "f1_bandit",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2
+    },
+    {
+      "id": "f1_per",
+      "type": "check",
+      "facts": [
+        "你仔細觀察哪塊地板還撐得住。"
+      ],
+      "skill": "perception",
+      "dc": 12,
+      "success_to": "f1_bandit",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2
+    },
+    {
+      "id": "f1_bandit",
+      "type": "combat",
+      "facts": [
+        "石階口有一個盜墓者擋住去路。",
+        "他握著生鏽短斧。",
+        "只有這一個人。"
+      ],
+      "enemies": [
+        {
+          "id": "bandit",
+          "name": "盜墓者",
+          "ac": 13,
+          "hp": 11,
+          "atk": 3,
+          "damage": "1d6+1"
+        }
+      ],
+      "win_to": "f2_stairs",
+      "flee_to": "f1_hall"
+    },
+    {
+      "id": "f2_stairs",
+      "type": "beat",
+      "facts": [
+        "你來到二層轉角。",
+        "正路通往上層通道。",
+        "側牆有一扇上鎖小門。"
+      ],
+      "choices": [
+        {
+          "id": "side",
+          "label": "用鏽鐵鑰匙開側門",
+          "to": "hide_vault",
+          "require_item": [
+            "iron_key"
+          ]
+        },
+        {
+          "id": "up",
+          "label": "直上正路",
+          "to": "f2_bones"
+        }
+      ]
+    },
+    {
+      "id": "hide_vault",
+      "type": "combat",
+      "facts": [
+        "側門後是一間狹窄寶庫。",
+        "石像守衛擋在箱子前。",
+        "沒有其他出口。"
+      ],
+      "enemies": [
+        {
+          "id": "statue",
+          "name": "石像守衛",
+          "ac": 14,
+          "hp": 14,
+          "atk": 4,
+          "damage": "1d6+1"
+        }
+      ],
+      "win_to": "hide_vault_loot",
+      "flee_to": "f2_stairs"
+    },
+    {
+      "id": "hide_vault_loot",
+      "type": "beat",
+      "facts": [
+        "石像倒下。",
+        "箱內有一把銅鏽鑰匙和一瓶藥水。"
+      ],
+      "choices": [
+        {
+          "id": "take_loot",
+          "label": "拿走鑰匙與藥水，回到正路",
+          "to": "f2_bones",
+          "give": [
+            "rust_key",
+            "potion_heal_2"
+          ],
+          "set_flag": [
+            "vault_cleared"
+          ],
+          "take": [
+            "iron_key"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f2_bones",
+      "type": "combat",
+      "facts": [
+        "通道裡有一具朽骨站起來。",
+        "通道很窄。",
+        "再往裡是陷阱標記的石板。"
+      ],
+      "enemies": [
+        {
+          "id": "bone_guard",
+          "name": "朽骨守衛",
+          "ac": 12,
+          "hp": 9,
+          "atk": 3,
+          "damage": "1d4+1"
+        }
+      ],
+      "win_to": "f2_trap",
+      "flee_to": "f2_stairs"
+    },
+    {
+      "id": "f2_trap",
+      "type": "beat",
+      "facts": [
+        "石板上有細縫。",
+        "空氣裡有灰塵味。",
+        "對面是濕潤的下層入口。"
+      ],
+      "choices": [
+        {
+          "id": "force",
+          "label": "硬踩過去",
+          "to": "f2_trap_ath"
+        },
+        {
+          "id": "watch",
+          "label": "觀察陷阱縫隙",
+          "to": "f2_trap_per"
+        }
+      ]
+    },
+    {
+      "id": "f2_trap_ath",
+      "type": "check",
+      "facts": [
+        "你打算用腳步硬闖。"
+      ],
+      "skill": "athletics",
+      "dc": 13,
+      "success_to": "f2_ooze",
+      "fail_to": "f2_ooze",
+      "fail_hp_delta": -3
+    },
+    {
+      "id": "f2_trap_per",
+      "type": "check",
+      "facts": [
+        "你盯著縫隙找安全落點。"
+      ],
+      "skill": "perception",
+      "dc": 12,
+      "success_to": "f2_ooze",
+      "fail_to": "f2_ooze",
+      "fail_hp_delta": -2
+    },
+    {
+      "id": "f2_ooze",
+      "type": "combat",
+      "facts": [
+        "濕室裡有一團酸蝕軟泥。",
+        "地面被腐蝕出凹坑。",
+        "只有這一團。"
+      ],
+      "enemies": [
+        {
+          "id": "ooze",
+          "name": "酸蝕軟泥",
+          "ac": 11,
+          "hp": 14,
+          "atk": 3,
+          "damage": "1d4+1"
+        }
+      ],
+      "win_to": "f3_door",
+      "flee_to": "f2_trap"
+    },
+    {
+      "id": "f3_door",
+      "type": "beat",
+      "facts": [
+        "底層鐵門擋住內室。",
+        "門上有銅鏽鎖孔。",
+        "門後傳出冷風。"
+      ],
+      "choices": [
+        {
+          "id": "unlock",
+          "label": "用銅鏽鑰匙開門",
+          "to": "f3_cult",
+          "require_item": [
+            "rust_key"
+          ]
+        },
+        {
+          "id": "smash",
+          "label": "撞開鐵門",
+          "to": "f3_cult",
+          "hp_delta": -3
+        }
+      ]
+    },
+    {
+      "id": "f3_cult",
+      "type": "combat",
+      "facts": [
+        "內室站著一個塔影邪徒。",
+        "他手持短杖。",
+        "再往裡是祭壇走廊。"
+      ],
+      "enemies": [
+        {
+          "id": "cultist",
+          "name": "塔影邪徒",
+          "ac": 12,
+          "hp": 12,
+          "atk": 3,
+          "damage": "1d6+1"
+        }
+      ],
+      "win_to": "f3_shrine",
+      "flee_to": "f3_door"
+    },
+    {
+      "id": "f3_shrine",
+      "type": "beat",
+      "facts": [
+        "祭壇前可以稍作喘息。",
+        "牆邊有一個密龕。",
+        "正門通往怨靈內室。"
+      ],
+      "choices": [
+        {
+          "id": "niche",
+          "label": "打開密龕",
+          "to": "hide_crypt",
+          "require_flag": [
+            "vault_cleared"
+          ]
+        },
+        {
+          "id": "rush_boss",
+          "label": "直闖內室",
+          "to": "f3_wight"
+        }
+      ]
+    },
+    {
+      "id": "hide_crypt",
+      "type": "combat",
+      "facts": [
+        "密龕後是一間小墓室。",
+        "墓影從棺中升起。",
+        "角落有一瓶聖水。"
+      ],
+      "enemies": [
+        {
+          "id": "crypt_shade",
+          "name": "墓影",
+          "ac": 12,
+          "hp": 10,
+          "atk": 3,
+          "damage": "1d4+2"
+        }
+      ],
+      "win_to": "hide_crypt_loot",
+      "flee_to": "f3_shrine"
+    },
+    {
+      "id": "hide_crypt_loot",
+      "type": "beat",
+      "facts": [
+        "墓影散去。",
+        "你取得聖水。"
+      ],
+      "choices": [
+        {
+          "id": "take_holy",
+          "label": "帶回祭壇走廊",
+          "to": "f3_wight",
+          "give": [
+            "holy_water"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f3_wight",
+      "type": "combat",
+      "facts": [
+        "內室中央立著塔影怨靈。",
+        "沒有其他出口。"
+      ],
+      "enemies": [
+        {
+          "id": "tower_wight",
+          "name": "塔影怨靈",
+          "ac": 13,
+          "hp": 16,
+          "atk": 4,
+          "damage": "1d6+1"
+        }
+      ],
+      "win_to": "post_tower"
+    },
+    {
+      "id": "post_tower",
+      "type": "beat",
+      "facts": [
+        "怨靈散成灰。",
+        "你走出廢塔。",
+        "林緣風很大。"
+      ],
+      "choices": [
+        {
+          "id": "leave",
+          "label": "帶著銅徽離開",
+          "to": "win"
+        },
+        {
+          "id": "face_rival",
+          "label": "面對跟蹤的冒險者",
+          "to": "pick_rival",
+          "require_flag": [
+            "secret_ready"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pick_rival",
+      "type": "beat",
+      "facts": [
+        "林緣站著另一名冒險者。",
+        "對方擋住去路。"
+      ],
+      "choices_from": "other_pregens",
+      "choice_to": "rival_boss"
+    },
+    {
+      "id": "rival_boss",
+      "type": "combat",
+      "facts": [
+        "對手拔出武器。",
+        "這是一場冒險者對決。"
+      ],
+      "enemies": [
+        {
+          "from_pregen": "selected_rival"
+        }
+      ],
+      "win_to": "secret_win",
+      "flee_to": "post_tower"
+    },
+    {
+      "id": "win",
+      "type": "end",
+      "end": "win",
+      "facts": [
+        "你取下牆上的銅徽。",
+        "廢塔恢復寂靜。",
+        "這一夜結束了。"
+      ]
+    },
+    {
+      "id": "secret_win",
+      "type": "end",
+      "end": "secret_win",
+      "facts": [
+        "跟蹤者倒下。",
+        "你清掃了整座廢塔。",
+        "銅徽在夜色中發亮。",
+        "隱藏結局。"
+      ]
+    }
   ]
 }
 
@@ -184,6 +910,7 @@ if (typeof module !== 'undefined' && module.exports) {
      harness can load this exact block and drive it headlessly.
      ========================================================================== -->
 <script id="engine">
+
 (function (global) {
   'use strict';
 
@@ -344,8 +1071,15 @@ if (typeof module !== 'undefined' && module.exports) {
       if (sc.facts !== undefined && !Array.isArray(sc.facts)) err(where + ' 的 facts 必須是字串陣列。');
 
       if (sc.type === 'beat') {
-        if (!Array.isArray(sc.choices) || sc.choices.length === 0) { err(where + ' 沒有 choices。'); return; }
-        sc.choices.forEach(function (c, ci) {
+        var fromPregens = sc.choices_from === 'other_pregens';
+        if (fromPregens) {
+          if (typeof sc.choice_to !== 'string' || !sc.choice_to) err(where + ' 使用 choices_from 時必須有 choice_to。');
+          else checkScene(sc.choice_to, where + ' 的 choice_to');
+        } else if (!Array.isArray(sc.choices) || sc.choices.length === 0) {
+          err(where + ' 沒有 choices。');
+          return;
+        }
+        (Array.isArray(sc.choices) ? sc.choices : []).forEach(function (c, ci) {
           var cw = where + ' 的選項 #' + ci;
           if (!c || typeof c.id !== 'string' || !c.id) err(cw + ' 缺少 id。');
           else cw = where + ' 的選項「' + c.id + '」';
@@ -374,8 +1108,12 @@ if (typeof module !== 'undefined' && module.exports) {
         if (!Array.isArray(sc.enemies) || sc.enemies.length === 0) err(where + ' 沒有 enemies。');
         else sc.enemies.forEach(function (e, ei) {
           var ew = where + ' 的敵人 #' + ei;
-          if (!e || typeof e.name !== 'string' || !e.name) err(ew + ' 缺少 name。');
-          if (!e) return;
+          if (!e) { err(ew + ' 缺少資料。'); return; }
+          if (e.from_pregen) {
+            if (e.from_pregen !== 'selected_rival') err(ew + ' 的 from_pregen 只接受 selected_rival。');
+            return;
+          }
+          if (typeof e.name !== 'string' || !e.name) err(ew + ' 缺少 name。');
           ['ac', 'hp', 'atk'].forEach(function (f) {
             if (!Number.isInteger(e[f])) err(ew + ' 的 ' + f + ' 必須是整數。');
           });
@@ -384,9 +1122,26 @@ if (typeof module !== 'undefined' && module.exports) {
         checkScene(sc.win_to, where + ' 的 win_to');
         if (sc.flee_to !== undefined && sc.flee_to !== null) checkScene(sc.flee_to, where + ' 的 flee_to');
       } else if (sc.type === 'end') {
-        if (sc.end !== 'win' && sc.end !== 'lose') err(where + ' 的 end 必須是 win 或 lose。');
+        if (sc.end !== 'win' && sc.end !== 'lose' && sc.end !== 'secret_win') {
+          err(where + ' 的 end 必須是 win / lose / secret_win。');
+        }
       }
     });
+
+    // --- meta.required_for_secret
+    if (adv.meta !== undefined && adv.meta !== null) {
+      if (typeof adv.meta !== 'object' || Array.isArray(adv.meta)) {
+        err('meta 必須是物件。');
+      } else if (adv.meta.required_for_secret !== undefined) {
+        var req = adv.meta.required_for_secret;
+        if (!Array.isArray(req)) err('meta.required_for_secret 必須是陣列。');
+        else req.forEach(function (id, i) {
+          if (typeof id !== 'string' || !id) { err('meta.required_for_secret[' + i + '] 必須是非空字串。'); return; }
+          if (!scenes[id]) err('meta.required_for_secret 指向不存在的場景「' + id + '」。');
+          else if (scenes[id].type !== 'combat') err('meta.required_for_secret 的「' + id + '」必須是 combat 場景。');
+        });
+      }
+    }
 
     // --- pregens
     if (!Array.isArray(adv.pregens) || adv.pregens.length === 0) {
@@ -447,7 +1202,7 @@ if (typeof module !== 'undefined' && module.exports) {
   }
 
   // ------------------------------------------------------------------- engine
-  // status: 'idle' (no run yet) | 'playing' | 'won' | 'lost'
+  // status: 'idle' (no run yet) | 'playing' | 'won' | 'secret_won' | 'lost'
   function Engine(adventure, options) {
     options = options || {};
     var report = validateAdventure(adventure);
@@ -464,6 +1219,8 @@ if (typeof module !== 'undefined' && module.exports) {
     this.scene = null;
     this.sceneId = null;
     this.flags = {};
+    this.clearedCombats = {};
+    this.rivalPregenIndex = null;
     this.encounter = null;
     this.round = 0;
     this.events = [];
@@ -531,6 +1288,75 @@ if (typeof module !== 'undefined' && module.exports) {
     if (this.character && this.character.acBonus) this.character.acBonus = 0;
   };
 
+  Engine.prototype.refreshSecretReady = function () {
+    var req = (this.adventure.meta && this.adventure.meta.required_for_secret) || [];
+    if (!req.length) return;
+    for (var i = 0; i < req.length; i++) {
+      if (!this.clearedCombats[req[i]]) {
+        if (this.flags.secret_ready) delete this.flags.secret_ready;
+        return;
+      }
+    }
+    this.flags.secret_ready = true;
+  };
+
+  Engine.prototype.markCombatCleared = function (sceneId) {
+    if (sceneId) this.clearedCombats[sceneId] = true;
+    this.refreshSecretReady();
+  };
+
+  Engine.prototype.resolveEnemy = function (e, index) {
+    if (e && e.from_pregen === 'selected_rival') {
+      var idx = this.rivalPregenIndex;
+      if (idx === null || idx === undefined) throw new Error('selected_rival but no rival chosen');
+      var p = this.adventure.pregens[idx];
+      if (!p) throw new Error('invalid rival pregen index');
+      return {
+        id: 'rival',
+        name: p.name,
+        cls: p.class,
+        race: p.race,
+        ac: p.ac,
+        hp: p.hp_max,
+        hp_max: p.hp_max,
+        atk: p.attack.bonus,
+        damage: p.attack.damage
+      };
+    }
+    return {
+      id: e.id || ('enemy_' + index),
+      name: e.name,
+      cls: e.class || null,
+      race: e.race || null,
+      ac: e.ac,
+      hp: e.hp,
+      hp_max: e.hp,
+      atk: e.atk,
+      damage: e.damage
+    };
+  };
+
+  Engine.prototype.resolvedChoices = function () {
+    var sc = this.scene;
+    if (!sc || sc.type !== 'beat') return [];
+    if (sc.choices_from === 'other_pregens') {
+      var out = [];
+      var self = this;
+      var to = sc.choice_to;
+      this.adventure.pregens.forEach(function (p, i) {
+        if (i === self.pregenIndex) return;
+        out.push({
+          id: 'rival_' + i,
+          label: p.name + '（' + p.class + '／' + p.race + '）',
+          to: to,
+          _rival_index: i
+        });
+      });
+      return out;
+    }
+    return (sc.choices || []).slice();
+  };
+
   // Fresh character state, flags cleared, back to the start scene.
   Engine.prototype.beginRun = function (pregenIndex) {
     var p = this.adventure.pregens[pregenIndex];
@@ -538,6 +1364,8 @@ if (typeof module !== 'undefined' && module.exports) {
     this.pregenIndex = pregenIndex;
     this.character = this.characterFromPregen(p);
     this.flags = {};
+    this.clearedCombats = {};
+    this.rivalPregenIndex = null;
     this.encounter = null;
     this.round = 0;
     this.status = 'playing';
@@ -576,12 +1404,12 @@ if (typeof module !== 'undefined' && module.exports) {
     this.sceneId = id;
     this.scene = sc;
     this.encounter = null;
+    this.refreshSecretReady();
     if (sc.type === 'combat') {
       this.round = 1;
+      var self = this;
       this.encounter = {
-        enemies: sc.enemies.map(function (e) {
-          return { id: e.id, name: e.name, ac: e.ac, hp: e.hp, hp_max: e.hp, atk: e.atk, damage: e.damage };
-        })
+        enemies: sc.enemies.map(function (e, i) { return self.resolveEnemy(e, i); })
       };
     }
     this.emit({
@@ -591,7 +1419,9 @@ if (typeof module !== 'undefined' && module.exports) {
       enemies: this.enemySnapshot()
     });
     if (sc.type === 'end') {
-      this.status = sc.end === 'win' ? 'won' : 'lost';
+      if (sc.end === 'win') this.status = 'won';
+      else if (sc.end === 'secret_win') this.status = 'secret_won';
+      else this.status = 'lost';
       this.emit({ t: 'end', outcome: this.status, cause: 'scene' });
     }
   };
@@ -688,7 +1518,8 @@ if (typeof module !== 'undefined' && module.exports) {
     if (this.status !== 'playing' || !this.scene) return [];
     var sc = this.scene, acts = [], self = this;
     if (sc.type === 'beat') {
-      (sc.choices || []).forEach(function (c) {
+      this.refreshSecretReady();
+      this.resolvedChoices().forEach(function (c) {
         if (!self.choiceVisible(c)) return; // hidden when requirements unmet
         acts.push({ type: 'choice', id: c.id, label: c.label });
       });
@@ -728,12 +1559,16 @@ if (typeof module !== 'undefined' && module.exports) {
   Engine.prototype.doChoice = function (id) {
     var sc = this.scene, self = this;
     if (sc.type !== 'beat') return this.reject('現在不能做這個選擇。');
+    this.refreshSecretReady();
     var choice = null;
-    (sc.choices || []).forEach(function (c) { if (c.id === id) choice = c; });
+    this.resolvedChoices().forEach(function (c) { if (c.id === id) choice = c; });
     if (!choice) return this.reject('沒有這個選項。');
     if (!this.choiceVisible(choice)) return this.reject('現在還做不到這件事。');
 
     this.emit({ t: 'choice', label: choice.label });
+    if (choice._rival_index !== undefined && choice._rival_index !== null) {
+      self.rivalPregenIndex = choice._rival_index;
+    }
     (choice.set_flag || []).forEach(function (f) { self.flags[f] = true; });
     (choice.give || []).forEach(function (itemId) {
       self.character.inventory.push(itemId);
@@ -959,6 +1794,7 @@ if (typeof module !== 'undefined' && module.exports) {
     var living = this.livingEnemies();
     if (living.length === 0) {
       this.emit({ t: 'combat_win' });
+      this.markCombatCleared(this.sceneId);
       this.enterScene(this.scene.win_to);
       return this.ok();
     }
@@ -1048,6 +1884,7 @@ if (typeof module !== 'undefined' && module.exports) {
   for (var k in api) if (Object.prototype.hasOwnProperty.call(api, k)) global.TOWER[k] = api[k];
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
+
 </script>
 
 <!-- ==========================================================================
@@ -1338,6 +2175,9 @@ if (typeof module !== 'undefined' && module.exports) {
         case 'end_won':
           out.push({ tone: 'good', text: view.name + '活著走出廢塔。' });
           break;
+        case 'end_secret':
+          out.push({ tone: 'good', text: view.name + '清掃了整座廢塔，隱藏結局達成。' });
+          break;
         case 'end_lost':
           out.push({ tone: 'bad', text: view.name + '倒在原地，這一夜到此為止。' });
           break;
@@ -1354,7 +2194,11 @@ if (typeof module !== 'undefined' && module.exports) {
     if (event.t === 'scene') return 'scene_' + event.sceneType;
     if (event.t === 'hp') return event.delta < 0 ? 'hp_loss' : 'hp_gain';
     if (event.t === 'flee') return event.escaped ? 'flee' : 'flee_restart';
-    if (event.t === 'end') return event.outcome === 'won' ? 'end_won' : 'end_lost';
+    if (event.t === 'end') {
+      if (event.outcome === 'won') return 'end_won';
+      if (event.outcome === 'secret_won') return 'end_secret';
+      return 'end_lost';
+    }
     return event.t;
   }
 
@@ -1571,11 +2415,16 @@ if (typeof module !== 'undefined' && module.exports) {
     logEl.appendChild(el('hr', 'divider'));
   }
   function addBanner(outcome) {
-    var b = el('div', 'banner ' + (outcome === 'won' ? 'win' : 'lose'));
-    b.appendChild(el('h2', null, outcome === 'won' ? '通關' : '失敗'));
-    b.appendChild(el('p', null, outcome === 'won'
+    var kind = outcome === 'won' ? 'win' : (outcome === 'secret_won' ? 'secret' : 'lose');
+    var title = outcome === 'won' ? '通關' : (outcome === 'secret_won' ? '隱藏結局' : '失敗');
+    var body = outcome === 'won'
       ? '這一夜結束了。可以再玩一次，或換個角色重來。'
-      : '這一場到此為止。從頭再來一次吧。'));
+      : (outcome === 'secret_won'
+        ? '你清掃了整座廢塔。隱藏結局達成。可以再玩一次，或換個角色重來。'
+        : '這一場到此為止。從頭再來一次吧。');
+    var b = el('div', 'banner ' + kind);
+    b.appendChild(el('h2', null, title));
+    b.appendChild(el('p', null, body));
     logEl.appendChild(b);
   }
 
@@ -1674,7 +2523,7 @@ if (typeof module !== 'undefined' && module.exports) {
   function renderActions(st) {
     clear(actionsEl);
 
-    if (st.status === 'won' || st.status === 'lost') {
+    if (st.status === 'won' || st.status === 'secret_won' || st.status === 'lost') {
       var row = el('div', 'row');
       row.appendChild(button('從頭再玩一次', '同一個角色，全新狀態，回到起點', 'primary', function () {
         act({ type: 'restart' });

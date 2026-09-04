@@ -37,6 +37,6 @@
 
 5. 儲存並重新開啟頁面。啟動檢查器會拒絕不完整的資料，並把問題逐項列出。
 
-新冒險須沿用現有資料結構，最少包括 `title`、`start`、`items`、`pregens` 和 `scenes`。場景類型只可用 `beat`、`check`、`combat`、`end`；技能只可用 `athletics`、`stealth`、`perception`、`insight`、`persuasion`。所有場景及物品引用都必須指向已存在的 ID。消耗品必須有 `heal` 或 `damage` 其中一項，但不可兩項都有。
+新冒險須沿用現有資料結構，最少包括 `title`、`start`、`items`、`pregens` 和 `scenes`。場景類型只可用 `beat`、`check`、`combat`、`end`；技能只可用 `athletics`、`stealth`、`perception`、`insight`、`persuasion`。所有場景及物品引用都必須指向已存在的 ID。消耗品必須有 `heal` 或 `damage` 其中一項，但不可兩項都有。每位預設角色剛好有一個 `features`（職業招式），效果類型為 `damage`、`heal` 或 `ac_bonus`（僅限本場戰鬥）。
 
 如要一次內嵌多個冒險，繼續在同一個 `ADVENTURES` 物件加入鍵即可；每次只會載入 `DEFAULT_ADVENTURE_ID` 指定的一個。

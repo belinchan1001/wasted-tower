@@ -164,6 +164,7 @@
           break;
         case 'combat_win':
           out.push({ tone: 'good', text: ev.reason === 'yield' ? '〔戰鬥〕敵人棄戰，這一場算贏。' : '〔戰鬥〕敵人全部倒下。' });
+          if (ev.narr) out.push({ tone: 'narr', text: ev.narr });
           break;
         case 'defend':
           out.push({ tone: 'act', text: '〔行動〕防守。到下次行動前，敵方攻擊有劣勢。' });
@@ -197,6 +198,7 @@
           break;
         case 'flee':
           out.push({ tone: 'act', text: ev.escaped ? '〔行動〕逃走' : '〔行動〕逃走　—　這裡沒有退路' });
+          if (ev.narr) out.push({ tone: 'narr', text: ev.narr });
           break;
         case 'run_restart':
           out.push({ tone: 'sys', text: '〔重來〕整場冒險從頭開始。' });

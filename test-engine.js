@@ -3237,6 +3237,281 @@ function printSimulator() {
   else console.log('標記：沒有職業低於 30% 或高於 90%。');
 }
 
+function playerLog(events) {
+  var lines = [];
+  (events || []).forEach(function (ev) {
+    narrator.Mechanics.format(ev).forEach(function (line) { lines.push(line.text); });
+    if (!ev.view) return;
+    narrator.OfflineNarrator.narrate(narrator.cueOf(ev), ev.view).forEach(function (line) {
+      lines.push(line.text);
+    });
+  });
+  return lines;
+}
+
+function countLine(lines, text) {
+  return lines.filter(function (line) { return line === text; }).length;
+}
+
+var RATS_WIN = '最後一隻腐鼠尖叫著鑽進牆縫。門廳安靜下來，只剩你的喘息。';
+var RATS_FLEE = '你退回門外，腐鼠沒有追出來。';
+var BANDIT_WIN = '盜墓者的短斧脫手飛出，他跪倒在石階上。';
+var BANDIT_FLEE = '你退回走廊，盜墓者沒有追來，只在石階口啐了一口。';
+
+function reachBanditFront() {
+  var engine = new T.Engine(adventure, { seed: 11 });
+  engine.start(0);
+  choose(engine, 'rush');
+  choose(engine, 'sneak');
+  succeedCheck(engine);
+  choose(engine, 'ignore');
+  choose(engine, 'climb');
+  succeedCheck(engine);
+  assert.strictEqual(engine.sceneId, 'f1_bandit_front');
+  return engine;
+}
+
+test('combat win and flee narration uses the four authored lines', function () {
+  var byId = {};
+  adventure.scenes.forEach(function (sc) { byId[sc.id] = sc; });
+  var ratsFight = byId.f1_foyer.choices.filter(function (c) { return c.id === 'fight'; })[0];
+  var banditFight = byId.f1_bandit_front.choices.filter(function (c) { return c.id === 'fight'; })[0];
+  assert.strictEqual(ratsFight.to, 'f1_rats');
+  assert.strictEqual(ratsFight.winText, RATS_WIN);
+  assert.strictEqual(ratsFight.fleeText, RATS_FLEE);
+  assert.strictEqual(banditFight.to, 'f1_bandit');
+  assert.strictEqual(banditFight.winText, BANDIT_WIN);
+  assert.strictEqual(banditFight.fleeText, BANDIT_FLEE);
+
+  var ratsWin = new T.Engine(adventure, { seed: 21 });
+  ratsWin.start(0);
+  choose(ratsWin, 'rush');
+  choose(ratsWin, 'fight');
+  assert.strictEqual(ratsWin.sceneId, 'f1_rats');
+  assert.strictEqual(ratsWin.encounter.outcomeNarr.winText, RATS_WIN);
+  winCombat(ratsWin);
+  assert.strictEqual(ratsWin.sceneId, 'f1_rats_after');
+  assert.strictEqual(ratsWin.clearedCombats.f1_rats, true);
+  var ratsWinEv = ratsWin.events.filter(function (e) { return e.t === 'combat_win'; })[0];
+  assert.strictEqual(ratsWinEv.narr, RATS_WIN);
+  var ratsWinLog = playerLog(ratsWin.events);
+  assert.strictEqual(countLine(ratsWinLog, RATS_WIN), 1);
+  assert.strictEqual(countLine(ratsWinLog, RATS_FLEE), 0);
+  assert.ok(ratsWin.scene.facts.indexOf(RATS_WIN) < 0);
+
+  var ratsFlee = new T.Engine(adventure, { seed: 22 });
+  ratsFlee.start(0);
+  choose(ratsFlee, 'rush');
+  choose(ratsFlee, 'fight');
+  var ratsFled = ratsFlee.perform({ type: 'flee' });
+  assert.strictEqual(ratsFled.ok, true);
+  assert.strictEqual(ratsFlee.sceneId, 'f1_gate');
+  assert.ok(!ratsFlee.clearedCombats.f1_rats);
+  var ratsFleeEv = ratsFled.events.filter(function (e) { return e.t === 'flee'; })[0];
+  assert.strictEqual(ratsFleeEv.escaped, true);
+  assert.strictEqual(ratsFleeEv.narr, RATS_FLEE);
+  var ratsFleeLog = playerLog(ratsFled.events);
+  assert.strictEqual(countLine(ratsFleeLog, RATS_FLEE), 1);
+  assert.strictEqual(countLine(ratsFleeLog, RATS_WIN), 0);
+
+  var banditWin = reachBanditFront();
+  choose(banditWin, 'fight');
+  assert.strictEqual(banditWin.sceneId, 'f1_bandit');
+  winCombat(banditWin);
+  assert.strictEqual(banditWin.sceneId, 'f1_bandit_after');
+  assert.strictEqual(banditWin.clearedCombats.f1_bandit, true);
+  var banditWinEv = banditWin.events.filter(function (e) { return e.t === 'combat_win'; })[0];
+  assert.strictEqual(banditWinEv.narr, BANDIT_WIN);
+  var banditWinLog = playerLog(banditWin.events);
+  assert.strictEqual(countLine(banditWinLog, BANDIT_WIN), 1);
+  assert.strictEqual(countLine(banditWinLog, BANDIT_FLEE), 0);
+
+  var banditFlee = reachBanditFront();
+  choose(banditFlee, 'fight');
+  var banditFled = banditFlee.perform({ type: 'flee' });
+  assert.strictEqual(banditFled.ok, true);
+  assert.strictEqual(banditFlee.sceneId, 'f1_hall');
+  assert.ok(!banditFlee.clearedCombats.f1_bandit);
+  var banditFleeEv = banditFled.events.filter(function (e) { return e.t === 'flee'; })[0];
+  assert.strictEqual(banditFleeEv.narr, BANDIT_FLEE);
+  var banditFleeLog = playerLog(banditFled.events);
+  assert.strictEqual(countLine(banditFleeLog, BANDIT_FLEE), 1);
+  assert.strictEqual(countLine(banditFleeLog, BANDIT_WIN), 0);
+
+  var saved = new T.Engine(adventure, { seed: 23 });
+  saved.start(0);
+  choose(saved, 'rush');
+  choose(saved, 'fight');
+  var slot = saved.exportSave();
+  assert.strictEqual(slot.encounter.outcomeNarr.winText, RATS_WIN);
+  assert.strictEqual(slot.encounter.outcomeNarr.fleeText, RATS_FLEE);
+  var loaded = new T.Engine(adventure, { seed: 23 });
+  var applied = loaded.applySave(slot);
+  assert.strictEqual(applied.ok, true, applied.error);
+  var loadedFlee = loaded.perform({ type: 'flee' });
+  assert.strictEqual(loadedFlee.events.filter(function (e) { return e.t === 'flee'; })[0].narr, RATS_FLEE);
+  assert.strictEqual(countLine(playerLog(loadedFlee.events), RATS_FLEE), 1);
+});
+
+test('combat narration is absent unless the opening choice wrote it', function () {
+  assert.deepStrictEqual(
+    narrator.Mechanics.format({ t: 'combat_win', reason: 'defeat' }).map(function (l) { return l.text; }),
+    ['〔戰鬥〕敵人全部倒下。']
+  );
+  assert.deepStrictEqual(
+    narrator.Mechanics.format({ t: 'combat_win', reason: 'yield' }).map(function (l) { return l.text; }),
+    ['〔戰鬥〕敵人棄戰，這一場算贏。']
+  );
+  assert.deepStrictEqual(
+    narrator.Mechanics.format({ t: 'flee', escaped: true }).map(function (l) { return l.text; }),
+    ['〔行動〕逃走']
+  );
+  assert.deepStrictEqual(
+    narrator.Mechanics.format({ t: 'flee', escaped: false }).map(function (l) { return l.text; }),
+    ['〔行動〕逃走　—　這裡沒有退路']
+  );
+
+  var direct = new T.Engine(adventure, { seed: 24 });
+  direct.start(0);
+  direct.enterScene('f1_rats');
+  assert.ok(!direct.encounter.outcomeNarr);
+  var directFlee = direct.perform({ type: 'flee' });
+  var directFleeEv = directFlee.events.filter(function (e) { return e.t === 'flee'; })[0];
+  assert.ok(!Object.prototype.hasOwnProperty.call(directFleeEv, 'narr'));
+  assert.strictEqual(countLine(playerLog(directFlee.events), RATS_FLEE), 0);
+  assert.strictEqual(countLine(playerLog(directFlee.events), RATS_WIN), 0);
+
+  var slipped = new T.Engine(adventure, { seed: 25 });
+  slipped.start(0);
+  choose(slipped, 'rush');
+  choose(slipped, 'sneak');
+  failCheck(slipped);
+  assert.strictEqual(slipped.sceneId, 'f1_rats');
+  assert.ok(!slipped.encounter.outcomeNarr);
+  winCombat(slipped);
+  assert.strictEqual(slipped.sceneId, 'f1_rats_after');
+  var slippedWin = slipped.events.filter(function (e) { return e.t === 'combat_win'; })[0];
+  assert.ok(!Object.prototype.hasOwnProperty.call(slippedWin, 'narr'));
+  assert.strictEqual(countLine(playerLog(slipped.events), RATS_WIN), 0);
+
+  var bones = new T.Engine(adventure, { seed: 26 });
+  bones.start(0);
+  bones.enterScene('f2_bones');
+  assert.ok(!bones.encounter.outcomeNarr);
+  var bonesFlee = bones.perform({ type: 'flee' });
+  assert.ok(!Object.prototype.hasOwnProperty.call(
+    bonesFlee.events.filter(function (e) { return e.t === 'flee'; })[0], 'narr'
+  ));
+  [RATS_WIN, RATS_FLEE, BANDIT_WIN, BANDIT_FLEE].forEach(function (line) {
+    assert.strictEqual(countLine(playerLog(bonesFlee.events), line), 0);
+  });
+
+  var story = {
+    id: 'narr-fixture',
+    title: '測試',
+    start: 'camp',
+    items: [],
+    pregens: [pregen('甲', '戰士')],
+    scenes: [
+      {
+        id: 'camp',
+        type: 'beat',
+        facts: ['營地。'],
+        choices: [
+          { id: 'fight', label: '迎戰', to: 'brawl' },
+          { id: 'noted', label: '記下', to: 'noted' }
+        ]
+      },
+      {
+        id: 'brawl',
+        type: 'combat',
+        facts: ['有人擋路。'],
+        enemies: [{ name: '靶', ac: 10, hp: 4, atk: 0, damage: '1d4' }],
+        win_to: 'after',
+        flee_to: 'camp'
+      },
+      { id: 'after', type: 'beat', facts: ['結束。'], choices: [{ id: 'stay', label: '留下', to: 'after' }] },
+      {
+        id: 'noted',
+        type: 'combat',
+        facts: ['另一場。'],
+        enemies: [{ name: '靶', ac: 10, hp: 4, atk: 0, damage: '1d4' }],
+        win_to: 'after',
+        flee_to: 'camp'
+      }
+    ]
+  };
+  var plain = new T.Engine(story, { seed: 1 });
+  plain.start(0);
+  choose(plain, 'fight');
+  assert.ok(!plain.encounter.outcomeNarr);
+  heroFirst(plain);
+  plain.rng = seqRng([15, 6]);
+  var plainWin = plain.perform({ type: 'attack', target: 0 });
+  assert.strictEqual(plainWin.ok, true, plainWin.error);
+  assert.strictEqual(plain.sceneId, 'after');
+  var plainEv = plainWin.events.filter(function (e) { return e.t === 'combat_win'; })[0];
+  assert.ok(!Object.prototype.hasOwnProperty.call(plainEv, 'narr'));
+  assert.deepStrictEqual(
+    narrator.Mechanics.format(plainEv).map(function (l) { return l.text; }),
+    ['〔戰鬥〕敵人全部倒下。']
+  );
+
+  var again = new T.Engine(story, { seed: 1 });
+  again.start(0);
+  choose(again, 'fight');
+  var againFlee = again.perform({ type: 'flee' });
+  var againEv = againFlee.events.filter(function (e) { return e.t === 'flee'; })[0];
+  assert.ok(!Object.prototype.hasOwnProperty.call(againEv, 'narr'));
+  assert.deepStrictEqual(
+    narrator.Mechanics.format(againEv).map(function (l) { return l.text; }),
+    ['〔行動〕逃走']
+  );
+
+  story.scenes[0].choices[0].winText = '靶倒下了。';
+  story.scenes[0].choices[0].fleeText = '你退回營地。';
+  var authored = new T.Engine(story, { seed: 2 });
+  authored.start(0);
+  choose(authored, 'fight');
+  var authoredFlee = authored.perform({ type: 'flee' });
+  assert.strictEqual(authoredFlee.events.filter(function (e) { return e.t === 'flee'; })[0].narr, '你退回營地。');
+  assert.strictEqual(countLine(playerLog(authoredFlee.events), '你退回營地。'), 1);
+  assert.strictEqual(countLine(playerLog(authoredFlee.events), '靶倒下了。'), 0);
+  choose(authored, 'fight');
+  heroFirst(authored);
+  authored.rng = seqRng([15, 6]);
+  var authoredWin = authored.perform({ type: 'attack', target: 0 });
+  assert.strictEqual(authoredWin.events.filter(function (e) { return e.t === 'combat_win'; })[0].narr, '靶倒下了。');
+  assert.strictEqual(countLine(playerLog(authoredWin.events), '靶倒下了。'), 1);
+
+  var misplaced = JSON.parse(JSON.stringify(story));
+  misplaced.scenes[2].choices[0].winText = '不該寫在這裡。';
+  var bad = T.validateAdventure(misplaced);
+  assert.strictEqual(bad.ok, false);
+  assert.ok(bad.errors.some(function (e) { return e.indexOf('winText') >= 0 && e.indexOf('戰鬥') >= 0; }));
+  var empty = JSON.parse(JSON.stringify(story));
+  empty.scenes[0].choices[0].fleeText = '';
+  var emptyReport = T.validateAdventure(empty);
+  assert.strictEqual(emptyReport.ok, false);
+  assert.ok(emptyReport.errors.some(function (e) { return e.indexOf('fleeText') >= 0; }));
+});
+
+test('root index.html is untouched and the hidden ending still needs eight fights', function () {
+  var mainHtml = require('child_process').execSync('git show main:index.html', { encoding: 'utf8' });
+  var rootHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.strictEqual(rootHtml, mainHtml);
+  assert.deepStrictEqual(adventure.meta.required_for_secret, [
+    'f1_rats', 'f1_bandit', 'f2_bones', 'f2_ooze', 'f3_cult', 'f3_wight', 'hide_vault', 'hide_crypt'
+  ]);
+  assert.strictEqual(adventure.meta.required_for_secret.length, 8);
+  var secret = adventure.scenes.filter(function (sc) { return sc.id === 'secret_win'; })[0];
+  assert.deepStrictEqual(secret.when, { all_flags: ['secret_ready'] });
+  assert.deepStrictEqual(T.previewStorageKeys().slice().sort(), [
+    'wasted-tower-preview-probe',
+    'wasted-tower-preview-save'
+  ]);
+});
+
 if (failed) {
   console.error(failed + ' failed, ' + passed + ' passed');
   process.exit(1);

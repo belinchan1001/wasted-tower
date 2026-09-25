@@ -505,9 +505,64 @@
       }
       if (!Array.isArray(next.allies)) next.allies = [];
       if (!next.rng || typeof next.rng !== 'object') next.rng = next.rng || null;
+      backfillResolvedChecks(next, adventure);
       return next;
     }
   };
+
+  // Older saves recorded the hall approach as a flag, not as a finished check.
+  // Fill the missing check records so a resolved check is not offered again.
+  // A save still standing on that check is left alone, so the roll can happen.
+  function backfillResolvedChecks(save, adventure) {
+    if (!save.done || typeof save.done !== 'object' || Array.isArray(save.done)) save.done = {};
+    var scenes = {};
+    ((adventure && adventure.scenes) || []).forEach(function (sc) {
+      if (sc && sc.id) scenes[sc.id] = sc;
+    });
+    var flags = (save.flags && typeof save.flags === 'object' && !Array.isArray(save.flags)) ? save.flags : {};
+    Object.keys(scenes).forEach(function (id) {
+      var beat = scenes[id];
+      if (!beat || beat.type !== 'beat' || !Array.isArray(beat.choices)) return;
+      var shared = null;
+      var rows = [];
+      var i;
+      for (i = 0; i < beat.choices.length; i++) {
+        var choice = beat.choices[i];
+        if (!choice || typeof choice.to !== 'string') continue;
+        var check = scenes[choice.to];
+        if (!check || check.type !== 'check' || !checkIsOnce(check)) continue;
+        if (check.on_success || check.on_failure) return;
+        if (typeof check.success_to !== 'string' || check.success_to !== check.fail_to) return;
+        if (shared == null) shared = check.success_to;
+        else if (shared !== check.success_to) return;
+        rows.push({ choice: choice, check: check });
+      }
+      if (!rows.length || typeof shared !== 'string') return;
+      var anyFlag = false;
+      rows.forEach(function (row) {
+        var flagged = false;
+        (row.choice.set_flag || []).forEach(function (f) { if (flags[f]) flagged = true; });
+        var cid = row.choice.id ? choiceDoneId(id, row.choice.id) : null;
+        if (cid && save.done[cid]) flagged = true;
+        if (!flagged) return;
+        anyFlag = true;
+        if (cid && !save.done[cid]) save.done[cid] = true;
+        if (save.sceneId === row.check.id) return;
+        var kid = checkDoneId(row.check.id);
+        if (!save.done[kid]) save.done[kid] = { success: true };
+      });
+      var cleared = save.clearedCombats && save.clearedCombats[shared];
+      var past = save.sceneId === shared || save.sceneId === (shared + '_after') || !!cleared;
+      if (anyFlag || !past) return;
+      rows.forEach(function (row) {
+        if (save.sceneId === row.check.id) return;
+        var cid = row.choice.id ? choiceDoneId(id, row.choice.id) : null;
+        if (cid && !save.done[cid]) save.done[cid] = true;
+        var kid = checkDoneId(row.check.id);
+        if (!save.done[kid]) save.done[kid] = { success: true };
+      });
+    });
+  }
 
   var scriptMigrations = {
     // 1: function (save, adventure) { save.scriptVersion = 2; return save; }
@@ -2553,6 +2608,36 @@
     return true;
   };
 
+  // A choice that opens a once-only check, or null.
+  Engine.prototype.choiceLeadsToOnceCheck = function (choice) {
+    if (!choice || typeof choice.to !== 'string') return null;
+    var dest = this.scenes[choice.to];
+    if (!dest || dest.type !== 'check' || !checkIsOnce(dest)) return null;
+    return dest;
+  };
+
+  // Hall-style gate: every check from this beat shares one destination and
+  // none of them carry their own success or failure bundle. Once any of
+  // those checks has a result, the way forward is that destination.
+  Engine.prototype.gateDestination = function (scene) {
+    var choices = (scene && scene.choices) || [];
+    var shared = null;
+    var settled = false;
+    var i;
+    for (i = 0; i < choices.length; i++) {
+      var check = this.choiceLeadsToOnceCheck(choices[i]);
+      if (!check) continue;
+      if (check.on_success || check.on_failure) return null;
+      if (typeof check.success_to !== 'string' || check.success_to !== check.fail_to) return null;
+      if (shared == null) shared = check.success_to;
+      else if (shared !== check.success_to) return null;
+      var lock = this.done[checkDoneId(check.id)];
+      if (lock && typeof lock === 'object') settled = true;
+    }
+    if (!settled || typeof shared !== 'string' || !this.scenes[shared]) return null;
+    return shared;
+  };
+
   // --- legal actions ---------------------------------------------------------
   Engine.prototype.choiceVisible = function (c) {
     var i;
@@ -2668,10 +2753,15 @@
     var sc = this.scene, acts = [], self = this;
     if (sc.type === 'beat') {
       this.refreshSecretReady();
+      var gate = this.gateDestination(sc);
       this.resolvedChoices().forEach(function (c) {
         if (!self.choiceVisible(c)) return; // hidden when requirements unmet
+        if (gate && self.choiceLeadsToOnceCheck(c)) return;
         acts.push({ type: 'choice', id: c.id, label: c.label });
       });
+      if (gate && !acts.some(function (a) { return a.type === 'choice'; })) {
+        acts.push({ type: 'choice', id: '__return_path__', label: '繼續前進' });
+      }
     } else if (sc.type === 'check') {
       // No roll happens on entry: the player presses this.
       // A once-only check that already has a result is skipped on re-entry.
@@ -2721,6 +2811,13 @@
   Engine.prototype.doChoice = function (id) {
     var sc = this.scene, self = this;
     if (sc.type !== 'beat') return this.reject('現在不能做這個選擇。');
+    if (id === '__return_path__') {
+      var dest = this.gateDestination(sc);
+      if (!dest) return this.reject('現在沒有路可以走。');
+      this.emit({ t: 'choice', label: '繼續前進' });
+      this.enterScene(dest);
+      return this.ok();
+    }
     this.refreshSecretReady();
     var choice = null;
     this.resolvedChoices().forEach(function (c) { if (c.id === id) choice = c; });

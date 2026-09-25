@@ -2560,6 +2560,126 @@ test('the same command shape resolves whether it comes from the menu or a later 
   assert.strictEqual(other.ok, false);
 });
 
+test('fleeing the floor-1 bandit does not reroll resolved hall checks', function () {
+  var engine = new T.Engine(adventure, { seed: 95 });
+  engine.start(0);
+  choose(engine, 'rush');
+  var storyRng = engine.rng;
+  winCombat(engine);
+  engine.rng = storyRng;
+  answerInserted(engine);
+  choose(engine, 'climb');
+  assert.strictEqual(engine.sceneId, 'f1_ath');
+  var before = engine.rng.rolled();
+  var rolled = engine.perform({ type: 'roll' });
+  assert.strictEqual(rolled.ok, true, rolled.error);
+  assert.strictEqual(engine.sceneId, 'f1_bandit');
+  assert.ok(engine.done['check:f1_ath'] && typeof engine.done['check:f1_ath'] === 'object');
+  assert.strictEqual(engine.rng.rolled(), before + 1);
+  var atFight = engine.rng.exportState();
+  var fled = engine.perform({ type: 'flee' });
+  assert.strictEqual(fled.ok, true, fled.error);
+  assert.strictEqual(engine.sceneId, 'f1_hall');
+  assert.deepStrictEqual(engine.rng.exportState(), atFight);
+  var choices = choiceIds(engine);
+  assert.ok(choices.length >= 1);
+  assert.ok(choices.indexOf('climb') < 0);
+  assert.ok(choices.indexOf('creep') < 0);
+  assert.ok(choices.indexOf('scan') < 0);
+  assert.ok(!engine.legalActions().some(function (a) { return a.type === 'roll'; }));
+
+  var saved = engine.exportSave();
+  assert.strictEqual(saved.rng.count, atFight.count);
+  assert.strictEqual(saved.rng.s, atFight.s);
+  assert.ok(saved.done['check:f1_ath']);
+  var code = T.encodeSaveCode(saved);
+  var loaded = T.loadGame(adventure, code);
+  assert.strictEqual(loaded.ok, true, loaded.error);
+  assert.strictEqual(loaded.engine.sceneId, 'f1_hall');
+  assert.strictEqual(loaded.engine.rng.rolled(), atFight.count);
+  assert.strictEqual(loaded.engine.rng.exportState().s, atFight.s);
+  assert.deepStrictEqual(choiceIds(loaded.engine), choices);
+  assert.ok(loaded.engine.done['check:f1_ath']);
+  assert.ok(choiceIds(loaded.engine).indexOf('climb') < 0);
+  assert.strictEqual(engine.rng.die(20), loaded.engine.rng.die(20));
+
+  var forward = T.loadGame(adventure, code);
+  var pos = forward.engine.rng.exportState();
+  var go = forward.engine.perform({ type: 'choice', id: choiceIds(forward.engine)[0] });
+  assert.strictEqual(go.ok, true, go.error);
+  assert.strictEqual(forward.engine.sceneId, 'f1_bandit');
+  assert.deepStrictEqual(forward.engine.rng.exportState(), pos);
+  assert.ok(!go.events.some(function (e) { return e.t === 'check'; }));
+
+  function shell(sceneId, flags, done, encounter) {
+    return {
+      v: 3,
+      adventureId: 'wasted_tower',
+      scriptVersion: 1,
+      pregenIndex: 0,
+      character: {
+        name: '布倫', cls: '戰士', race: '人類',
+        str: 16, dex: 12, con: 15, int: 8, wis: 10, cha: 10,
+        ac: 16, hp: 12, hp_max: 12, acBonus: 0,
+        skills: ['athletics'],
+        inventory: ['potion_heal', 'lantern'],
+        attack: { name: '長劍', bonus: 5, damage: '1d8+3' },
+        features: []
+      },
+      sceneId: sceneId,
+      flags: flags,
+      done: done || {},
+      clearedCombats: {},
+      keyChoices: [],
+      rivalPregenIndex: null,
+      encounter: encounter || null,
+      round: encounter ? 1 : 0,
+      status: 'playing',
+      lastCheckpoint: null,
+      playMs: 1,
+      rng: { kind: 'seeded', seed: 95, s: 95, count: 4 }
+    };
+  }
+  var hall = T.loadGame(adventure, T.encodeSaveCode(shell('f1_hall', { cls_warrior: true, hall_climb: true })));
+  assert.strictEqual(hall.ok, true, hall.error);
+  assert.ok(hall.engine.done['check:f1_ath']);
+  assert.ok(hall.engine.done['choice:f1_hall/climb']);
+  assert.ok(!hall.engine.done['check:f1_stl']);
+  assert.ok(choiceIds(hall.engine).indexOf('climb') < 0);
+  assert.ok(choiceIds(hall.engine).indexOf('creep') < 0);
+  assert.ok(choiceIds(hall.engine).indexOf('scan') < 0);
+  assert.ok(choiceIds(hall.engine).length >= 1);
+  assert.strictEqual(hall.engine.rng.rolled(), 4);
+
+  var waiting = T.loadGame(adventure, T.encodeSaveCode(shell('f1_ath', { cls_warrior: true, hall_climb: true })));
+  assert.strictEqual(waiting.ok, true, waiting.error);
+  assert.ok(!waiting.engine.done['check:f1_ath']);
+  assert.ok(waiting.engine.legalActions().some(function (a) { return a.type === 'roll'; }));
+
+  var early = T.loadGame(adventure, T.encodeSaveCode(shell('f1_gate', { cls_warrior: true, gate_rushed: true })));
+  assert.strictEqual(early.ok, true, early.error);
+  assert.ok(!early.engine.done['check:f1_ath']);
+  assert.ok(!early.engine.done['check:f1_stl']);
+  assert.ok(!early.engine.done['check:f1_per']);
+
+  var bandit = T.loadGame(adventure, T.encodeSaveCode(shell('f1_bandit', { cls_warrior: true }, {}, {
+    enemies: [{ name: '盜墓者', ac: 13, hp: 11, hp_max: 11, atk: 3, damage: '1d6+1' }],
+    order: [],
+    acted: {},
+    round: 1
+  })));
+  assert.strictEqual(bandit.ok, true, bandit.error);
+  assert.ok(bandit.engine.done['check:f1_ath']);
+  assert.ok(bandit.engine.done['check:f1_stl']);
+  assert.ok(bandit.engine.done['check:f1_per']);
+  var back = bandit.engine.perform({ type: 'flee' });
+  assert.strictEqual(back.ok, true, back.error);
+  assert.strictEqual(bandit.engine.sceneId, 'f1_hall');
+  assert.strictEqual(bandit.engine.rng.rolled(), 4);
+  assert.ok(choiceIds(bandit.engine).length >= 1);
+  assert.ok(choiceIds(bandit.engine).indexOf('climb') < 0);
+});
+
 function simulateClass(index, runs) {
   var wins = 0;
   var roundSum = 0;

@@ -2,6 +2,13 @@
    Writers: edit the wasted_tower object below. Do not edit js/engine.js for story work.
    Syntax is JSON (quoted keys, no trailing commas). See README「腳本資料格式」.
    寫故事只改下面的 wasted_tower 物件。說明見 README。
+
+   授權與鳴謝
+   《廢塔一夜》部分戰鬥規則（例如優勢、劣勢、狀態、豁免、傷害類型，以及部分招式、道具與敵人能力）改編自下列規則文件，並經刪減、調整數值與翻譯為中文。
+
+   This work includes material taken from the System Reference Document 5.1 (“SRD 5.1”) by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode.
+
+   故事、角色、地點與敵人名稱屬本作原創。
 */
 (function (root) {
   var ADVENTURES = {
@@ -177,15 +184,36 @@
         "potion_heal",
         "lantern"
       ],
+      "passives": [
+        {
+          "id": "champion",
+          "name": "冠軍",
+          "crit_on": 19
+        }
+      ],
       "features": [
         {
           "id": "power_strike",
           "name": "破甲重擊",
-          "uses": 3,
-          "effect": {
-            "type": "damage",
-            "amount": 10
+          "uses": 2,
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "attack",
+          "uses_weapon": true,
+          "damage_dice": "1d8",
+          "damage_type": "slashing",
+          "on_hit": {
+            "ac_delta": -2
           }
+        },
+        {
+          "id": "second_wind",
+          "name": "喘息",
+          "uses": 1,
+          "costs_turn": false,
+          "target": "self",
+          "roll": "auto",
+          "heal_dice": "1d10+2"
         }
       ]
     },
@@ -218,10 +246,26 @@
         {
           "id": "aimed_shot",
           "name": "穿心一箭",
-          "uses": 3,
-          "effect": {
-            "type": "damage",
-            "amount": 8
+          "uses": 2,
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "attack",
+          "advantage": true,
+          "uses_weapon": true,
+          "damage_dice": "1d8",
+          "damage_type": "piercing"
+        },
+        {
+          "id": "hunters_mark",
+          "name": "獵人印記",
+          "uses": 2,
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "attack",
+          "uses_weapon": true,
+          "mark": {
+            "bonus_dice": "1d6",
+            "damage_type": "piercing"
           }
         }
       ]
@@ -250,14 +294,39 @@
         "potion_heal",
         "lantern"
       ],
+      "passives": [
+        {
+          "id": "sneak_attack",
+          "name": "偷襲",
+          "dice": "2d6",
+          "damage_type": "piercing",
+          "once_per_turn": true
+        }
+      ],
       "features": [
         {
-          "id": "sneak_stab",
+          "id": "shadow_attack",
           "name": "暗影偷襲",
           "uses": 3,
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "attack",
+          "uses_weapon": true,
+          "stealth_dc": "10+wis"
+        },
+        {
+          "id": "uncanny_dodge",
+          "name": "閃身",
+          "uses": 2,
+          "costs_turn": false,
+          "timing": "reaction",
+          "target": "self",
+          "roll": "auto",
+          "trigger": {
+            "damage_at_least": 4
+          },
           "effect": {
-            "type": "damage",
-            "amount": 9
+            "type": "halve_damage"
           }
         }
       ]
@@ -286,14 +355,37 @@
         "cure_wounds",
         "potion_heal"
       ],
+      "pools": [
+        {
+          "id": "channel",
+          "name": "神恩",
+          "uses": 3
+        }
+      ],
       "features": [
         {
-          "id": "lay_on_hands",
+          "id": "cure_wounds",
           "name": "聖療",
-          "uses": 3,
-          "effect": {
-            "type": "heal",
-            "amount": 8
+          "pool": "channel",
+          "cost": 1,
+          "costs_turn": true,
+          "target": "ally",
+          "roll": "auto",
+          "heal_dice": "1d8+3"
+        },
+        {
+          "id": "guiding_bolt",
+          "name": "引導之矢",
+          "pool": "channel",
+          "cost": 1,
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "spell_attack",
+          "attack_bonus": 5,
+          "damage_dice": "2d6",
+          "damage_type": "radiant",
+          "on_hit": {
+            "next_attack_advantage": true
           }
         }
       ]
@@ -322,15 +414,46 @@
         "burning_hands",
         "potion_heal"
       ],
-      "features": [
+      "passives": [
         {
           "id": "mage_armor",
           "name": "法師護甲",
-          "uses": 3,
+          "ac_bonus": 3
+        }
+      ],
+      "pools": [
+        {
+          "id": "slots",
+          "name": "法術位",
+          "uses": 3
+        }
+      ],
+      "features": [
+        {
+          "id": "magic_missile",
+          "name": "魔法飛彈",
+          "pool": "slots",
+          "cost": 1,
+          "costs_turn": true,
+          "target": "enemies",
+          "roll": "auto",
+          "missiles": 3,
+          "damage_dice": "1d4+1",
+          "damage_type": "force"
+        },
+        {
+          "id": "shield",
+          "name": "護盾術",
+          "pool": "slots",
+          "cost": 1,
+          "costs_turn": true,
+          "timing": "ready",
+          "target": "self",
+          "roll": "auto",
           "effect": {
             "type": "ac_bonus",
-            "amount": 3,
-            "duration": "combat"
+            "amount": 5,
+            "until": "next_turn"
           }
         }
       ]
@@ -439,7 +562,9 @@
           "ac": 11,
           "hp": 4,
           "atk": 2,
-          "damage": "1d4"
+          "damage": "1d4",
+          "per_extra": { "hp": 0, "copies": 1 },
+          "yield": { "kind": "last_standing", "group": "rats" }
         },
         {
           "id": "rat_2",
@@ -447,7 +572,9 @@
           "ac": 11,
           "hp": 4,
           "atk": 2,
-          "damage": "1d4"
+          "damage": "1d4",
+          "per_extra": { "hp": 0, "copies": 0 },
+          "yield": { "kind": "last_standing", "group": "rats" }
         },
         {
           "id": "rat_3",
@@ -455,7 +582,9 @@
           "ac": 11,
           "hp": 3,
           "atk": 2,
-          "damage": "1d4"
+          "damage": "1d4",
+          "per_extra": { "hp": 0, "copies": 0 },
+          "yield": { "kind": "last_standing", "group": "rats" }
         }
       ],
       "win_to": "f1_rats_after",
@@ -588,7 +717,9 @@
           "ac": 13,
           "hp": 11,
           "atk": 3,
-          "damage": "1d6+1"
+          "damage": "1d6+1",
+          "per_extra": { "hp": 6, "copies": 0 },
+          "yield": { "kind": "hp_fraction", "num": 1, "den": 3 }
         }
       ],
       "win_to": "f1_bandit_after",
@@ -754,7 +885,8 @@
           "ac": 14,
           "hp": 14,
           "atk": 4,
-          "damage": "1d6+1"
+          "damage": "1d6+1",
+          "per_extra": { "hp": 8, "copies": 0 }
         }
       ],
       "win_to": "hide_vault_loot",
@@ -800,7 +932,8 @@
           "ac": 12,
           "hp": 9,
           "atk": 3,
-          "damage": "1d4+1"
+          "damage": "1d4+1",
+          "per_extra": { "hp": 6, "copies": 0 }
         }
       ],
       "win_to": "f2_bones_after",
@@ -985,7 +1118,8 @@
           "ac": 11,
           "hp": 14,
           "atk": 3,
-          "damage": "1d4+1"
+          "damage": "1d4+1",
+          "per_extra": { "hp": 8, "copies": 0 }
         }
       ],
       "win_to": "f2_ooze_after",
@@ -1242,7 +1376,9 @@
           "ac": 12,
           "hp": 12,
           "atk": 3,
-          "damage": "1d6+1"
+          "damage": "1d6+1",
+          "per_extra": { "hp": 6, "copies": 0 },
+          "yield": { "kind": "hp_fraction", "num": 1, "den": 4 }
         }
       ],
       "win_to": "f3_cult_after",
@@ -1558,7 +1694,8 @@
           "ac": 12,
           "hp": 10,
           "atk": 3,
-          "damage": "1d4+2"
+          "damage": "1d4+2",
+          "per_extra": { "hp": 6, "copies": 0 }
         }
       ],
       "win_to": "hide_crypt_loot",
@@ -1599,7 +1736,8 @@
           "ac": 13,
           "hp": 16,
           "atk": 4,
-          "damage": "1d6+1"
+          "damage": "1d6+1",
+          "per_extra": { "hp": 10, "copies": 0 }
         }
       ],
       "win_to": "cp_f3",
@@ -1765,7 +1903,8 @@
       ],
       "enemies": [
         {
-          "from_pregen": "selected_rival"
+          "from_pregen": "selected_rival",
+          "per_extra": { "hp": 0, "copies": 0 }
         }
       ],
       "win_to": "secret_win",

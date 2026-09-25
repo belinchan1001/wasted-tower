@@ -25,7 +25,8 @@
   };
 
   var SCENE_TYPES = ['beat', 'check', 'combat', 'checkpoint', 'end'];
-  var SAVE_VERSION = 3;
+  var SAVE_VERSION = 4;
+  var HERO_INITIATIVE_BONUS = 2;
   var ITEM_KINDS = ['gear', 'key', 'consumable'];
   var ENDING_TYPES = ['lose', 'main', 'variant', 'class', 'secret'];
   // Card title when more than one ending applies. Higher wins.
@@ -105,6 +106,76 @@
   }
 
   function abilityMod(score) { return Math.floor((score - 10) / 2); }
+
+  var MOVE_ROLLS = { attack: 1, spell_attack: 1, auto: 1, check: 1 };
+  var MOVE_TARGETS = { self: 1, ally: 1, enemy: 1, enemies: 1 };
+
+  // Advantage: two d20s, keep the higher. Disadvantage: keep the lower.
+  // A natural 1 on the kept die always misses. A natural 20 always hits and crits.
+  function rollD20(rng, mode) {
+    var a = rng.die(20);
+    if (!mode || mode === 'normal') return { dice: [a], face: a, mode: 'normal' };
+    var b = rng.die(20);
+    var face = mode === 'advantage' ? Math.max(a, b) : Math.min(a, b);
+    return { dice: [a, b], face: face, mode: mode };
+  }
+
+  // Crits roll the damage dice twice and add the modifier once.
+  function rollDamage(spec, rng, crit) {
+    var p = parseDice(spec);
+    if (!p) throw new Error('bad dice spec: ' + spec);
+    var count = p.count * (crit ? 2 : 1);
+    var rolls = [];
+    var total = 0;
+    var i, r;
+    for (i = 0; i < count; i++) {
+      r = rng.die(p.sides);
+      rolls.push(r);
+      total += r;
+    }
+    total += p.mod;
+    return { spec: crit ? (count + 'd' + p.sides + (p.mod ? (p.mod > 0 ? '+' : '') + p.mod : '')) : spec, rolls: rolls, mod: p.mod, total: total, crit: !!crit };
+  }
+
+  function sumDamage(parts) {
+    var rolls = [];
+    var total = 0;
+    var specs = [];
+    (parts || []).forEach(function (p) {
+      if (!p) return;
+      specs.push(p.spec);
+      rolls = rolls.concat(p.rolls || []);
+      total += p.total;
+    });
+    return { spec: specs.join(' + '), rolls: rolls, mod: 0, total: total, parts: parts || [] };
+  }
+
+  function featureIsLegacy(f) {
+    return !!(f && f.effect && typeof f.effect === 'object' && !f.roll);
+  }
+
+  function fractionThreshold(hpMax, num, den) {
+    if (!Number.isInteger(hpMax) || !den) return 0;
+    return Math.floor(hpMax * num / den);
+  }
+
+  // Every resolved action is { actor, action, target }, no matter who sent it.
+  function normalizeCommand(action) {
+    if (!action || typeof action !== 'object') return null;
+    var name = action.action || action.type;
+    if (name === 'use_feature') name = 'move';
+    if (name === 'use_item') name = 'item';
+    return {
+      actor: action.actor == null ? 0 : action.actor,
+      action: name,
+      target: action.target,
+      targets: action.targets || null,
+      moveId: action.moveId || action.featureId || null,
+      slot: action.slot,
+      id: action.id,
+      outcome: action.outcome || null
+    };
+  }
 
   function copyMap(obj) {
     var out = {};
@@ -411,6 +482,29 @@
       var next = deepCopy(save);
       next.v = 3;
       if (!next.done || typeof next.done !== 'object' || Array.isArray(next.done)) next.done = {};
+      return next;
+    },
+    3: function (save, adventure) {
+      var next = deepCopy(save);
+      next.v = 4;
+      var c = next.character;
+      if (c && typeof c === 'object') {
+        if (!Array.isArray(c.statuses)) c.statuses = [];
+        if (!Number.isInteger(c.hpMaxReduction) || c.hpMaxReduction < 0) c.hpMaxReduction = 0;
+        var pre = adventure && adventure.pregens && adventure.pregens[next.pregenIndex];
+        if (pre) {
+          var built = buildCharacter(pre);
+          c.features = built.features;
+          c.pools = built.pools;
+          c.passives = built.passives;
+          if (!c.attack) c.attack = built.attack;
+        } else {
+          if (!c.pools || typeof c.pools !== 'object') c.pools = {};
+          if (!Array.isArray(c.passives)) c.passives = [];
+        }
+      }
+      if (!Array.isArray(next.allies)) next.allies = [];
+      if (!next.rng || typeof next.rng !== 'object') next.rng = next.rng || null;
       return next;
     }
   };
@@ -1466,7 +1560,7 @@
       if (node.once !== undefined && typeof node.once !== 'boolean') err(where + ' 的 once 必須是布林。');
       if (node.repeatable !== undefined && typeof node.repeatable !== 'boolean') err(where + ' 的 repeatable 必須是布林。');
     }
-    // clear_status is accepted and ignored until a later phase has statuses.
+    // clear_status is applied: it clears the status list and does not heal by itself.
     function validateRestSpec(rest, where) {
       if (!rest || typeof rest !== 'object' || Array.isArray(rest)) {
         err(where + ' 必須是物件。');
@@ -1778,31 +1872,69 @@
         }
         if (!Array.isArray(p.inventory)) err(pw + ' 的 inventory 必須是陣列。');
         else p.inventory.forEach(function (id) { checkItem(id, pw + ' 的 inventory'); });
-        if (!Array.isArray(p.features) || p.features.length !== 1) {
-          err(pw + ' 必須剛好有 1 個 features。');
+        var poolIds = {};
+        if (p.pools !== undefined) {
+          if (!Array.isArray(p.pools)) err(pw + ' 的 pools 必須是陣列。');
+          else p.pools.forEach(function (pool, pi) {
+            var qw = pw + ' 的資源 #' + pi;
+            if (!pool || typeof pool.id !== 'string' || !pool.id) { err(qw + ' 缺少 id。'); return; }
+            if (poolIds[pool.id]) err(qw + ' 的 id 重複。');
+            poolIds[pool.id] = 1;
+            if (typeof pool.name !== 'string' || !pool.name) err(qw + ' 缺少 name。');
+            if (!Number.isInteger(pool.uses) || pool.uses < 1) err(qw + ' 的 uses 必須是正整數。');
+          });
+        }
+        if (p.passives !== undefined) {
+          if (!Array.isArray(p.passives)) err(pw + ' 的 passives 必須是陣列。');
+          else p.passives.forEach(function (pass, pi) {
+            if (!pass || typeof pass.id !== 'string' || !pass.id) err(pw + ' 的被動 #' + pi + ' 缺少 id。');
+            if (!pass || typeof pass.name !== 'string' || !pass.name) err(pw + ' 的被動 #' + pi + ' 缺少 name。');
+          });
+        }
+        if (!Array.isArray(p.features) || p.features.length < 1) {
+          err(pw + ' 的 features 必須是至少一招的陣列。');
         } else {
-          var f = p.features[0];
-          if (!f || typeof f.id !== 'string' || !f.id) err(pw + ' 的 feature 缺少 id。');
-          if (!f || typeof f.name !== 'string' || !f.name) err(pw + ' 的 feature 缺少 name。');
-          if (!f || f.uses !== 3) err(pw + ' 的 feature.uses 必須是 3。');
-          if (!f || !f.effect || typeof f.effect !== 'object') err(pw + ' 的 feature 缺少 effect。');
-          else {
-            var et = f.effect.type;
-            if (et === 'damage' || et === 'heal') {
-              if (!Number.isInteger(f.effect.amount) || f.effect.amount < 1) {
-                err(pw + ' 的 feature.effect.amount 必須是正整數。');
+          var seenFeat = {};
+          p.features.forEach(function (f, fi) {
+            var fw = pw + ' 的招式 #' + fi;
+            if (!f || typeof f.id !== 'string' || !f.id) { err(fw + ' 缺少 id。'); return; }
+            fw = pw + ' 的招式「' + f.id + '」';
+            if (seenFeat[f.id]) err(fw + ' 的 id 重複。');
+            seenFeat[f.id] = 1;
+            if (typeof f.name !== 'string' || !f.name) err(fw + ' 缺少 name。');
+            if (featureIsLegacy(f)) {
+              if (f.uses !== 3) err(fw + ' 的 uses 必須是 3。');
+              var et = f.effect.type;
+              if (et === 'damage' || et === 'heal' || et === 'ac_bonus') {
+                if (!Number.isInteger(f.effect.amount) || f.effect.amount < 1) {
+                  err(fw + ' 的 effect.amount 必須是正整數。');
+                }
+                if (et === 'ac_bonus' && f.effect.duration !== 'combat') {
+                  err(fw + ' 的 effect.duration 必須是 "combat"。');
+                }
+              } else {
+                err(fw + ' 的 effect.type 必須是 damage / heal / ac_bonus。');
               }
-            } else if (et === 'ac_bonus') {
-              if (!Number.isInteger(f.effect.amount) || f.effect.amount < 1) {
-                err(pw + ' 的 feature.effect.amount 必須是正整數。');
-              }
-              if (f.effect.duration !== 'combat') {
-                err(pw + ' 的 feature.effect.duration 必須是 "combat"。');
-              }
-            } else {
-              err(pw + ' 的 feature.effect.type 必須是 damage / heal / ac_bonus。');
+              return;
             }
-          }
+            if (!MOVE_ROLLS[f.roll]) err(fw + ' 的 roll 必須是 attack / spell_attack / auto / check。');
+            if (!MOVE_TARGETS[f.target]) err(fw + ' 的 target 必須是 self / ally / enemy / enemies。');
+            if (typeof f.costs_turn !== 'boolean') err(fw + ' 的 costs_turn 必須是布林。');
+            if (f.pool !== undefined) {
+              if (typeof f.pool !== 'string' || !poolIds[f.pool]) err(fw + ' 的 pool 指向不存在的資源。');
+              if (!Number.isInteger(f.cost) || f.cost < 1) err(fw + ' 的 cost 必須是正整數。');
+            } else if (!Number.isInteger(f.uses) || f.uses < 1) {
+              err(fw + ' 的 uses 必須是正整數（每層次數）。');
+            }
+            if (f.damage_dice !== undefined) {
+              if (!parseDice(f.damage_dice)) err(fw + ' 的 damage_dice 不是合法骰子字串。');
+              if (typeof f.damage_type !== 'string' || !f.damage_type) err(fw + ' 有傷害骰時必須寫 damage_type。');
+            }
+            if (f.heal_dice !== undefined && !parseDice(f.heal_dice)) err(fw + ' 的 heal_dice 不是合法骰子字串。');
+            if (f.timing !== undefined && f.timing !== 'action' && f.timing !== 'reaction' && f.timing !== 'ready' && f.timing !== 'free') {
+              err(fw + ' 的 timing 必須是 action / reaction / ready / free。');
+            }
+          });
         }
       });
     }
@@ -1845,6 +1977,46 @@
     this.playMs = 0;
     this.playFrozen = false;
     this.playTimeKnown = false;
+    this.partySize = Number.isInteger(options.partySize) && options.partySize >= 1 ? options.partySize : 1;
+    this.party = [];
+    this.checkpointSnap = null;
+    this.retryCount = 0;
+  }
+
+  function buildCharacter(p) {
+    var pools = {};
+    (p.pools || []).forEach(function (pool) {
+      pools[pool.id] = { id: pool.id, name: pool.name, uses: pool.uses, usesMax: pool.uses };
+    });
+    var features = (p.features || []).map(function (f) {
+      var copy = deepCopy(f);
+      if (f.pool && pools[f.pool]) {
+        copy.uses = pools[f.pool].uses;
+        copy.usesMax = pools[f.pool].usesMax;
+        copy.cost = f.cost || 1;
+      } else if (featureIsLegacy(f)) {
+        copy.uses = f.uses;
+        copy.usesMax = f.uses;
+      } else {
+        copy.uses = f.uses;
+        copy.usesMax = f.uses;
+      }
+      return copy;
+    });
+    return {
+      name: p.name, cls: p['class'], race: p.race,
+      str: p.str, dex: p.dex, con: p.con, int: p['int'], wis: p.wis, cha: p.cha,
+      ac: p.ac, acBonus: 0, hp: p.hp_max, hp_max: p.hp_max, hpMaxReduction: 0,
+      skills: (p.skills || []).slice(),
+      attack: { name: p.attack.name, bonus: p.attack.bonus, damage: p.attack.damage },
+      inventory: (p.inventory || []).slice(),
+      features: features,
+      pools: pools,
+      passives: deepCopy(p.passives || []),
+      statuses: [],
+      dodging: false,
+      sneakUsed: false
+    };
   }
 
   // --- internal plumbing -----------------------------------------------------
@@ -1871,7 +2043,7 @@
     if (!this.encounter) return [];
     var out = [];
     this.encounter.enemies.forEach(function (e, i) {
-      if (e.hp > 0) out.push({ index: i, ref: e, name: e.name, hp: e.hp, hp_max: e.hp_max });
+      if (e.hp > 0 && !e.yielded) out.push({ index: i, ref: e, name: e.name, hp: e.hp, hp_max: e.hp_max });
     });
     return out;
   };
@@ -1879,34 +2051,75 @@
   Engine.prototype.enemySnapshot = function () {
     if (!this.encounter) return [];
     return this.encounter.enemies.map(function (e, i) {
-      return { index: i, name: e.name, hp: e.hp, hp_max: e.hp_max, alive: e.hp > 0 };
+      return { index: i, name: e.name, hp: e.hp, hp_max: e.hp_max, alive: e.hp > 0 && !e.yielded, yielded: !!e.yielded };
     });
   };
 
   // --- run lifecycle ---------------------------------------------------------
   Engine.prototype.characterFromPregen = function (p) {
+    return buildCharacter(p);
+  };
+
+  Engine.prototype.makeAlly = function (n) {
     return {
-      name: p.name, cls: p['class'], race: p.race,
-      str: p.str, dex: p.dex, con: p.con, int: p['int'], wis: p.wis, cha: p.cha,
-      ac: p.ac, acBonus: 0, hp: p.hp_max, hp_max: p.hp_max,
-      skills: p.skills.slice(),
-      attack: { name: p.attack.name, bonus: p.attack.bonus, damage: p.attack.damage },
-      inventory: p.inventory.slice(),
-      features: (p.features || []).map(function (f) {
-        return {
-          id: f.id, name: f.name, uses: f.uses, usesMax: f.uses,
-          effect: JSON.parse(JSON.stringify(f.effect))
-        };
-      })
+      name: '同伴' + n, cls: '同伴', race: '人類',
+      str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10,
+      ac: 12, acBonus: 0, hp: 10, hp_max: 10, hpMaxReduction: 0,
+      skills: [], attack: { name: '短劍', bonus: 2, damage: '1d4' },
+      inventory: [], features: [], pools: {}, passives: [], statuses: [],
+      dodging: false, sneakUsed: false, ally: true
     };
   };
 
+  Engine.prototype.syncPartyLeader = function () {
+    if (this.party && this.party.length) this.party[0] = this.character;
+  };
+
   Engine.prototype.effectiveAc = function () {
-    return this.character ? this.character.ac + (this.character.acBonus || 0) : 0;
+    var c = this.character;
+    if (!c) return 0;
+    return c.ac + this.passiveAcBonus(c) + (c.acBonus || 0);
+  };
+
+  Engine.prototype.passiveAcBonus = function (hero) {
+    var n = 0;
+    ((hero || this.character).passives || []).forEach(function (p) {
+      if (p && Number.isInteger(p.ac_bonus)) n += p.ac_bonus;
+    });
+    return n;
+  };
+
+  Engine.prototype.critFloor = function (hero) {
+    var floor = 20;
+    ((hero || this.character).passives || []).forEach(function (p) {
+      if (p && Number.isInteger(p.crit_on) && p.crit_on >= 1 && p.crit_on < floor) floor = p.crit_on;
+    });
+    return floor;
   };
 
   Engine.prototype.clearCombatBonuses = function () {
-    if (this.character && this.character.acBonus) this.character.acBonus = 0;
+    if (!this.character) return;
+    this.character.acBonus = 0;
+    this.character.dodging = false;
+    this.character.sneakUsed = false;
+  };
+
+  Engine.prototype.restoreMoveUses = function (hero) {
+    var c = hero || this.character;
+    if (!c) return;
+    Object.keys(c.pools || {}).forEach(function (id) {
+      c.pools[id].uses = c.pools[id].usesMax;
+    });
+    (c.features || []).forEach(function (f) {
+      if (f.pool && c.pools[f.pool]) f.uses = c.pools[f.pool].uses;
+      else if (Number.isInteger(f.usesMax)) f.uses = f.usesMax;
+    });
+  };
+
+  Engine.prototype.clearStatuses = function (hero) {
+    var c = hero || this.character;
+    if (!c) return;
+    c.statuses = [];
   };
 
   Engine.prototype.refreshSecretReady = function () {
@@ -1993,35 +2206,84 @@
     this.refreshSecretReady();
   };
 
+  Engine.prototype.extraHeroes = function () {
+    return Math.max(0, (this.party ? this.party.length : 1) - 1);
+  };
+
+  Engine.prototype.scaleTemplate = function (e) {
+    var extra = this.extraHeroes();
+    var per = (e && e.per_extra) || { hp: 0, copies: 0 };
+    var hpBonus = (Number.isInteger(per.hp) ? per.hp : 0) * extra;
+    var copies = (Number.isInteger(per.copies) ? per.copies : 0) * extra;
+    return { hpBonus: hpBonus, copies: copies, per: per };
+  };
+
   Engine.prototype.resolveEnemy = function (e, index) {
+    var scaled = this.scaleTemplate(e || {});
     if (e && e.from_pregen === 'selected_rival') {
       var idx = this.rivalPregenIndex;
       if (idx === null || idx === undefined) throw new Error('selected_rival but no rival chosen');
       var p = this.adventure.pregens[idx];
       if (!p) throw new Error('invalid rival pregen index');
+      var rivalHp = p.hp_max + scaled.hpBonus;
       return {
         id: 'rival',
         name: p.name,
         cls: p.class,
         race: p.race,
-        ac: p.ac,
-        hp: p.hp_max,
-        hp_max: p.hp_max,
+        ac: p.ac + (this.passiveAcFrom(p)),
+        hp: rivalHp,
+        hp_max: rivalHp,
         atk: p.attack.bonus,
-        damage: p.attack.damage
+        damage: p.attack.damage,
+        dex: p.dex,
+        wis: p.wis,
+        per_extra: { hp: scaled.per.hp || 0, copies: scaled.per.copies || 0 },
+        yield: e.yield ? deepCopy(e.yield) : null,
+        statuses: [],
+        yielded: false
       };
     }
+    var hp = e.hp + scaled.hpBonus;
     return {
       id: e.id || ('enemy_' + index),
       name: e.name,
       cls: e.class || null,
       race: e.race || null,
       ac: e.ac,
-      hp: e.hp,
-      hp_max: e.hp,
+      hp: hp,
+      hp_max: hp,
       atk: e.atk,
-      damage: e.damage
+      damage: e.damage,
+      dex: Number.isInteger(e.dex) ? e.dex : 10,
+      wis: Number.isInteger(e.wis) ? e.wis : 10,
+      per_extra: { hp: scaled.per.hp || 0, copies: scaled.per.copies || 0 },
+      yield: e.yield ? deepCopy(e.yield) : null,
+      statuses: [],
+      yielded: false,
+      grantAdvantage: false,
+      disadvantageNext: false,
+      mark: null
     };
+  };
+
+  Engine.prototype.passiveAcFrom = function (pregen) {
+    var n = 0;
+    (pregen.passives || []).forEach(function (p) {
+      if (p && Number.isInteger(p.ac_bonus)) n += p.ac_bonus;
+    });
+    return n;
+  };
+
+  Engine.prototype.expandEnemyTemplates = function (list) {
+    var out = [];
+    var self = this;
+    (list || []).forEach(function (e) {
+      var copies = 1 + self.scaleTemplate(e || {}).copies;
+      var n;
+      for (n = 0; n < copies; n++) out.push(e);
+    });
+    return out;
   };
 
   Engine.prototype.currentPrompt = function () {
@@ -2079,6 +2341,11 @@
     if (!p) return this.reject('沒有這個角色。');
     this.pregenIndex = pregenIndex;
     this.character = this.characterFromPregen(p);
+    this.party = [this.character];
+    var allyN;
+    for (allyN = 1; allyN < this.partySize; allyN++) this.party.push(this.makeAlly(allyN));
+    this.checkpointSnap = null;
+    this.retryCount = 0;
     this.flags = {};
     this.done = {};
     this._autoHops = 0;
@@ -2133,12 +2400,23 @@
     this.encounter = null;
     if (sc.type === 'checkpoint') this.lastCheckpoint = id;
     this.refreshSecretReady();
+    if (sc.type === 'checkpoint') {
+      this.restoreMoveUses(this.character);
+      this.emit({ t: 'move_refresh', floor: sc.floor || null, healed: 0 });
+    }
     if (sc.type === 'combat') {
       this.round = 1;
       var self = this;
+      var templates = this.expandEnemyTemplates(sc.enemies);
       this.encounter = {
-        enemies: sc.enemies.map(function (e, i) { return self.resolveEnemy(e, i); })
+        enemies: templates.map(function (e, i) { return self.resolveEnemy(e, i); }),
+        order: [],
+        acted: {},
+        round: 1,
+        ambush: null,
+        heroReady: false
       };
+      this.rollInitiative();
     }
     if (sc.type === 'end' && sc.when && !this.conditionsPass(sc.when)) {
       this.emit({
@@ -2180,6 +2458,7 @@
         this.applyRest(sc.rest);
       }
     }
+    if (sc.type === 'checkpoint') this.captureCheckpoint();
     this.emit({
       t: 'scene',
       sceneType: sc.type,
@@ -2199,10 +2478,14 @@
 
   // --- hp helper -------------------------------------------------------------
   // Single place where player HP moves outside of combat damage.
-  // clear_status is left on the rest object for a later phase. Phase 1 has no
-  // status list, so that field is not applied.
+  // clear_status clears the status list. Floor checkpoints do not set heal,
+  // so they restore move uses only.
   Engine.prototype.applyRest = function (rest) {
     if (!rest) return;
+    if (rest.clear_status) {
+      this.clearStatuses(this.character);
+      this.emit({ t: 'clear_status' });
+    }
     var amount = restHealAmount(rest, this.character.hp_max);
     if (amount < 1) return;
     var beforeHp = this.character.hp;
@@ -2211,6 +2494,13 @@
       this.character.hp = beforeHp + healed;
       this.emit({ t: 'rest', healed: healed, hp: this.character.hp, hp_max: this.character.hp_max });
     }
+  };
+
+  Engine.prototype.captureCheckpoint = function () {
+    var snap = this.exportSave();
+    if (!snap) return;
+    delete snap.checkpointSnap;
+    this.checkpointSnap = snap;
   };
 
   Engine.prototype.applyHpDelta = function (delta, reason, floor) {
@@ -2295,33 +2585,63 @@
     });
   };
 
-  // Class features with remaining uses, and whether use_feature is legal now.
-  // use_feature is always offered in beat / check / combat when uses remain;
-  // effect legality (combat-only damage/ac_bonus) gates enabled.
+  // Moves still in the action list. Reactions stay off the menu and fire on their own.
   Engine.prototype.featureActions = function () {
     var self = this;
     var inCombat = this.scene && this.scene.type === 'combat';
     var living = this.livingEnemies();
     var features = (this.character && this.character.features) || [];
-    return features.filter(function (f) { return f.uses > 0; }).map(function (f) {
+    return features.filter(function (f) { return f.timing !== 'reaction'; }).map(function (f) {
+      var uses = self.moveUsesLeft(self.character, f);
+      var legacy = featureIsLegacy(f);
       var act = {
-        type: 'use_feature', featureId: f.id, featureName: f.name, uses: f.uses,
-        usesMax: f.usesMax, effect: f.effect.type, amount: f.effect.amount,
+        type: 'use_feature', featureId: f.id, featureName: f.name,
+        uses: uses, usesMax: f.usesMax,
+        effect: legacy ? f.effect.type : (f.heal_dice ? 'heal' : (f.roll || 'move')),
+        amount: legacy ? f.effect.amount : 0,
+        costsTurn: legacy ? true : f.costs_turn !== false,
+        targetType: f.target || null,
         enabled: false, needsTarget: false, reason: null
       };
-      if (f.effect.type === 'heal') {
-        act.enabled = true;
-      } else if (f.effect.type === 'damage') {
-        if (!inCombat) act.reason = '只能在戰鬥中使用。';
-        else if (living.length === 0) act.reason = '沒有目標。';
-        else { act.enabled = true; act.needsTarget = living.length > 1; }
-      } else if (f.effect.type === 'ac_bonus') {
+      if (uses <= 0) {
+        act.reason = '沒有剩餘次數。';
+        return act;
+      }
+      if (legacy) {
+        if (f.effect.type === 'heal') act.enabled = self.character.hp < self.character.hp_max;
+        else if (f.effect.type === 'damage') {
+          if (!inCombat) act.reason = '只能在戰鬥中使用。';
+          else if (!living.length) act.reason = '沒有目標。';
+          else { act.enabled = true; act.needsTarget = living.length > 1; }
+        } else if (f.effect.type === 'ac_bonus') {
+          if (!inCombat) act.reason = '只能在戰鬥中使用。';
+          else if ((self.character.acBonus || 0) > 0) act.reason = '這一場已經有護甲加成。';
+          else act.enabled = true;
+        }
+        if (!act.enabled && !act.reason && f.effect.type === 'heal') act.reason = '生命已滿。';
+        return act;
+      }
+      if (f.heal_dice) {
+        if (self.character.hp >= self.character.hp_max) act.reason = '生命已滿。';
+        else act.enabled = true;
+        return act;
+      }
+      if (f.timing === 'ready' || (f.effect && f.effect.type === 'ac_bonus')) {
         if (!inCombat) act.reason = '只能在戰鬥中使用。';
         else if ((self.character.acBonus || 0) > 0) act.reason = '這一場已經有護甲加成。';
         else act.enabled = true;
-      } else {
-        act.reason = '未知的特性效果。';
+        return act;
       }
+      if (!inCombat) {
+        act.reason = '只能在戰鬥中使用。';
+        return act;
+      }
+      if (!living.length) {
+        act.reason = '沒有目標。';
+        return act;
+      }
+      act.enabled = true;
+      act.needsTarget = living.length > 1;
       return act;
     });
   };
@@ -2345,6 +2665,7 @@
       this.livingEnemies().forEach(function (e) {
         acts.push({ type: 'attack', target: e.index, targetName: e.name, targetHp: e.hp, targetHpMax: e.hp_max });
       });
+      acts.push({ type: 'defend' });
       acts.push({ type: 'flee', to: sc.flee_to || null });
     } else if (sc.type === 'checkpoint') {
       acts.push({ type: 'continue', label: sc.continue_label || '繼續前進' });
@@ -2360,18 +2681,23 @@
   Engine.prototype.perform = function (action) {
     this.events = [];
     this._autoHops = 0;
-    if (!action || typeof action.type !== 'string') return this.reject('未知的行動。');
-    if (action.type === 'restart') return this.restart();
+    var cmd = normalizeCommand(action);
+    if (!cmd || typeof cmd.action !== 'string') return this.reject('未知的行動。');
+    if (cmd.action === 'restart') return this.restart();
+    if (cmd.action === 'retry') return this.doRetry();
     if (this.status !== 'playing') return this.reject('這一場已經結束了。');
-    switch (action.type) {
-      case 'choice':      return this.doChoice(action.id);
-      case 'roll':        return this.doRoll();
-      case 'attack':      return this.doAttack(action.target);
-      case 'use_item':    return this.doUseItem(action.slot, action.target);
-      case 'use_feature': return this.doUseFeature(action.featureId, action.target);
-      case 'flee':        return this.doFlee();
-      case 'continue':    return this.doContinue();
-      default:            return this.reject('未知的行動。');
+    if (cmd.actor !== 0 && cmd.actor !== '0') return this.reject('現在不能替這個角色行動。');
+    switch (cmd.action) {
+      case 'choice':   return this.doChoice(cmd.id);
+      case 'roll':     return this.doRoll();
+      case 'attack':   return this.doAttack(cmd.target);
+      case 'item':     return this.doUseItem(cmd.slot, cmd.target);
+      case 'move':     return this.doMove(cmd);
+      case 'defend':   return this.doDefend();
+      case 'flee':     return this.doFlee();
+      case 'continue': return this.doContinue();
+      case 'ambush':   return this.doAmbush(cmd.outcome);
+      default:         return this.reject('未知的行動。');
     }
   };
 
@@ -2446,37 +2772,642 @@
     return this.ok();
   };
 
-  Engine.prototype.doAttack = function (targetIndex) {
-    var sc = this.scene, c = this.character;
-    if (sc.type !== 'combat') return this.reject('這裡沒有可以攻擊的對象。');
-    var living = this.livingEnemies();
-    if (living.length === 0) return this.reject('沒有目標。');
-    var target = null;
-    if (targetIndex === undefined || targetIndex === null) {
-      if (living.length > 1) return this.reject('要先選一個目標。');
-      target = living[0].ref;
-      targetIndex = living[0].index;
-    } else {
-      var e = this.encounter.enemies[targetIndex];
-      if (!e || e.hp <= 0) return this.reject('這個目標不能攻擊。');
-      target = e;
+  function actorKey(entry) { return entry.kind + ':' + entry.index; }
+
+  // Initiative uses a stream derived from the save seed and how many dice
+  // have already been rolled. The result is stored on the encounter, so a
+  // reload does not roll it again, and attack dice stay on the main stream.
+  Engine.prototype.initiativeRng = function () {
+    var seed = (this.rng && this.rng.seed) ? this.rng.seed : 1;
+    var n = this.rng && this.rng.rolled ? this.rng.rolled() : 0;
+    var id = this.sceneId || '';
+    var h = 2166136261;
+    var i;
+    for (i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+    var mixed = (seed ^ Math.imul(n + 1, 0x9e3779b9) ^ h) >>> 0;
+    return makeRng(mixed || 1);
+  };
+
+  Engine.prototype.rollInitiative = function () {
+    var order = [];
+    var self = this;
+    var rng = this.initiativeRng();
+    (this.party || []).forEach(function (m, i) {
+      if (!m || m.hp <= 0) return;
+      var d20 = rng.die(20);
+      var bonus = abilityMod(m.dex || 10) + HERO_INITIATIVE_BONUS;
+      order.push({ kind: 'hero', index: i, roll: d20, bonus: bonus, total: d20 + bonus });
+    });
+    this.encounter.enemies.forEach(function (e, i) {
+      var d20 = rng.die(20);
+      var bonus = abilityMod(e.dex != null ? e.dex : 10);
+      order.push({ kind: 'enemy', index: i, roll: d20, bonus: bonus, total: d20 + bonus });
+    });
+    order.sort(function (a, b) {
+      if (b.total !== a.total) return b.total - a.total;
+      if (a.kind !== b.kind) return a.kind === 'hero' ? -1 : 1;
+      return a.index - b.index;
+    });
+    this.encounter.order = order;
+    this.encounter.acted = {};
+    this.encounter.round = 1;
+    this.round = 1;
+    this.emit({
+      t: 'initiative',
+      order: order.map(function (entry) {
+        var name = entry.kind === 'hero'
+          ? self.party[entry.index].name
+          : self.encounter.enemies[entry.index].name;
+        return { kind: entry.kind, index: entry.index, name: name, roll: entry.roll, bonus: entry.bonus, total: entry.total };
+      })
+    });
+  };
+
+  Engine.prototype.entrySurprised = function (entry, round) {
+    var ambush = this.encounter && this.encounter.ambush;
+    var r = round == null ? this.encounter.round : round;
+    if (!ambush || r > 1) return false;
+    if (ambush === 'success' && entry.kind === 'enemy') return true;
+    if (ambush === 'failure' && entry.kind === 'hero') return true;
+    return false;
+  };
+
+  Engine.prototype.entryAlive = function (entry) {
+    if (!entry || !this.encounter) return false;
+    if (entry.kind === 'hero') {
+      var m = this.party[entry.index];
+      return !!(m && m.hp > 0);
     }
-    var d20 = this.rng.die(20);
-    var total = d20 + c.attack.bonus;
-    var hit = total >= target.ac; // natural 20 is just a normal hit
+    var e = this.encounter.enemies[entry.index];
+    return !!(e && e.hp > 0 && !e.yielded);
+  };
+
+  Engine.prototype.allResolved = function (acted, round) {
+    var order = this.encounter.order || [];
+    var i, entry;
+    for (i = 0; i < order.length; i++) {
+      entry = order[i];
+      if (!this.entryAlive(entry)) continue;
+      if (this.entrySurprised(entry, round)) continue;
+      if (!acted[actorKey(entry)]) return false;
+    }
+    return true;
+  };
+
+  // Mutates state. Opens the next round when everyone who can act has acted.
+  Engine.prototype.takeNext = function (state) {
+    if (this.allResolved(state.acted, state.round)) {
+      state.round += 1;
+      state.acted = {};
+    }
+    var order = this.encounter.order || [];
+    var i, entry;
+    for (i = 0; i < order.length; i++) {
+      entry = order[i];
+      if (!this.entryAlive(entry)) continue;
+      if (this.entrySurprised(entry, state.round)) continue;
+      if (state.acted[actorKey(entry)]) continue;
+      return entry;
+    }
+    return null;
+  };
+
+  Engine.prototype.queueState = function () {
+    return { acted: copyMap(this.encounter.acted), round: this.encounter.round };
+  };
+
+  Engine.prototype.commitQueue = function (state) {
+    this.encounter.acted = state.acted;
+    this.encounter.round = state.round;
+    this.round = state.round;
+  };
+
+  Engine.prototype.enemySwingCounts = function () {
+    var before = 0;
+    var after = 0;
+    if (!this.encounter || !this.encounter.order) return { before: 0, after: 0 };
+    var state = this.queueState();
+    var phase = 'before';
+    var restRound = null;
+    var guard = 0;
+    while (guard++ < 40) {
+      var entry = this.takeNext(state);
+      if (!entry) break;
+      if (entry.kind === 'hero' && entry.index === 0) {
+        if (phase === 'before') {
+          phase = 'after';
+          restRound = state.round;
+          state.acted[actorKey(entry)] = true;
+          continue;
+        }
+        break;
+      }
+      if (phase === 'after' && state.round !== restRound) break;
+      if (entry.kind === 'enemy') {
+        if (phase === 'before') before++;
+        else after++;
+      }
+      state.acted[actorKey(entry)] = true;
+    }
+    return { before: before, after: after };
+  };
+
+  Engine.prototype.enemyAttacksBeforeHero = function () {
+    return this.enemySwingCounts().before;
+  };
+
+  Engine.prototype.enemyAttacksAfterHero = function () {
+    return this.enemySwingCounts().after;
+  };
+
+  Engine.prototype.combatResult = function () {
+    if (!this.encounter || !this.encounter.enemies.length) return null;
+    var enemies = this.encounter.enemies;
+    var unresolved = false;
+    var yielded = false;
+    enemies.forEach(function (e) {
+      if (e.yielded) yielded = true;
+      else if (e.hp > 0) unresolved = true;
+    });
+    if (unresolved) return null;
+    return yielded ? 'yield' : 'defeat';
+  };
+
+  Engine.prototype.winCombat = function (reason) {
+    var why = reason || 'defeat';
+    this.emit({ t: 'combat_win', reason: why });
+    var dest = this.scene.win_to;
+    this.markCombatCleared(this.sceneId);
+    this.enterScene(dest);
+    return this.ok();
+  };
+
+  Engine.prototype.findMove = function (hero, id) {
+    var found = null;
+    ((hero || this.character).features || []).forEach(function (f) {
+      if (f.id === id) found = f;
+    });
+    return found;
+  };
+
+  Engine.prototype.moveUsesLeft = function (hero, feature) {
+    if (!feature) return 0;
+    if (feature.pool && hero.pools && hero.pools[feature.pool]) return hero.pools[feature.pool].uses;
+    return feature.uses || 0;
+  };
+
+  Engine.prototype.spendMove = function (hero, feature) {
+    if (feature.pool && hero.pools && hero.pools[feature.pool]) {
+      var pool = hero.pools[feature.pool];
+      var cost = feature.cost || 1;
+      if (pool.uses < cost) return -1;
+      pool.uses -= cost;
+      (hero.features || []).forEach(function (f) {
+        if (f.pool === feature.pool) f.uses = pool.uses;
+      });
+      return pool.uses;
+    }
+    if ((feature.uses || 0) < 1) return -1;
+    feature.uses -= 1;
+    return feature.uses;
+  };
+
+  Engine.prototype.hurtEnemy = function (enemy, amount) {
+    var rule = enemy.yield;
+    var before = enemy.hp;
+    if (rule && rule.kind === 'hp_fraction') {
+      var threshold = fractionThreshold(enemy.hp_max, rule.num, rule.den);
+      if (threshold > 0 && before - amount <= threshold) {
+        enemy.hp = threshold;
+        enemy.yielded = true;
+        return { yielded: true, hp: enemy.hp, stopped: true, threshold: threshold };
+      }
+    }
+    enemy.hp = Math.max(0, before - amount);
+    return { yielded: false, hp: enemy.hp, stopped: false, threshold: null };
+  };
+
+  Engine.prototype.checkGroupYield = function () {
+    if (!this.encounter) return false;
+    var groups = {};
+    this.encounter.enemies.forEach(function (e) {
+      if (!e.yield || e.yield.kind !== 'last_standing') return;
+      var g = e.yield.group || e.name;
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(e);
+    });
+    var triggered = false;
+    Object.keys(groups).forEach(function (g) {
+      var members = groups[g];
+      if (members.length < 2) return;
+      if (members.some(function (e) { return e.yielded; })) return;
+      var living = members.filter(function (e) { return e.hp > 0; });
+      if (living.length === 1) {
+        living[0].yielded = true;
+        triggered = true;
+      } else if (living.length === 0) {
+        var last = members[members.length - 1];
+        members.forEach(function (e) { if (e.hp <= 0) last = e; });
+        last.hp = 1;
+        last.yielded = true;
+        triggered = true;
+      }
+    });
+    return triggered;
+  };
+
+  Engine.prototype.hurtHero = function (hero, amount) {
+    var feature = this.findMove(hero, 'uncanny_dodge');
+    var original = amount;
+    var halved = false;
+    if (feature && this.moveUsesLeft(hero, feature) > 0 && amount >= 4 &&
+        feature.trigger && feature.trigger.damage_at_least && amount >= feature.trigger.damage_at_least) {
+      amount = Math.floor(amount / 2);
+      this.spendMove(hero, feature);
+      halved = true;
+      this.emit({
+        t: 'reaction', featureId: feature.id, featureName: feature.name,
+        original: original, amount: amount, uses: feature.uses, usesMax: feature.usesMax
+      });
+    }
+    var full = hero.hp > 0 && hero.hp >= hero.hp_max;
+    var massive = false;
+    if (amount > 0 && full && hero.hp - amount <= 0) {
+      hero.hp = 1;
+      massive = true;
+    } else {
+      hero.hp = Math.max(0, hero.hp - amount);
+    }
+    return { amount: amount, original: original, halved: halved, massive: massive, hp: hero.hp };
+  };
+
+  Engine.prototype.sneakBonus = function (hero, target, hadAdvantage, crit) {
+    var passive = null;
+    (hero.passives || []).forEach(function (p) { if (p && p.id === 'sneak_attack') passive = p; });
+    if (!passive || hero.sneakUsed) return null;
+    var afflicted = target.statuses && target.statuses.length > 0;
+    var ally = (this.party || []).some(function (m) { return m && m !== hero && m.hp > 0; });
+    if (!(hadAdvantage || afflicted || ally)) return null;
+    hero.sneakUsed = true;
+    return rollDamage(passive.dice || '2d6', this.rng, !!crit);
+  };
+
+  Engine.prototype.runEnemyTurn = function (index) {
+    var enemy = this.encounter.enemies[index];
+    var hero = this.character;
+    if (!enemy || enemy.hp <= 0 || enemy.yielded) return;
+    if (this.status !== 'playing') return;
+    var mode = 'normal';
+    if (hero.dodging || enemy.disadvantageNext) mode = 'disadvantage';
+    if (enemy.disadvantageNext) enemy.disadvantageNext = false;
+    var rolled = rollD20(this.rng, mode);
+    var face = rolled.face;
+    var total = face + enemy.atk;
+    var ac = this.effectiveAc();
+    var hit = face !== 1 && (face === 20 || total >= ac);
+    var crit = hit && face === 20;
     var dmg = null;
-    var before = target.hp;
+    var hurt = null;
     if (hit) {
-      dmg = rollDice(c.attack.damage, this.rng);
-      target.hp = Math.max(0, target.hp - dmg.total);
+      dmg = rollDamage(enemy.damage, this.rng, crit);
+      hurt = this.hurtHero(hero, dmg.total);
     }
     this.emit({
-      t: 'attack', attackName: c.attack.name, attackerName: c.name,
-      d20: d20, bonus: c.attack.bonus, total: total, ac: target.ac, hit: hit,
-      damage: dmg, targetName: target.name, targetHpBefore: before,
-      targetHp: target.hp, targetHpMax: target.hp_max, targetDown: target.hp <= 0
+      t: 'enemy_attack', enemyName: enemy.name, d20: face, dice: rolled.dice, mode: rolled.mode,
+      bonus: enemy.atk, total: total, ac: ac, hit: hit, crit: crit, nat: face,
+      dc: ac, damage: dmg, hp: hero.hp, hp_max: hero.hp_max,
+      massive: !!(hurt && hurt.massive), halved: !!(hurt && hurt.halved)
     });
-    return this.endPlayerTurn();
+    if (hero.hp <= 0) this.lose('hp');
+  };
+
+  Engine.prototype.resolveUntilHero = function () {
+    var guard = 0;
+    while (this.status === 'playing' && this.encounter && guard++ < 40) {
+      if (this.combatResult()) return;
+      var state = this.queueState();
+      var entry = this.takeNext(state);
+      if (!entry) return;
+      if (entry.kind === 'hero' && entry.index === 0) {
+        if (state.round !== this.encounter.round || state.acted !== this.encounter.acted) {
+          if (state.round !== this.encounter.round) {
+            this.encounter.round = state.round;
+            this.round = state.round;
+            this.encounter.acted = {};
+          }
+        }
+        return;
+      }
+      state.acted[actorKey(entry)] = true;
+      this.commitQueue(state);
+      if (entry.kind === 'enemy') {
+        this.emit({ t: 'enemy_phase', round: this.encounter.round });
+        this.runEnemyTurn(entry.index);
+      }
+    }
+  };
+
+  Engine.prototype.resolveRestOfRound = function () {
+    var guard = 0;
+    var round = this.encounter.round;
+    while (this.status === 'playing' && this.encounter && guard++ < 40) {
+      if (this.combatResult()) return;
+      var state = this.queueState();
+      if (this.allResolved(state.acted, state.round)) return;
+      var entry = this.takeNext(state);
+      if (!entry) return;
+      if (state.round !== round) return;
+      if (entry.kind === 'hero' && entry.index === 0) return;
+      state.acted[actorKey(entry)] = true;
+      this.commitQueue(state);
+      if (entry.kind === 'enemy') {
+        this.emit({ t: 'enemy_phase', round: this.encounter.round });
+        this.runEnemyTurn(entry.index);
+      }
+    }
+  };
+
+  Engine.prototype.beginHeroTurn = function () {
+    var c = this.character;
+    if (!c) return;
+    c.dodging = false;
+    c.acBonus = 0;
+    c.sneakUsed = false;
+  };
+
+  Engine.prototype.openTurn = function () {
+    if (!this.encounter) return true;
+    if (!this.encounter.order || !this.encounter.order.length) this.rollInitiative();
+    this.resolveUntilHero();
+    if (this.status !== 'playing') return false;
+    var over = this.combatResult();
+    if (over) { this.winCombat(over); return false; }
+    if (!this.encounter.heroReady) {
+      this.beginHeroTurn();
+      this.encounter.heroReady = true;
+    }
+    return this.status === 'playing';
+  };
+
+  Engine.prototype.spendTurn = function () {
+    if (!this.encounter) return this.ok();
+    var state = this.queueState();
+    var hero = null;
+    (this.encounter.order || []).forEach(function (entry) {
+      if (entry.kind === 'hero' && entry.index === 0) hero = entry;
+    });
+    if (hero) state.acted[actorKey(hero)] = true;
+    this.commitQueue(state);
+    this.encounter.heroReady = false;
+    var over = this.combatResult();
+    if (over) return this.winCombat(over);
+    this.resolveRestOfRound();
+    if (this.status !== 'playing') return this.ok();
+    over = this.combatResult();
+    if (over) return this.winCombat(over);
+    return this.ok();
+  };
+
+  Engine.prototype.pickEnemy = function (targetIndex) {
+    var living = this.livingEnemies();
+    if (!living.length) return { error: '沒有目標。' };
+    if (targetIndex === undefined || targetIndex === null) {
+      if (living.length > 1) return { error: '要先選一個目標。' };
+      return { enemy: living[0].ref, index: living[0].index };
+    }
+    var e = this.encounter.enemies[targetIndex];
+    if (!e || e.hp <= 0 || e.yielded) return { error: '這個目標不能攻擊。' };
+    return { enemy: e, index: targetIndex };
+  };
+
+  Engine.prototype.resolveStrike = function (hero, target, move, mode) {
+    var bonus = (move && Number.isInteger(move.attack_bonus)) ? move.attack_bonus : hero.attack.bonus;
+    var attackMode = mode || 'normal';
+    if (target.grantAdvantage) {
+      target.grantAdvantage = false;
+      if (attackMode === 'disadvantage') attackMode = 'normal';
+      else if (attackMode !== 'advantage') attackMode = 'advantage';
+    }
+    var rolled = rollD20(this.rng, attackMode);
+    var face = rolled.face;
+    var total = face + bonus;
+    var acBefore = target.ac;
+    var miss = face === 1;
+    var hit = !miss && (face === 20 || total >= acBefore);
+    var crit = hit && face >= this.critFloor(hero);
+    var parts = [];
+    if (hit) {
+      if (!move || move.uses_weapon) parts.push(rollDamage(hero.attack.damage, this.rng, crit));
+      if (move && move.damage_dice) parts.push(rollDamage(move.damage_dice, this.rng, crit));
+      if (move && move.mark) {
+        target.mark = { dice: move.mark.bonus_dice, type: move.mark.damage_type || null };
+      }
+      if (target.mark && target.mark.dice) parts.push(rollDamage(target.mark.dice, this.rng, crit));
+      var sneak = this.sneakBonus(hero, target, attackMode === 'advantage', crit);
+      if (sneak) parts.push(sneak);
+      if (move && move.on_hit) {
+        if (Number.isInteger(move.on_hit.ac_delta)) target.ac = Math.max(1, target.ac + move.on_hit.ac_delta);
+        if (move.on_hit.next_attack_advantage) target.grantAdvantage = true;
+      }
+    }
+    var dmg = hit ? sumDamage(parts) : null;
+    var before = target.hp;
+    if (hit && dmg) this.hurtEnemy(target, dmg.total);
+    var group = this.checkGroupYield();
+    return {
+      rolled: rolled, face: face, bonus: bonus, total: total, hit: hit, crit: crit,
+      dmg: dmg, before: before, ac: acBefore, yielded: !!(target.yielded || group)
+    };
+  };
+
+  Engine.prototype.emitStrike = function (hero, target, move, strike) {
+    this.emit({
+      t: 'attack',
+      attackName: move ? move.name : hero.attack.name,
+      attackerName: hero.name,
+      featureId: move ? move.id : null,
+      d20: strike.face,
+      dice: strike.rolled.dice,
+      mode: strike.rolled.mode,
+      bonus: strike.bonus,
+      total: strike.total,
+      ac: strike.ac,
+      dc: strike.ac,
+      hit: strike.hit,
+      crit: strike.crit,
+      nat: strike.face,
+      damage: strike.dmg,
+      damageType: move && move.damage_type ? move.damage_type : null,
+      targetName: target.name,
+      targetHpBefore: strike.before,
+      targetHp: target.hp,
+      targetHpMax: target.hp_max,
+      targetDown: target.hp <= 0,
+      yielded: !!target.yielded
+    });
+  };
+
+  Engine.prototype.doAttack = function (targetIndex) {
+    var sc = this.scene;
+    if (!sc || sc.type !== 'combat') return this.reject('這裡沒有可以攻擊的對象。');
+    var picked = this.pickEnemy(targetIndex);
+    if (picked.error) return this.reject(picked.error);
+    if (!this.openTurn()) return this.ok();
+    if (!this.encounter) return this.ok();
+    picked = this.pickEnemy(picked.index);
+    if (picked.error) return this.reject(picked.error);
+    var strike = this.resolveStrike(this.character, picked.enemy, null, 'normal');
+    this.emitStrike(this.character, picked.enemy, null, strike);
+    if (this.combatResult()) return this.winCombat(this.combatResult());
+    return this.spendTurn();
+  };
+
+  Engine.prototype.doDefend = function () {
+    if (!this.scene || this.scene.type !== 'combat') return this.reject('這裡沒有需要防守的東西。');
+    if (!this.openTurn()) return this.ok();
+    if (!this.encounter) return this.ok();
+    this.character.dodging = true;
+    this.emit({ t: 'defend', name: this.character.name });
+    return this.spendTurn();
+  };
+
+  Engine.prototype.doAmbush = function (outcome) {
+    if (!this.encounter) return this.reject('現在沒有戰鬥。');
+    if (outcome !== 'success' && outcome !== 'failure') return this.reject('埋伏結果不正確。');
+    var acted = this.encounter.acted || {};
+    var started = Object.keys(acted).some(function (k) { return acted[k]; });
+    if (started || this.encounter.round > 1) return this.reject('戰鬥已經開始，來不及埋伏。');
+    this.encounter.ambush = outcome;
+    this.emit({ t: 'ambush', outcome: outcome });
+    return this.ok();
+  };
+
+  Engine.prototype.doMove = function (cmd) {
+    var c = this.character;
+    var sc = this.scene;
+    if (!sc || (sc.type !== 'beat' && sc.type !== 'check' && sc.type !== 'combat')) {
+      return this.reject('現在不能使用招式。');
+    }
+    var feature = this.findMove(c, cmd.moveId);
+    if (!feature && (cmd.moveId === undefined || cmd.moveId === null || cmd.moveId === '')) {
+      var usable = (c.features || []).filter(function (f) {
+        return f.timing !== 'reaction' && (f.uses || 0) > 0;
+      });
+      if (usable.length === 1) feature = usable[0];
+    }
+    if (!feature) return this.reject('沒有這個招式。');
+    if (featureIsLegacy(feature)) return this.doUseFeature(feature.id, cmd.target);
+    if (feature.timing === 'reaction') return this.reject(feature.name + '會自動發動。');
+    if (this.moveUsesLeft(c, feature) < (feature.cost || 1)) return this.reject(feature.name + '已經沒有次數了。');
+    var inCombat = sc.type === 'combat';
+    if ((feature.target === 'enemy' || feature.target === 'enemies' || feature.roll === 'attack' || feature.roll === 'spell_attack') && !inCombat) {
+      return this.reject(feature.name + '只能在戰鬥中使用。');
+    }
+    if (feature.timing === 'ready' || (feature.effect && feature.effect.type === 'ac_bonus')) {
+      if (!inCombat) return this.reject(feature.name + '只能在戰鬥中使用。');
+      if (!this.openTurn()) return this.ok();
+      if (!this.encounter) return this.ok();
+      if ((c.acBonus || 0) > 0) return this.reject(feature.name + '：這一場已經有護甲加成。');
+      this.spendMove(c, feature);
+      c.acBonus = feature.effect && feature.effect.amount ? feature.effect.amount : 5;
+      this.emit({
+        t: 'feature_ac', featureId: feature.id, featureName: feature.name,
+        amount: c.acBonus, uses: this.moveUsesLeft(c, feature), usesMax: feature.usesMax,
+        ac: this.effectiveAc(), acBase: c.ac, acBonus: c.acBonus, ready: true
+      });
+      return this.spendTurn();
+    }
+    if (feature.heal_dice || (feature.roll === 'auto' && feature.target === 'self') || feature.target === 'ally' && feature.heal_dice) {
+      var patient = c;
+      if (feature.target === 'ally' && cmd.target !== undefined && cmd.target !== null && this.party[cmd.target]) {
+        patient = this.party[cmd.target];
+      }
+      if (patient.hp >= patient.hp_max) return this.reject(feature.name + '：生命已滿，沒有使用。');
+      if (inCombat && !this.openTurn()) return this.ok();
+      if (inCombat && !this.encounter) return this.ok();
+      var healedRoll = rollDamage(feature.heal_dice, this.rng, false);
+      var before = patient.hp;
+      patient.hp = Math.min(patient.hp_max, patient.hp + healedRoll.total);
+      this.spendMove(c, feature);
+      this.emit({
+        t: 'feature_heal', featureId: feature.id, featureName: feature.name,
+        amount: healedRoll.total, healed: patient.hp - before,
+        uses: this.moveUsesLeft(c, feature), usesMax: feature.usesMax,
+        hp: patient.hp, hp_max: patient.hp_max, dice: healedRoll,
+        targetName: patient.name
+      });
+      if (inCombat && feature.costs_turn) return this.spendTurn();
+      return this.ok();
+    }
+    if (feature.missiles) {
+      if (!inCombat) return this.reject(feature.name + '只能在戰鬥中使用。');
+      var living = this.livingEnemies();
+      if (!living.length) return this.reject('沒有目標。');
+      var targets = cmd.targets;
+      if (!targets) {
+        var one = cmd.target;
+        if (one === undefined || one === null) {
+          if (living.length > 1) return this.reject('要先選一個目標。');
+          one = living[0].index;
+        }
+        targets = [];
+        var n;
+        for (n = 0; n < feature.missiles; n++) targets.push(one);
+      }
+      if (!this.openTurn()) return this.ok();
+      if (!this.encounter) return this.ok();
+      this.spendMove(c, feature);
+      var mi;
+      for (mi = 0; mi < targets.length; mi++) {
+        var foe = this.encounter.enemies[targets[mi]];
+        if (!foe || foe.hp <= 0 || foe.yielded) continue;
+        var shot = rollDamage(feature.damage_dice, this.rng, false);
+        var beforeHp = foe.hp;
+        this.hurtEnemy(foe, shot.total);
+        this.checkGroupYield();
+        this.emit({
+          t: 'attack', attackName: feature.name, attackerName: c.name, featureId: feature.id,
+          d20: null, dice: [], mode: 'auto', bonus: 0, total: null, ac: foe.ac, dc: null,
+          hit: true, crit: false, nat: null, damage: shot, damageType: feature.damage_type || null,
+          targetName: foe.name, targetHpBefore: beforeHp, targetHp: foe.hp, targetHpMax: foe.hp_max,
+          targetDown: foe.hp <= 0, yielded: !!foe.yielded, missile: mi + 1
+        });
+        if (this.combatResult()) return this.winCombat(this.combatResult());
+      }
+      return this.spendTurn();
+    }
+    if (!inCombat) return this.reject(feature.name + '只能在戰鬥中使用。');
+    var picked = this.pickEnemy(cmd.target);
+    if (picked.error) return this.reject(picked.error);
+    if (!this.openTurn()) return this.ok();
+    if (!this.encounter) return this.ok();
+    picked = this.pickEnemy(picked.index);
+    if (picked.error) return this.reject(picked.error);
+    var mode = feature.advantage ? 'advantage' : 'normal';
+    if (feature.stealth_dc) {
+      var wis = picked.enemy.wis != null ? picked.enemy.wis : 10;
+      var dc = 10 + abilityMod(wis);
+      var checkRoll = rollD20(this.rng, 'normal');
+      var mod = abilityMod(c.dex);
+      var prof = c.skills.indexOf('stealth') >= 0 ? PROFICIENCY_BONUS : 0;
+      var checkTotal = checkRoll.face + mod + prof;
+      var success = checkRoll.face !== 1 && (checkRoll.face === 20 || checkTotal >= dc);
+      this.emit({
+        t: 'check', skill: 'stealth', ability: 'dex',
+        d20: checkRoll.face, dice: checkRoll.dice, mode: checkRoll.mode,
+        mod: mod, prof: prof, total: checkTotal, dc: dc, success: success, nat: checkRoll.face
+      });
+      if (success) {
+        mode = 'advantage';
+        picked.enemy.disadvantageNext = true;
+      }
+    }
+    this.spendMove(c, feature);
+    var strike = this.resolveStrike(c, picked.enemy, feature, mode);
+    this.emitStrike(c, picked.enemy, feature, strike);
+    if (this.combatResult()) return this.winCombat(this.combatResult());
+    if (feature.costs_turn) return this.spendTurn();
+    return this.ok();
   };
 
   Engine.prototype.doUseItem = function (slot, targetIndex) {
@@ -2493,41 +3424,41 @@
 
     var isDamage = item.damage !== undefined && item.damage !== null;
     if (isDamage) {
-      // Damage items are combat-only. Outside combat the attempt is rejected
-      // and the item is NOT consumed.
       if (sc.type !== 'combat') return this.reject(item.name + '只能在戰鬥中使用。');
-      var living = this.livingEnemies();
-      if (living.length === 0) return this.reject('沒有目標。');
-      var target = null;
-      if (targetIndex === undefined || targetIndex === null) {
-        if (living.length > 1) return this.reject('要先選一個目標。');
-        target = living[0].ref;
-      } else {
-        var e = this.encounter.enemies[targetIndex];
-        if (!e || e.hp <= 0) return this.reject('這個目標不能攻擊。');
-        target = e;
-      }
-      var before = target.hp;
-      target.hp = Math.max(0, target.hp - item.damage); // automatic hit, cannot miss
-      c.inventory.splice(slot, 1);                      // single use
+      var picked = this.pickEnemy(targetIndex);
+      if (picked.error) return this.reject(picked.error);
+      if (!this.openTurn()) return this.ok();
+      if (!this.encounter) return this.ok();
+      picked = this.pickEnemy(picked.index);
+      if (picked.error) return this.reject(picked.error);
+      var before = picked.enemy.hp;
+      this.hurtEnemy(picked.enemy, item.damage);
+      this.checkGroupYield();
+      c.inventory.splice(slot, 1);
       this.emit({
         t: 'item_damage', itemName: item.name, amount: item.damage,
-        targetName: target.name, targetHpBefore: before, targetHp: target.hp,
-        targetHpMax: target.hp_max, targetDown: target.hp <= 0,
+        targetName: picked.enemy.name, targetHpBefore: before, targetHp: picked.enemy.hp,
+        targetHpMax: picked.enemy.hp_max, targetDown: picked.enemy.hp <= 0,
+        yielded: !!picked.enemy.yielded,
         inventory: this.inventoryNames()
       });
-      return this.endPlayerTurn();
+      if (this.combatResult()) return this.winCombat(this.combatResult());
+      return this.spendTurn();
     }
 
+    if (sc.type === 'combat') {
+      if (!this.openTurn()) return this.ok();
+      if (!this.encounter) return this.ok();
+    }
     var hpBefore = c.hp;
-    c.hp = Math.min(c.hp_max, c.hp + item.heal); // capped at hp_max
-    c.inventory.splice(slot, 1);                 // single use
+    c.hp = Math.min(c.hp_max, c.hp + item.heal);
+    c.inventory.splice(slot, 1);
     this.emit({
       t: 'item_heal', itemName: item.name, amount: item.heal,
       healed: c.hp - hpBefore, hp: c.hp, hp_max: c.hp_max,
       inventory: this.inventoryNames()
     });
-    if (sc.type === 'combat') return this.endPlayerTurn();
+    if (sc.type === 'combat') return this.spendTurn();
     return this.ok();
   };
 
@@ -2537,49 +3468,42 @@
       return this.reject('現在不能使用特性。');
     }
     var features = c.features || [];
-    var usable = features.filter(function (f) { return f.uses > 0; });
-    if (usable.length === 0) return this.reject('沒有可用的特性。');
     var feature = null;
     if (featureId === undefined || featureId === null || featureId === '') {
-      if (usable.length > 1) return this.reject('要先選一個特性。');
+      var usable = features.filter(function (f) { return featureIsLegacy(f) && f.uses > 0; });
+      if (usable.length !== 1) return this.reject('要先選一個特性。');
       feature = usable[0];
     } else {
       features.forEach(function (f) { if (f.id === featureId) feature = f; });
-      if (!feature) return this.reject('沒有這個特性。');
-      if (feature.uses <= 0) return this.reject(feature.name + '已經沒有次數了。');
     }
+    if (!feature || !featureIsLegacy(feature)) return this.reject('沒有這個特性。');
+    if (feature.uses <= 0) return this.reject(feature.name + '已經沒有次數了。');
     var effect = feature.effect;
 
     if (effect.type === 'damage') {
       if (sc.type !== 'combat') return this.reject(feature.name + '只能在戰鬥中使用。');
-      var living = this.livingEnemies();
-      if (living.length === 0) return this.reject('沒有目標。');
-      var target = null;
-      if (targetIndex === undefined || targetIndex === null) {
-        if (living.length > 1) return this.reject('要先選一個目標。');
-        target = living[0].ref;
-      } else {
-        var e = this.encounter.enemies[targetIndex];
-        if (!e || e.hp <= 0) return this.reject('這個目標不能攻擊。');
-        target = e;
-      }
-      var before = target.hp;
-      target.hp = Math.max(0, target.hp - effect.amount); // automatic hit
+      var picked = this.pickEnemy(targetIndex);
+      if (picked.error) return this.reject(picked.error);
+      if (!this.openTurn()) return this.ok();
+      if (!this.encounter) return this.ok();
+      picked = this.pickEnemy(picked.index);
+      if (picked.error) return this.reject(picked.error);
+      var before = picked.enemy.hp;
+      this.hurtEnemy(picked.enemy, effect.amount);
+      this.checkGroupYield();
       feature.uses -= 1;
       this.emit({
         t: 'feature_damage', featureId: feature.id, featureName: feature.name,
         amount: effect.amount, uses: feature.uses, usesMax: feature.usesMax,
-        targetName: target.name, targetHpBefore: before, targetHp: target.hp,
-        targetHpMax: target.hp_max, targetDown: target.hp <= 0
+        targetName: picked.enemy.name, targetHpBefore: before, targetHp: picked.enemy.hp,
+        targetHpMax: picked.enemy.hp_max, targetDown: picked.enemy.hp <= 0
       });
-      return this.endPlayerTurn();
+      if (this.combatResult()) return this.winCombat(this.combatResult());
+      return this.spendTurn();
     }
 
     if (effect.type === 'heal') {
-      if (c.hp >= c.hp_max) {
-        // Full HP: reject and do NOT deduct uses.
-        return this.reject(feature.name + '：生命已滿，沒有使用。');
-      }
+      if (c.hp >= c.hp_max) return this.reject(feature.name + '：生命已滿，沒有使用。');
       var hpBefore = c.hp;
       c.hp = Math.min(c.hp_max, c.hp + effect.amount);
       feature.uses -= 1;
@@ -2589,16 +3513,18 @@
         uses: feature.uses, usesMax: feature.usesMax,
         hp: c.hp, hp_max: c.hp_max
       });
-      if (sc.type === 'combat') return this.endPlayerTurn();
+      if (sc.type === 'combat') {
+        if (!this.openTurn()) return this.ok();
+        return this.spendTurn();
+      }
       return this.ok();
     }
 
     if (effect.type === 'ac_bonus') {
       if (sc.type !== 'combat') return this.reject(feature.name + '只能在戰鬥中使用。');
-      // Already buffed this combat: reject, do not deduct uses, no stacking.
-      if ((c.acBonus || 0) > 0) {
-        return this.reject(feature.name + '：這一場已經有護甲加成。');
-      }
+      if ((c.acBonus || 0) > 0) return this.reject(feature.name + '：這一場已經有護甲加成。');
+      if (!this.openTurn()) return this.ok();
+      if (!this.encounter) return this.ok();
       c.acBonus = effect.amount;
       feature.uses -= 1;
       this.emit({
@@ -2606,7 +3532,7 @@
         amount: effect.amount, uses: feature.uses, usesMax: feature.usesMax,
         ac: this.effectiveAc(), acBase: c.ac, acBonus: c.acBonus
       });
-      return this.endPlayerTurn();
+      return this.spendTurn();
     }
 
     return this.reject('未知的特性效果。');
@@ -2614,7 +3540,7 @@
 
   Engine.prototype.doFlee = function () {
     var sc = this.scene;
-    if (sc.type !== 'combat') return this.reject('這裡沒有要逃走的東西。');
+    if (!sc || sc.type !== 'combat') return this.reject('這裡沒有要逃走的東西。');
     var dest = sc.flee_to;
     if (dest === FLEE_CHECKPOINT) dest = this.lastCheckpoint;
     if (dest && this.scenes[dest]) {
@@ -2622,43 +3548,38 @@
       this.enterScene(dest);
       return this.ok();
     }
-    // No flee_to: the whole run restarts.
     this.emit({ t: 'flee', escaped: false });
     this.emit({ t: 'run_restart', reason: 'flee' });
     return this.beginRun(this.pregenIndex);
   };
 
-  // After the player's single action, every living enemy attacks.
-  Engine.prototype.endPlayerTurn = function () {
-    var c = this.character, self = this;
-    var living = this.livingEnemies();
-    if (living.length === 0) {
-      this.emit({ t: 'combat_win' });
-      this.markCombatCleared(this.sceneId);
-      this.enterScene(this.scene.win_to);
-      return this.ok();
-    }
-    this.emit({ t: 'enemy_phase', round: this.round });
-    for (var i = 0; i < living.length; i++) {
-      if (this.status !== 'playing') break;
-      var e = living[i].ref;
-      var d20 = this.rng.die(20);
-      var total = d20 + e.atk;
-      var playerAc = self.effectiveAc();
-      var hit = total >= playerAc;
-      var dmg = null;
-      if (hit) {
-        dmg = rollDice(e.damage, this.rng);
-        c.hp = c.hp - dmg.total;
-        if (c.hp < 0) c.hp = 0;
-      }
-      this.emit({
-        t: 'enemy_attack', enemyName: e.name, d20: d20, bonus: e.atk, total: total,
-        ac: playerAc, hit: hit, damage: dmg, hp: c.hp, hp_max: c.hp_max
-      });
-      if (c.hp <= 0) this.lose('hp');
-    }
-    if (this.status === 'playing') this.round++;
+  Engine.prototype.doRetry = function () {
+    if (this.status !== 'lost') return this.reject('現在不必重試。');
+    if (!this.checkpointSnap) return this.reject('還沒有歇腳點可以返回。');
+    var snap = deepCopy(this.checkpointSnap);
+    var oldSeed = (this.rng && this.rng.seed) || 1;
+    var nextCount = (this.retryCount || 0) + 1;
+    var nextSeed = (oldSeed + (0x6d2b79f5 * nextCount)) >>> 0;
+    if (!nextSeed) nextSeed = 1;
+    if (nextSeed === oldSeed) nextSeed = (oldSeed + 1) >>> 0;
+    var applied = this.applySave(snap);
+    if (!applied.ok) return this.reject(applied.error);
+    this.rng = makeRng(nextSeed);
+    this.retryCount = nextCount;
+    this.status = 'playing';
+    this.playFrozen = false;
+    this.playTimeKnown = true;
+    this.startedAt = Date.now();
+    this.events = [];
+    this.emit({ t: 'retry', seed: nextSeed });
+    this.emit({
+      t: 'scene',
+      sceneType: this.scene.type,
+      facts: resolveFacts(this.scene.facts, this.conditionState()),
+      name: this.scene.name || null,
+      floor: this.scene.floor || null,
+      enemies: this.enemySnapshot()
+    });
     return this.ok();
   };
 
@@ -2680,8 +3601,16 @@
         inventory: c.inventory.slice(), inventoryNames: this.inventoryNames(),
         attack: { name: c.attack.name, bonus: c.attack.bonus, damage: c.attack.damage },
         features: (c.features || []).map(function (f) {
-          return { id: f.id, name: f.name, uses: f.uses, usesMax: f.usesMax, effect: f.effect.type, amount: f.effect.amount };
-        })
+          return {
+            id: f.id, name: f.name, uses: f.uses, usesMax: f.usesMax,
+            effect: (f.effect && f.effect.type) || (f.heal_dice ? 'heal' : (f.roll || 'move')),
+            amount: f.effect ? f.effect.amount : 0,
+            costsTurn: f.costs_turn !== false,
+            timing: f.timing || 'action'
+          };
+        }),
+        pools: c.pools || {},
+        statuses: (c.statuses || []).slice()
       } : null,
       enemies: this.enemySnapshot()
     };
@@ -2816,7 +3745,10 @@
       status: this.status,
       lastCheckpoint: this.lastCheckpoint || null,
       playMs: this.playTimeKnown ? this.currentPlayMs() : null,
-      rng: (this.rng && this.rng.exportState) ? this.rng.exportState() : null
+      rng: (this.rng && this.rng.exportState) ? this.rng.exportState() : null,
+      allies: (this.party || []).slice(1).map(function (a) { return deepCopy(a); }),
+      checkpointSnap: this.checkpointSnap ? deepCopy(this.checkpointSnap) : null,
+      retryCount: this.retryCount || 0
     };
   };
 
@@ -2859,7 +3791,7 @@
       return { ok: false, error: '存檔狀態互相矛盾。' };
     }
     if (sc.type === 'combat') {
-      if (!save.encounter || !Array.isArray(save.encounter.enemies) || save.encounter.enemies.length !== sc.enemies.length) {
+      if (!save.encounter || !Array.isArray(save.encounter.enemies) || save.encounter.enemies.length < sc.enemies.length) {
         return { ok: false, error: '存檔與腳本對不上，無法還原這場戰鬥。' };
       }
       for (ii = 0; ii < save.encounter.enemies.length; ii++) {
@@ -2915,7 +3847,23 @@
     this.startedAt = (!this.playFrozen && this.playTimeKnown) ? (Date.now() - this.playMs) : null;
     if (!this.classFlagId() || !this.flags[this.classFlagId()]) this.applyClassFlag();
     this.encounter = sc.type === 'combat' ? deepCopy(save.encounter) : null;
+    if (this.encounter) {
+      if (!this.encounter.acted) this.encounter.acted = {};
+      if (!Number.isInteger(this.encounter.round)) this.encounter.round = 1;
+      if (!Array.isArray(this.encounter.order)) this.encounter.order = [];
+      this.encounter.enemies.forEach(function (e) {
+        if (!e.per_extra) e.per_extra = { hp: 0, copies: 0 };
+        if (!Array.isArray(e.statuses)) e.statuses = [];
+        if (e.yielded === undefined) e.yielded = false;
+      });
+    }
     this.round = sc.type === 'combat' && Number.isInteger(save.round) && save.round > 0 ? save.round : (sc.type === 'combat' ? 1 : 0);
+    this.party = [this.character];
+    if (Array.isArray(save.allies)) {
+      save.allies.forEach(function (a) { if (a && typeof a === 'object') this.party.push(deepCopy(a)); }, this);
+    }
+    this.checkpointSnap = save.checkpointSnap && typeof save.checkpointSnap === 'object' ? deepCopy(save.checkpointSnap) : null;
+    this.retryCount = Number.isInteger(save.retryCount) && save.retryCount > 0 ? save.retryCount : 0;
     this.status = save.status;
     this.events = [];
     if (save.rng && this.rng && typeof this.rng.importState === 'function') this.rng.importState(save.rng);

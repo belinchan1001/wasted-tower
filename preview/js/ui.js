@@ -257,13 +257,13 @@
       card.appendChild(kInv);
 
       if (p.features && p.features.length) {
-        var f = p.features[0];
-        var effectHint = f.effect.type === 'damage' ? ('傷害 ' + f.effect.amount)
-                        : f.effect.type === 'heal' ? ('回復 ' + f.effect.amount)
-                        : ('本場戰鬥 AC +' + f.effect.amount);
+        var moveNames = p.features.filter(function (f) { return f.timing !== 'reaction'; }).map(function (f) {
+          if (f.pool) return f.name;
+          return f.name + ' ×' + f.uses;
+        }).join('、');
         var kFeat = el('p', 'kv');
         kFeat.appendChild(document.createTextNode('職業招式：'));
-        kFeat.appendChild(el('b', null, f.name + ' ×' + f.uses + '（' + effectHint + '）'));
+        kFeat.appendChild(el('b', null, moveNames));
         card.appendChild(kFeat);
       }
 
@@ -275,6 +275,16 @@
       cards.appendChild(card);
     });
     wrap.appendChild(cards);
+    wrap.appendChild(button('授權與鳴謝', '規則出處', 'ghost', function () { renderCredits(); }));
+    app.appendChild(wrap);
+  }
+
+  function renderCredits() {
+    clear(app);
+    var wrap = el('div', 'credits');
+    var src = document.getElementById('credits-src');
+    if (src && src.content) wrap.appendChild(src.content.cloneNode(true));
+    wrap.appendChild(button('返回', null, 'primary', function () { renderSelect(); }));
     app.appendChild(wrap);
   }
 
@@ -474,6 +484,11 @@
       row.appendChild(button(againLabel, '同一個角色，全新狀態，回到起點', 'play-again', function () {
         act({ type: 'restart' });
       }));
+      if (st.status === 'lost' && engine.checkpointSnap) {
+        row.appendChild(button('由這一層歇腳再試', '從歇腳點再走，骰子換一組', null, function () {
+          act({ type: 'retry' });
+        }));
+      }
       row.appendChild(button('換一個角色', '回到選角畫面', 'ghost', function () {
         renderSelect();
       }));
@@ -495,10 +510,13 @@
     var main = el('div', 'row');
     var itemActs = [];
     var featureActs = [];
+    var attackActs = [];
 
     acts.forEach(function (a) {
       if (a.type === 'use_item') { itemActs.push(a); return; }
       if (a.type === 'use_feature') { featureActs.push(a); return; }
+      if (a.type === 'attack') { attackActs.push(a); return; }
+      if (st.sceneType === 'combat' && (a.type === 'flee' || a.type === 'defend')) return;
       if (a.type === 'choice') {
         main.appendChild(button(a.label, null, null, function () { act({ type: 'choice', id: a.id }); }));
       } else if (a.type === 'roll') {
@@ -537,16 +555,19 @@
         renderSelect();
       }));
     }
-    main.appendChild(button('存檔碼', '複製一份文字備份', null, function () {
-      trayMode = trayMode === 'export' ? null : 'export';
-      refresh();
-    }));
+    if (st.sceneType !== 'combat') {
+      main.appendChild(button('存檔碼', '複製一份文字備份', null, function () {
+        trayMode = trayMode === 'export' ? null : 'export';
+        refresh();
+      }));
+    }
 
-    // use_feature is always offered in beat / check / combat when uses remain
-    if (st.sceneType === 'beat' || st.sceneType === 'check' || st.sceneType === 'combat') {
+    // Outside combat, heals and items stay on the main row.
+    if (st.sceneType === 'beat' || st.sceneType === 'check') {
       if (featureActs.length === 1) {
         var fa = featureActs[0];
-        var fHint = fa.effect === 'heal' ? ('回復 ' + fa.amount + '　剩餘 ' + fa.uses + '/' + fa.usesMax)
+        var fHint = fa.effect === 'heal'
+          ? ((fa.amount ? ('回復 ' + fa.amount) : '回復') + '　剩餘 ' + fa.uses + '/' + fa.usesMax)
                   : fa.effect === 'damage' ? ('自動命中傷害 ' + fa.amount + '　剩餘 ' + fa.uses + '/' + fa.usesMax)
                   : ('本場戰鬥 AC +' + fa.amount + '　剩餘 ' + fa.uses + '/' + fa.usesMax);
         if (!fa.enabled && fa.reason) fHint = fa.reason + '　剩餘 ' + fa.uses + '/' + fa.usesMax;
@@ -565,8 +586,7 @@
       }
     }
 
-    // use_item is always offered in beat / check / combat scenes
-    if (st.sceneType === 'beat' || st.sceneType === 'check' || st.sceneType === 'combat') {
+    if (st.sceneType === 'beat' || st.sceneType === 'check') {
       var usable = itemActs.filter(function (a) { return a.enabled; }).length;
       var itemTrayOpen = trayMode === 'items' || (trayMode && trayMode.slot !== undefined);
       main.appendChild(button(
@@ -578,6 +598,36 @@
       ));
     }
     actionsEl.appendChild(main);
+
+    if (st.sceneType === 'combat') {
+      var menu = el('div', 'combat-menu');
+      var fleeAct = null;
+      acts.forEach(function (a) { if (a.type === 'flee') fleeAct = a; });
+      menu.appendChild(button('攻擊', attackActs.length ? (attackActs.length + ' 個目標') : '沒有目標', null, function () {
+        if (attackActs.length === 1) act({ actor: 0, action: 'attack', target: attackActs[0].target });
+        else { trayMode = 'attack'; refresh(); }
+      }, attackActs.length === 0));
+      menu.appendChild(button('招式', featureActs.length ? '查看可用招式' : '沒有招式', null, function () {
+        trayMode = trayMode === 'moves' ? null : 'moves';
+        refresh();
+      }, featureActs.length === 0));
+      menu.appendChild(button('防守', '到下次行動前，敵人攻擊有劣勢', null, function () {
+        act({ actor: 0, action: 'defend' });
+      }));
+      var usableItems = itemActs.filter(function (a) { return a.enabled; }).length;
+      menu.appendChild(button('道具', itemActs.length ? ('可用 ' + usableItems + ' / ' + itemActs.length) : '行囊是空的', null, function () {
+        trayMode = trayMode === 'items' ? null : 'items';
+        refresh();
+      }, itemActs.length === 0));
+      menu.appendChild(button('逃走', fleeAct && fleeAct.to ? '退回上一個地方' : '這裡沒有退路：整場冒險重來', 'span', function () {
+        act({ actor: 0, action: 'flee' });
+      }));
+      actionsEl.appendChild(menu);
+      actionsEl.appendChild(button('存檔碼', '複製一份文字備份', 'ghost', function () {
+        trayMode = trayMode === 'export' ? null : 'export';
+        refresh();
+      }));
+    }
 
     if (!trayMode) return;
 
@@ -601,6 +651,27 @@
         }
       }));
       tray.appendChild(button('關閉', null, 'ghost', function () { trayMode = null; refresh(); }));
+    } else if (trayMode === 'attack') {
+      tray.appendChild(el('h3', null, '攻擊哪一個？'));
+      attackActs.forEach(function (a) {
+        tray.appendChild(button(a.targetName, '生命 ' + a.targetHp + '/' + a.targetHpMax, null, function () {
+          act({ actor: 0, action: 'attack', target: a.target });
+        }));
+      });
+      tray.appendChild(button('取消', null, 'ghost', function () { trayMode = null; refresh(); }));
+    } else if (trayMode === 'moves') {
+      tray.appendChild(el('h3', null, '用哪一招？'));
+      featureActs.forEach(function (fa) {
+        var hint = '剩餘 ' + fa.uses + '/' + fa.usesMax;
+        if (!fa.costsTurn) hint += '　不消耗回合';
+        if (!fa.enabled && fa.reason) hint = fa.reason + '　' + hint;
+        tray.appendChild(button(fa.featureName, hint, null, function () {
+          if (!fa.enabled) { handle(engine.perform({ actor: 0, action: 'move', moveId: fa.featureId })); return; }
+          if (fa.needsTarget) { trayMode = { featureId: fa.featureId }; refresh(); return; }
+          act({ actor: 0, action: 'move', moveId: fa.featureId });
+        }, false));
+      });
+      tray.appendChild(button('取消', null, 'ghost', function () { trayMode = null; refresh(); }));
     } else if (trayMode === 'items') {
       tray.appendChild(el('h3', null, '使用哪一件？'));
       itemActs.forEach(function (a) {

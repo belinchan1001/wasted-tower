@@ -10,10 +10,10 @@
 1. 打開 `preview/index.html`，或從倉庫根目錄開靜態伺服器後進入 `/preview/`。根目錄的 `index.html` 是現正公開的頁面，不要把它換成這份預覽。
 2. 選一個角色。若存檔欄已有進度，可以按「繼續上次的進度」。
 3. 按畫面下方的按鈕行動。程式處理擲骰、生命、物品、戰鬥和場景。
-4. 擲骰明細在紀錄裡。戰鬥時玩家先行動，仍然活著的敵人才還擊。
+4. 擲骰明細在紀錄裡。戰鬥先擲先攻（英雄有少量加值）。行動選單是攻擊、招式、防守、道具、逃走。
 5. 每層結束會出現歇腳：看一段短摘要，然後「繼續」或「存檔休息」。存檔休息不會丟掉進度。
 6. 任何結局都會顯示結局卡（職業、關鍵選擇、結局名稱），可下載成 PNG。
-7. 生命歸零即失敗。可以「試試第二個職業？」，或回到標題畫面繼續上次自動存下的進度。
+7. 生命歸零即失敗。若這一層已經歇過腳，可以「由這一層歇腳再試」（骰子換一組，不是重播剛才的擲骰）。也可以「試試第二個職業？」，或回到標題畫面繼續上次自動存下的進度。
 8. 「存檔碼」會顯示一整段文字。換裝置時，在標題畫面貼上並按「讀取存檔碼」。格式不對、版本太新、或對不上現在的腳本時，遊戲會說明原因，不會把畫面弄壞。
 
 一場大約 15–20 分鐘，中間可以在歇腳點把手機放下。
@@ -48,7 +48,7 @@
 | `checkpoint` | 一層結束的歇腳。要有 `floor`、`name`、`facts`、`continue_to`。`facts` 可以是空陣列 |
 | `end` | 結局。`end` 是 `win`、`lose` 或 `secret_win`；`name` 是結局卡上的名字 |
 
-角色沿用現有預製角色的欄位。每人剛好一個 `features`（`damage`、`heal` 或 `ac_bonus`，`uses` 為 3）。消耗品要有 `heal` 或 `damage` 其中一項，不能兩項都有。
+角色沿用現有預製角色的欄位。戰鬥招式寫在 `features`：每項要有 `roll`、`target`、`costs_turn`，以及自己的 `uses` 或共用的 `pool`。被動寫在 `passives`，共用次數寫在 `pools`。舊的單次 `features`（`uses` 為 3，`effect` 為 `damage`、`heal` 或 `ac_bonus`）仍然有效。消耗品要有 `heal` 或 `damage` 其中一項，不能兩項都有。
 
 `facts` 可以是字串，也可以是 `{ "text": "……", "when": { … } }`。有 `when` 的句子只在條件成立時出現。現有句子請保持原樣，不要改寫。
 
@@ -296,3 +296,11 @@ TOWER.assertReachable(adventure, {
 ```
 
 改寫句子、加分支，通常不用動這兩個表。若你**改了已經上線的場景 id**，舊存檔會打不開，除非在 `preview/js/engine.js` 的 `scriptMigrations` 加上一步：鍵是舊的 `scriptVersion`，函式回傳的存檔要把 `scriptVersion` 加一。沒有對應的升級時，遊戲會告訴玩家這份存檔讀不了，而不會直接當掉。
+
+## 授權與鳴謝
+
+《廢塔一夜》部分戰鬥規則（例如優勢、劣勢、狀態、豁免、傷害類型，以及部分招式、道具與敵人能力）改編自下列規則文件，並經刪減、調整數值與翻譯為中文。
+
+This work includes material taken from the System Reference Document 5.1 (“SRD 5.1”) by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode.
+
+故事、角色、地點與敵人名稱屬本作原創。

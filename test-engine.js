@@ -754,6 +754,112 @@ test('preview localStorage keys all start with wasted-tower-preview-', function 
   assert.ok(ui.indexOf('PREVIEW_STORAGE_KEYS.save') >= 0);
 });
 
+test('WT4 saves use the preview key, and WT3 or corrupt codes do not crash', function () {
+  var bag = {};
+  var storage = {
+    getItem: function (k) { return Object.prototype.hasOwnProperty.call(bag, k) ? bag[k] : null; },
+    setItem: function (k, v) { bag[k] = String(v); },
+    removeItem: function (k) { delete bag[k]; }
+  };
+  var engine = new T.Engine(adventure, { seed: 90 });
+  engine.start(0);
+  var code = T.encodeSaveCode(engine.exportSave());
+  assert.strictEqual(code.indexOf('WT4.'), 0);
+  assert.deepStrictEqual(engine.exportSave().character.statuses, []);
+  assert.strictEqual(engine.exportSave().character.hpMaxReduction, 0);
+  var slot = new T.SaveSlot(storage);
+  assert.strictEqual(slot.key, 'wasted-tower-preview-save');
+  assert.strictEqual(slot.write(code).ok, true);
+  assert.deepStrictEqual(Object.keys(bag), ['wasted-tower-preview-save']);
+  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT4.'), 0);
+  var back;
+  assert.doesNotThrow(function () { back = T.loadGame(adventure, slot.read()); });
+  assert.strictEqual(back.ok, true, back.error);
+  assert.deepStrictEqual(back.engine.character.statuses, []);
+
+  var wt3 = {
+    v: 3,
+    adventureId: 'wasted_tower',
+    scriptVersion: 1,
+    pregenIndex: 0,
+    character: {
+      name: '布倫', cls: '戰士', race: '人類',
+      str: 16, dex: 12, con: 15, int: 8, wis: 10, cha: 10,
+      ac: 16, hp: 9, hp_max: 12, acBonus: 0,
+      skills: ['athletics'],
+      inventory: ['potion_heal', 'lantern'],
+      attack: { name: '長劍', bonus: 5, damage: '1d8+3' },
+      features: [{ id: 'power_strike', name: '破甲重擊', uses: 2, usesMax: 3, effect: { type: 'damage', amount: 4 } }]
+    },
+    sceneId: 'f1_rats',
+    flags: { cls_warrior: true, gate_rushed: true },
+    done: {},
+    clearedCombats: {},
+    keyChoices: [],
+    rivalPregenIndex: null,
+    encounter: {
+      enemies: [
+        { name: '腐鼠', ac: 11, hp: 4, hp_max: 4, atk: 2, damage: '1d4' },
+        { name: '腐鼠', ac: 11, hp: 2, hp_max: 4, atk: 2, damage: '1d4' },
+        { name: '腐鼠', ac: 11, hp: 3, hp_max: 3, atk: 2, damage: '1d4' }
+      ]
+    },
+    round: 1,
+    status: 'playing',
+    lastCheckpoint: null,
+    playMs: 10,
+    rng: { kind: 'seeded', seed: 7, s: 7, count: 3 }
+  };
+  var migrated;
+  assert.doesNotThrow(function () {
+    migrated = T.loadGame(adventure, T.encodeSaveCode(wt3));
+  });
+  assert.strictEqual(migrated.ok, true, migrated && migrated.error);
+  assert.deepStrictEqual(migrated.engine.character.statuses, []);
+  assert.strictEqual(migrated.engine.character.hpMaxReduction, 0);
+  assert.strictEqual(migrated.engine.character.features.length, 2);
+  var resumed;
+  assert.doesNotThrow(function () { resumed = migrated.engine.resumeView(); });
+  assert.strictEqual(resumed.ok, true, resumed && resumed.error);
+  assert.strictEqual(migrated.engine.sceneId, 'f1_rats');
+
+  var junk = Buffer.from('{"v":4}', 'utf8').toString('base64');
+  var newer = Buffer.from('{"v":9,"scriptVersion":1}', 'utf8').toString('base64');
+  [null, undefined, '', '   ', 'hello', 'WT4.', 'WT4.@@@', 'WT3.not-base64', 'WT4.' + junk, 'WT9.' + newer].forEach(function (bad) {
+    var res;
+    assert.doesNotThrow(function () { res = T.loadGame(adventure, bad); }, 'crash on ' + String(bad));
+    assert.strictEqual(res.ok, false, String(bad));
+    assert.strictEqual(typeof res.error, 'string');
+    assert.ok(res.error.length > 0);
+  });
+});
+
+test('step 1 keeps statuses empty and simulator rates out of the player text', function () {
+  var snap = JSON.parse(fs.readFileSync(path.join(__dirname, 'test', 'story-snapshot.json'), 'utf8'));
+  assert.strictEqual(adventure.items.length, snap.items.length + 1);
+  assert.strictEqual(adventure.items[adventure.items.length - 1].id, 'antler_arrow');
+  var engine = new T.Engine(adventure, { seed: 91 });
+  engine.start(0);
+  choose(engine, 'rush');
+  heroFirst(engine);
+  engine.rng = seqRng([15, 1, 1, 1]);
+  var hit = engine.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(hit.ok, true, hit.error);
+  assert.deepStrictEqual(engine.character.statuses, []);
+  engine.encounter.enemies.forEach(function (e) {
+    assert.deepStrictEqual(e.statuses || [], []);
+  });
+  var phrases = ['通關率', '平均回合', '內部參考'];
+  ['README.md', 'preview/index.html', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/js/engine.js'].forEach(function (rel) {
+    var text = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+    phrases.forEach(function (phrase) {
+      assert.ok(text.indexOf(phrase) < 0, rel + ' shows ' + phrase);
+    });
+  });
+  var play = fs.readFileSync(path.join(__dirname, 'README.md'), 'utf8').split('## 腳本資料格式')[0];
+  assert.ok(play.indexOf('模擬') < 0);
+});
+
 test('class lines, counters, and flag-gated endings', function () {
   var story = {
     id: 'fixture',

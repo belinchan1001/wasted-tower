@@ -47,14 +47,14 @@
       "label": "林歸寂靜",
       "when": { "all_flags": ["cls_ranger"] },
       "completed_when": { "all_flags": ["sylvie_freed_deer"] },
-      "miss_reason": "整咗鹿角箭"
+      "miss_reason": "將鹿角製成了箭"
     },
     {
       "id": "branch_rogue",
       "label": "偷天換徽",
       "when": { "all_flags": ["cls_rogue"] },
       "completed_when": { "all_flags": ["finn_contract", "finn_brass_scrap", "finn_swapped"] },
-      "miss_reason": "將真銅徽交咗畀黑手"
+      "miss_reason": "將真銅徽交給了黑手"
     },
     {
       "id": "branch_cleric",
@@ -68,7 +68,7 @@
       "label": "師債徒還",
       "when": { "all_flags": ["cls_mage"] },
       "completed_when": { "all_flags": ["orr_burned"] },
-      "miss_reason": "收埋咗禁忌筆記"
+      "miss_reason": "收起了禁忌筆記"
     }
   ],
   "flag_defs": {
@@ -84,11 +84,11 @@
     "respected_dead": { "key": true, "label": "骸骨：合眼" },
     "took_from_dead": { "key": true, "label": "骸骨：摸屍" },
     "took_cloth": { "key": true, "label": "布條：有" },
-    "left_potion": { "key": true, "label": "濕室藥水：留低" },
+    "left_potion": { "key": true, "label": "濕室藥水：留下" },
     "spared_cultist": { "key": true, "label": "邪徒：放過" },
     "killed_cultist": { "key": true, "label": "邪徒：了結" },
     "mira_redeemed": { "key": true, "label": "邪徒：驅走塔影" },
-    "finn_sold": { "key": true, "label": "銅徽：賣咗" },
+    "finn_sold": { "key": true, "label": "銅徽：賣出" },
     "finn_swapped": { "key": true, "label": "銅徽：掉包" },
     "orr_kept": { "key": true, "label": "禁忌筆記" },
     "rival": { "key": true, "label": "對手" }
@@ -346,19 +346,19 @@
         "木門半掩。",
         "天色將晚。",
         {
-          "text": "門框刻住第七盾隊嘅隊徽。",
+          "text": "門框刻著第七盾隊的隊徽。",
           "when": {
             "class": "戰士"
           }
         },
         {
-          "text": "樹由塔腳開始枯，地上有白鹿蹄印行入塔。",
+          "text": "樹從塔腳開始枯死，白鹿蹄印一路通入塔中。",
           "when": {
             "class": "遊俠"
           }
         },
         {
-          "text": "封信寫住：銅徽帶出嚟，一百金。——黑手",
+          "text": "信上寫著：帶出銅徽，賞一百金。——黑手",
           "when": {
             "all_flags": [
               "finn_contract"
@@ -389,7 +389,7 @@
         },
         {
           "id": "search_finn",
-          "label": "搜查門廊（門縫夾住封信）",
+          "label": "搜查門廊（門縫夾著一封信）",
           "to": "f1_rats",
           "give": [
             "iron_key"
@@ -424,7 +424,7 @@
         "地上有齧過的布條。",
         "對面有走廊。",
         {
-          "text": "封信寫住：銅徽帶出嚟，一百金。——黑手",
+          "text": "信上寫著：帶出銅徽，賞一百金。——黑手",
           "when": {
             "all_flags": [
               "finn_contract"
@@ -471,7 +471,7 @@
       "choices": [
         {
           "id": "cloth",
-          "label": "執起齧過嘅布條",
+          "label": "拾起齧過的布條",
           "to": "f1_hall",
           "set_flag": [
             "took_cloth"
@@ -479,12 +479,12 @@
         },
         {
           "id": "ignore",
-          "label": "唔理",
+          "label": "不理會",
           "to": "f1_hall"
         },
         {
           "id": "robe",
-          "label": "認出係聖堂修袍，收好佢",
+          "label": "認出是聖堂修袍，收好它",
           "to": "f1_hall",
           "set_flag": [
             "took_cloth",
@@ -504,7 +504,7 @@
         "塵土裡露出朽木梁。",
         "盡頭有向下的石階。",
         {
-          "text": "塌位下面有燒焦嘅法陣，係師父賽勒斯嘅筆跡。",
+          "text": "塌陷處下有燒焦的法陣，是師父賽勒斯的筆跡。",
           "when": {
             "class": "法師"
           }
@@ -598,12 +598,12 @@
       "id": "f1_bandit_after",
       "type": "beat",
       "facts": [
-        "盜墓者跪低求饒。"
+        "盜墓者跪地求饒。"
       ],
       "choices": [
         {
           "id": "spare",
-          "label": "放佢走",
+          "label": "放他走",
           "to": "cp_f1",
           "set_flag": [
             "spared_bandit"
@@ -614,7 +614,7 @@
         },
         {
           "id": "persuade",
-          "label": "勸佢改過",
+          "label": "勸他改過",
           "to": "f1_persuade"
         },
         {
@@ -665,7 +665,7 @@
       "place": "石階口",
       "continue_label": "繼續",
       "facts": [
-        "盜墓者嘅腳步聲遠咗。你坐喺石階口，塔入面靜到聽到自己心跳。——第一層完。"
+        "盜墓者的腳步聲遠去。你坐在石階口，塔裡靜得聽見自己的心跳。——第一層完。"
       ],
       "continue_to": "f2_stairs"
     },
@@ -674,8 +674,8 @@
       "type": "beat",
       "place": "第二層轉角",
       "facts": [
-        "你落到第二層轉角。",
-        "正路繼續向下。",
+        "你來到二層轉角。",
+        "正路通往下層通道。",
         "側牆有一扇上鎖小門。"
       ],
       "choices": [
@@ -825,14 +825,14 @@
           "choices": [
             {
               "id": "close",
-              "label": "幫骸骨合眼",
+              "label": "為骸骨合眼",
               "set_flag": [
                 "respected_dead"
               ]
             },
             {
               "id": "loot_bones",
-              "label": "摸走佢嘅藥水",
+              "label": "搜走他身上的藥水",
               "set_flag": [
                 "took_from_dead"
               ],
@@ -872,14 +872,14 @@
           "choices": [
             {
               "id": "scrap",
-              "label": "執起銅片",
+              "label": "拾起銅片",
               "set_flag": [
                 "finn_brass_scrap"
               ]
             },
             {
               "id": "skip_scrap",
-              "label": "唔理"
+              "label": "不理會"
             }
           ]
         }
@@ -998,7 +998,7 @@
       "facts": [
         "酸蝕軟泥化開了。",
         {
-          "text": "軟泥入面溶剩半支鹿角。",
+          "text": "軟泥中只溶剩半截鹿角。",
           "when": {
             "class": "遊俠"
           }
@@ -1010,7 +1010,7 @@
           "choices": [
             {
               "id": "leave_a",
-              "label": "留低一瓶藥水",
+              "label": "留下一瓶藥水",
               "set_flag": [
                 "left_potion"
               ],
@@ -1028,7 +1028,7 @@
             },
             {
               "id": "leave_b",
-              "label": "留低一瓶藥水",
+              "label": "留下一瓶藥水",
               "set_flag": [
                 "left_potion"
               ],
@@ -1049,7 +1049,7 @@
             },
             {
               "id": "down",
-              "label": "直接落去"
+              "label": "直接往下走"
             }
           ]
         },
@@ -1061,7 +1061,7 @@
           "choices": [
             {
               "id": "take_antler",
-              "label": "執起鹿角",
+              "label": "拾起鹿角",
               "set_flag": [
                 "sylvie_antler"
               ]
@@ -1078,7 +1078,7 @@
       "place": "底層鐵門前",
       "continue_label": "繼續",
       "facts": [
-        "酸味慢慢散去，再落就係底層鐵門。今晚最難嗰段就喺門後面。——第二層完。"
+        "酸味漸漸散去，再往下就是底層鐵門。今夜最難的一段就在門後。——第二層完。"
       ],
       "continue_to": "f3_door"
     },
@@ -1090,7 +1090,7 @@
         "門上有銅鏽鎖孔。",
         "門後傳出冷風。",
         {
-          "text": "盜墓者喺暗處出聲：門後有人。",
+          "text": "盜墓者在暗處低聲說：門後有人。",
           "when": {
             "flag_min": {
               "aff_bandit": 1
@@ -1101,7 +1101,7 @@
       "choices": [
         {
           "id": "enter",
-          "label": "行入去",
+          "label": "走進去",
           "to": "f3_cult_talk",
           "when": {
             "all_flags": [
@@ -1143,7 +1143,7 @@
         },
         {
           "id": "bandit_help",
-          "label": "等盜墓者幫你撬門",
+          "label": "讓盜墓者替你撬門",
           "to": "f3_cult_talk",
           "set_flag": [
             "bandit_helped",
@@ -1171,7 +1171,7 @@
       "choices": [
         {
           "id": "insight",
-          "label": "睇佢眼神",
+          "label": "看他的眼神",
           "to": "f3_mira_insight",
           "when": {
             "class": "牧師",
@@ -1182,7 +1182,7 @@
         },
         {
           "id": "show_cloth",
-          "label": "攞布條出嚟問佢",
+          "label": "拿出布條問他",
           "to": "f3_cult",
           "set_flag": [
             "knows_wight_name"
@@ -1252,7 +1252,7 @@
       "id": "f3_cult_after",
       "type": "beat",
       "facts": [
-        "邪徒倒地，仲有氣。"
+        "邪徒倒地，還有一口氣。"
       ],
       "choices": [
         {
@@ -1321,7 +1321,7 @@
       "facts": [
         "祭壇前的石棺蓋著。",
         {
-          "text": "白鹿魂畀鎖鏈鎖住。",
+          "text": "白鹿魂被鎖鏈鎖住。",
           "when": {
             "all_flags": [
               "sylvie_antler"
@@ -1329,7 +1329,7 @@
           }
         },
         {
-          "text": "筆記最後一頁寫住，怨靈就係師父本人。",
+          "text": "筆記最後一頁寫著：怨靈就是師父本人。",
           "when": {
             "all_flags": [
               "orr_notes"
@@ -1385,7 +1385,7 @@
         },
         {
           "id": "make_arrow",
-          "label": "整鹿角箭",
+          "label": "製作鹿角箭",
           "to": "f3_shrine",
           "give": [
             "antler_arrow"
@@ -1405,7 +1405,7 @@
         },
         {
           "id": "burn",
-          "label": "燒咗筆記",
+          "label": "燒掉筆記",
           "to": "f3_shrine",
           "set_flag": [
             "orr_burned"
@@ -1422,7 +1422,7 @@
         },
         {
           "id": "keep",
-          "label": "收埋筆記",
+          "label": "收起筆記",
           "to": "f3_shrine",
           "set_flag": [
             "orr_kept"
@@ -1613,7 +1613,7 @@
       "place": "林緣",
       "continue_label": "繼續",
       "facts": [
-        "怨靈散成灰，林緣風好大。你今晚做過嘅事，就喺呢度計數。"
+        "怨靈散成灰，林緣風很大。你今夜做過的事，都在這裡清算。"
       ],
       "continue_to": "post_tower"
     },
@@ -1623,7 +1623,7 @@
       "place": "林緣",
       "facts": [
         "怨靈散成灰。",
-        "你喺內室牆上取下銅徽。",
+        "你從內室牆上取下銅徽。",
         "你走出廢塔。",
         "林緣風很大。"
       ],
@@ -1649,7 +1649,7 @@
         },
         {
           "id": "friend",
-          "label": "同跟蹤者點頭道別",
+          "label": "向跟蹤者點頭道別",
           "to": "end_friend",
           "set_flag": [
             "chose_friend"
@@ -1662,7 +1662,7 @@
         },
         {
           "id": "monument",
-          "label": "喺塔門為第七盾隊立碑",
+          "label": "在塔門為第七盾隊立碑",
           "to": "end_warrior",
           "set_flag": [
             "chose_warrior"
@@ -1676,7 +1676,7 @@
         },
         {
           "id": "follow_deer",
-          "label": "跟住白鹿行返入林",
+          "label": "跟著白鹿走回林中",
           "to": "end_ranger",
           "set_flag": [
             "chose_ranger"
@@ -1690,7 +1690,7 @@
         },
         {
           "id": "sell",
-          "label": "將真銅徽交畀黑手",
+          "label": "將真銅徽交給黑手",
           "to": "end_sold",
           "set_flag": [
             "finn_sold"
@@ -1704,7 +1704,7 @@
         },
         {
           "id": "swap",
-          "label": "將銅片交畀黑手，真貨埋返喺塔門石縫",
+          "label": "將銅片交給黑手，真徽埋在塔門石縫",
           "to": "end_rogue",
           "set_flag": [
             "finn_swapped"
@@ -1719,7 +1719,7 @@
         },
         {
           "id": "escort",
-          "label": "扶住艾文一齊出塔",
+          "label": "扶著艾文一同出塔",
           "to": "end_cleric",
           "set_flag": [
             "chose_cleric"
@@ -1733,7 +1733,7 @@
         },
         {
           "id": "burn_page",
-          "label": "喺塔門燒盡最後一頁",
+          "label": "在塔門燒盡最後一頁",
           "to": "end_mage",
           "set_flag": [
             "chose_mage"
@@ -1790,7 +1790,7 @@
         "廢塔恢復寂靜。",
         "這一夜結束了。",
         {
-          "text": "你叫出賽勒斯個名，佢終於散咗。",
+          "text": "你喊出賽勒斯的名字，他終於消散。",
           "when": {
             "all_flags": [
               "knows_wight_name"
@@ -1813,7 +1813,7 @@
         ]
       },
       "facts": [
-        "你同跟蹤者點頭道別。",
+        "你向跟蹤者點頭道別。",
         "這一夜結束了。"
       ]
     },
@@ -1830,7 +1830,7 @@
         ]
       },
       "facts": [
-        "你將真銅徽交畀黑手。",
+        "你將真銅徽交給黑手。",
         "這一夜結束了。"
       ]
     },
@@ -1849,7 +1849,7 @@
         ]
       },
       "facts": [
-        "你喺塔門為第七盾隊立碑。",
+        "你在塔門為第七盾隊立碑。",
         "這一夜結束了。"
       ]
     },
@@ -1868,7 +1868,7 @@
         ]
       },
       "facts": [
-        "你跟住白鹿行返入林。",
+        "你跟著白鹿走回林中。",
         "這一夜結束了。"
       ]
     },
@@ -1910,7 +1910,7 @@
         ]
       },
       "facts": [
-        "你扶住艾文一齊出塔。",
+        "你扶著艾文一同出塔。",
         "這一夜結束了。"
       ]
     },
@@ -1929,7 +1929,7 @@
         ]
       },
       "facts": [
-        "你喺塔門燒盡最後一頁。",
+        "你在塔門燒盡最後一頁。",
         "這一夜結束了。"
       ]
     },

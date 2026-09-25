@@ -312,16 +312,15 @@ test('existing prose, items, classes, and enemy numbers are unchanged', function
   var fleeTo = { f3_cult: 'f3_cult_talk', f3_wight: 'f3_shrine' };
   var factReplace = {
     f2_stairs: {
-      '你來到二層轉角。': '你落到第二層轉角。',
-      '正路通往上層通道。': '正路繼續向下。'
+      '正路通往上層通道。': '正路通往下層通道。'
     },
     win: { '你取下牆上的銅徽。': '你握緊銅徽。' }
   };
   var factExact = {
-    cp_f1: ['盜墓者嘅腳步聲遠咗。你坐喺石階口，塔入面靜到聽到自己心跳。——第一層完。'],
-    cp_f2: ['酸味慢慢散去，再落就係底層鐵門。今晚最難嗰段就喺門後面。——第二層完。'],
-    cp_f3: ['怨靈散成灰，林緣風好大。你今晚做過嘅事，就喺呢度計數。'],
-    post_tower: ['怨靈散成灰。', '你喺內室牆上取下銅徽。', '你走出廢塔。', '林緣風很大。']
+    cp_f1: ['盜墓者的腳步聲遠去。你坐在石階口，塔裡靜得聽見自己的心跳。——第一層完。'],
+    cp_f2: ['酸味漸漸散去，再往下就是底層鐵門。今夜最難的一段就在門後。——第二層完。'],
+    cp_f3: ['怨靈散成灰，林緣風很大。你今夜做過的事，都在這裡清算。'],
+    post_tower: ['怨靈散成灰。', '你從內室牆上取下銅徽。', '你走出廢塔。', '林緣風很大。']
   };
   var labelChange = { 'f2_stairs/up': '沿正路向下' };
   var toChange = { 'f3_door/unlock': 'f3_cult_talk', 'f3_door/smash': 'f3_cult_talk' };
@@ -399,7 +398,7 @@ test('floor checkpoints sit between floors and can be continued', function () {
   answerInserted(engine);
   assert.strictEqual(engine.scene.floor, 1);
   assert.strictEqual(engine.scene.name, '一層歇腳');
-  assert.deepStrictEqual(engine.scene.facts, ['盜墓者嘅腳步聲遠咗。你坐喺石階口，塔入面靜到聽到自己心跳。——第一層完。']);
+  assert.deepStrictEqual(engine.scene.facts, ['盜墓者的腳步聲遠去。你坐在石階口，塔裡靜得聽見自己的心跳。——第一層完。']);
   var acts = engine.legalActions().map(function (a) { return a.type; });
   assert.ok(acts.indexOf('continue') >= 0);
   assert.ok(acts.indexOf('attack') < 0);
@@ -423,7 +422,7 @@ test('each class can clear the tower and the hidden ending', function () {
     assert.strictEqual(card.battlesCleared, 6);
     assert.ok(/戰鬥 6\/8（含隱藏）/.test(card.battlesLabel));
     assert.strictEqual(card.hp, p.hp_max - 3);
-    assert.strictEqual(card.playAgainLabel, '試下第二個職業？');
+    assert.strictEqual(card.playAgainLabel, '試試第二個職業？');
     assert.ok(card.playTime);
     var labels = card.keyChoices.map(function (k) { return k.label; });
     assert.ok(labels.indexOf('盜墓者：搜身') >= 0, p.name);
@@ -1624,7 +1623,7 @@ test('outline routes reach every class, variant, and secret ending', function ()
   var soldCard = finishEnding(sold, 'sell');
   assert.strictEqual(soldCard.endingName, '收錢走人');
   assert.strictEqual(soldCard.endingType, 'variant');
-  assert.ok(soldCard.keyChoices.some(function (k) { return k.label === '銅徽：賣咗'; }));
+  assert.ok(soldCard.keyChoices.some(function (k) { return k.label === '銅徽：賣出'; }));
 
   var miraFailGate = reachPost(3, { insight: true, insightFail: true, stopAt: 'cult_after', seed: 61 });
   assert.strictEqual(miraFailGate.flags.mira_checked, true);
@@ -1665,7 +1664,7 @@ test('outline routes reach every class, variant, and secret ending', function ()
   var friendCard = finishEnding(friend, 'friend');
   assert.strictEqual(friendCard.endingName, '化敵為友');
   assert.strictEqual(friendCard.endingType, 'variant');
-  assert.ok(friendCard.keyChoices.some(function (k) { return k.label === '濕室藥水：留低'; }));
+  assert.ok(friendCard.keyChoices.some(function (k) { return k.label === '濕室藥水：留下'; }));
 
   var secret = reachPost(0, { search: true, side: true, bury: true, crypt: true, seed: 43 });
   assert.ok(choiceIds(secret).indexOf('face_rival') >= 0);
@@ -1679,7 +1678,7 @@ test('outline routes reach every class, variant, and secret ending', function ()
   assert.ok(choiceIds(both).indexOf('face_rival') >= 0);
   var bothCard = finishEnding(both, 'face_rival');
   assert.strictEqual(bothCard.endingType, 'secret');
-  assert.ok(bothCard.keyChoices.some(function (k) { return k.label === '濕室藥水：留低'; }));
+  assert.ok(bothCard.keyChoices.some(function (k) { return k.label === '濕室藥水：留下'; }));
 
   var dry = reachPost(0, { drinkBeforeOoze: true, seed: 45 });
   assert.ok(dry.sceneId === 'post_tower' || dry.status === 'won' || dry.status === 'playing');
@@ -1799,6 +1798,115 @@ test('root index.html matches main and the engine lives under preview', function
   assert.ok(fs.existsSync(path.join(__dirname, 'preview', 'data', 'wasted_tower.js')));
   assert.ok(!fs.existsSync(path.join(__dirname, 'js', 'engine.js')));
   assert.ok(!fs.existsSync(path.join(__dirname, 'data', 'wasted_tower.js')));
+});
+
+test('preview player-facing text has no Cantonese colloquial spellings', function () {
+  var needles = ['嘅', '啲', '咗', '喔', '佢', '哋', '唔', '係', '冇', '嘿', '咩', '點樣', '嘩', '喺', '嘢', '睇', '攞', '番', '落到', '仔'];
+  var skipKey = {
+    id: 1, to: 1, start: 1, win_to: 1, flee_to: 1, success_to: 1, fail_to: 1,
+    continue_to: 1, next: 1, give: 1, take: 1, require_item: 1, require_flag: 1,
+    set_flag: 1, set: 1, inc: 1, dec: 1, type: 1, end: 1, ending_type: 1,
+    skill: 1, kind: 1, all_flags: 1, none_flags: 1, flag_eq: 1, flag_min: 1,
+    flag_max: 1, has_item: 1, missing_item: 1, item_min: 1, item_max: 1,
+    item_eq: 1, stat_min: 1, stat_max: 1, stat_eq: 1, cleared: 1, not: 1,
+    class_flags: 1, required_for_secret: 1, choices_from: 1, choice_to: 1,
+    from_pregen: 1, replace: 1, damage: 1
+  };
+  var texts = [];
+  function walk(node, key) {
+    if (skipKey[key]) return;
+    if (typeof node === 'string') { texts.push(node); return; }
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach(function (item) { walk(item, key); });
+      return;
+    }
+    Object.keys(node).forEach(function (k) { walk(node[k], k); });
+  }
+  walk(adventure, '');
+  function stripComments(src) {
+    var out = '';
+    var i = 0;
+    while (i < src.length) {
+      var c = src.charAt(i);
+      var n = src.charAt(i + 1);
+      if (c === '/' && n === '/') {
+        while (i < src.length && src.charAt(i) !== '\n') i++;
+        continue;
+      }
+      if (c === '/' && n === '*') {
+        i += 2;
+        while (i < src.length && !(src.charAt(i) === '*' && src.charAt(i + 1) === '/')) i++;
+        i += 2;
+        continue;
+      }
+      if (c === "'" || c === '"') {
+        var q = c;
+        out += c;
+        i++;
+        while (i < src.length) {
+          var ch = src.charAt(i);
+          out += ch;
+          if (ch === '\\') {
+            i++;
+            if (i < src.length) out += src.charAt(i);
+            i++;
+            continue;
+          }
+          i++;
+          if (ch === q) break;
+        }
+        continue;
+      }
+      out += c;
+      i++;
+    }
+    return out;
+  }
+  function takeStrings(src) {
+    var i = 0;
+    while (i < src.length) {
+      var c = src.charAt(i);
+      if (c === "'" || c === '"') {
+        var q = c;
+        var body = '';
+        i++;
+        while (i < src.length) {
+          var ch = src.charAt(i);
+          if (ch === '\\') {
+            i++;
+            if (i < src.length) body += src.charAt(i);
+            i++;
+            continue;
+          }
+          if (ch === q) { i++; break; }
+          body += ch;
+          i++;
+        }
+        if (/[\u4e00-\u9fff]/.test(body)) texts.push(body);
+        continue;
+      }
+      i++;
+    }
+  }
+  ['preview/js/engine.js', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/index.html'].forEach(function (rel) {
+    takeStrings(stripComments(fs.readFileSync(path.join(__dirname, rel), 'utf8')));
+  });
+  var problems = [];
+  texts.forEach(function (text) {
+    needles.forEach(function (needle) {
+      var from = 0;
+      while (from <= text.length) {
+        var at = text.indexOf(needle, from);
+        if (at < 0) break;
+        if (needle === '係' && text.charAt(at - 1) === '關') { from = at + needle.length; continue; }
+        if (needle === '仔' && text.charAt(at + 1) === '細') { from = at + needle.length; continue; }
+        problems.push('「' + needle + '」 in 「' + text + '」');
+        break;
+      }
+    });
+  });
+  assert.deepStrictEqual(problems, []);
 });
 
 test('player-facing sources do not name a tabletop trademark', function () {

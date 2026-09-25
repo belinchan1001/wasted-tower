@@ -62,7 +62,7 @@
       for (j = 0; j < items.length; j++) if (items[j].id === id) it = items[j];
       if (it && it.kind === 'consumable' && it.name && it.name.indexOf('藥水') >= 0) n++;
     });
-    return '你喺〔' + place + '〕醒返，身上仲有〔' + n + ' 瓶藥水〕。繼續？';
+    return '你在〔' + place + '〕醒來，身上還有〔' + n + ' 瓶藥水〕。繼續？';
   }
 
   function browserStorage() {

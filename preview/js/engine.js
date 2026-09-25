@@ -2793,7 +2793,7 @@
       playMs: playMs,
       playTime: playMs == null ? '' : formatPlayTime(playMs),
       closing: best && best.closing ? best.closing : '',
-      playAgainLabel: '試下第二個職業？'
+      playAgainLabel: '試試第二個職業？'
     };
   };
 

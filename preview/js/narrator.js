@@ -17,7 +17,7 @@
   function modeLine(ev) {
     if (ev.mode !== 'advantage' && ev.mode !== 'disadvantage') return null;
     var label = ev.mode === 'advantage' ? '優勢' : '劣勢';
-    return label + '：擲出 ' + (ev.dice || []).join(' 同 ') + '，取 ' + ev.d20;
+    return label + '：擲出 ' + (ev.dice || []).join(' 和 ') + '，取 ' + ev.d20;
   }
   function checkRollLines(ev) {
     if (ev.d20 == null) return [];
@@ -301,7 +301,7 @@
             if (d.dc != null) out.push({ tone: 'narr', text: '難度 ' + d.dc + '。' });
             if (d.mode === 'advantage' || d.mode === 'disadvantage') {
               out.push({ tone: 'narr', text: (d.mode === 'advantage' ? '優勢' : '劣勢') + '：擲出 ' +
-                (d.dice || []).join(' 同 ') + '，取 ' + d.d20 + '。' });
+                (d.dice || []).join(' 和 ') + '，取 ' + d.d20 + '。' });
             }
             if (d.nat === 20) out.push({ tone: 'narr', text: '天時地利，這一擊正中要害。暴擊。傷害骰再擲一次。' });
             else if (d.nat === 1) out.push({ tone: 'narr', text: '腳下一滑，武器擦過石壁。這一擊沒有打中。' });
@@ -335,7 +335,7 @@
           if (d && d.dc != null) out.push({ tone: 'narr', text: '難度 ' + d.dc + '。' });
           if (d && (d.mode === 'advantage' || d.mode === 'disadvantage')) {
             out.push({ tone: 'narr', text: (d.mode === 'advantage' ? '優勢' : '劣勢') + '：擲出 ' +
-              (d.dice || []).join(' 同 ') + '，取 ' + d.d20 + '。' });
+              (d.dice || []).join(' 和 ') + '，取 ' + d.d20 + '。' });
           }
           if (d && d.nat === 20) out.push({ tone: 'narr', text: '敵人這一擊勢不可擋。暴擊。' });
           else if (d && d.nat === 1) out.push({ tone: 'narr', text: '敵人腳下一滑，這一擊沒有打中。' });

@@ -2048,6 +2048,9 @@ test('preview player-facing text has no Cantonese colloquial spellings', functio
         break;
       }
     });
+    if (text.indexOf(' 同 ') >= 0 || /擲出[^。\n]*同/.test(text)) {
+      problems.push('「同」 joins a roll line in 「' + text + '」');
+    }
   });
   assert.deepStrictEqual(problems, []);
 });
@@ -2128,7 +2131,7 @@ test('advantage keeps the high die and disadvantage keeps the low die', function
   assert.strictEqual(atk.d20, 16);
   assert.strictEqual(atk.hit, true);
   var mech = narrator.Mechanics.format(atk).map(function (l) { return l.text; }).join('\n');
-  assert.ok(mech.indexOf('優勢：擲出 7 同 16，取 16') >= 0);
+  assert.ok(mech.indexOf('優勢：擲出 7 和 16，取 16') >= 0);
   assert.ok(mech.indexOf('d20 擲出 16') >= 0);
   assert.ok(mech.indexOf('難度 ' + atk.ac) >= 0);
 
@@ -2145,7 +2148,7 @@ test('advantage keeps the high die and disadvantage keeps the low die', function
   assert.strictEqual(swings[0].d20, 2);
   assert.strictEqual(swings[0].hit, false);
   var low = narrator.Mechanics.rollLines(swings[0]).join('\n');
-  assert.ok(low.indexOf('劣勢：擲出 2 同 18，取 2') >= 0);
+  assert.ok(low.indexOf('劣勢：擲出 2 和 18，取 2') >= 0);
   assert.ok(low.indexOf('d20 擲出 2') >= 0);
   assert.ok(low.indexOf('難度 ' + swings[0].ac) >= 0);
   assert.deepStrictEqual(swings[1].dice, [3, 17]);
@@ -2524,8 +2527,9 @@ test('visible roll text does not name a tabletop trademark', function () {
     t: 'enemy_attack', d20: 7, dice: [7, 16], mode: 'disadvantage', bonus: 2, total: 9,
     ac: 16, dc: 16, hit: false, nat: 7
   })).join('\n');
-  assert.ok(sample.indexOf('優勢：擲出 7 同 20，取 20') >= 0);
-  assert.ok(sample.indexOf('劣勢：擲出 7 同 16，取 7') >= 0);
+  assert.ok(sample.indexOf('優勢：擲出 7 和 20，取 20') >= 0);
+  assert.ok(sample.indexOf('劣勢：擲出 7 和 16，取 7') >= 0);
+  assert.ok(sample.indexOf(' 同 ') < 0);
   assert.ok(sample.indexOf('d20') >= 0);
   assert.ok(sample.indexOf('難度') >= 0);
   assert.ok(sample.indexOf('暴擊') >= 0);

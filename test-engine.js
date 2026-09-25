@@ -657,7 +657,7 @@ test('old save codes migrate and bad codes fail without throwing', function () {
 
 test('the single save slot writes, reads, and survives a failed write', function () {
   var mem = memoryStorage();
-  var store = new T.SaveSlot(mem, 'wasted-tower.slot1');
+  var store = new T.SaveSlot(mem);
   var engine = new T.Engine(adventure, { seed: 13 });
   engine.start(0);
   var code = T.encodeSaveCode(engine.exportSave());
@@ -674,6 +674,49 @@ test('the single save slot writes, reads, and survives a failed write', function
   var denied = full.write('WT1.x');
   assert.strictEqual(denied.ok, false);
   assert.ok(/匯出存檔碼/.test(denied.error));
+});
+
+test('preview localStorage keys all start with wasted-tower-preview-', function () {
+  var prefix = 'wasted-tower-preview-';
+  assert.strictEqual(T.PREVIEW_STORAGE_PREFIX, prefix);
+  var names = T.previewStorageKeys().slice().sort();
+  assert.deepStrictEqual(names, ['wasted-tower-preview-probe', 'wasted-tower-preview-save']);
+  names.forEach(function (key) {
+    assert.strictEqual(key.indexOf(prefix), 0, key);
+  });
+
+  var seen = [];
+  var rec = {
+    getItem: function (key) { seen.push(key); return null; },
+    setItem: function (key) { seen.push(key); },
+    removeItem: function (key) { seen.push(key); }
+  };
+  var slot = new T.SaveSlot(rec);
+  assert.strictEqual(slot.write('WT3.abc').ok, true);
+  slot.read();
+  slot.clear();
+  rec.setItem(T.PREVIEW_STORAGE_KEYS.probe, '1');
+  rec.removeItem(T.PREVIEW_STORAGE_KEYS.probe);
+  assert.ok(seen.length > 0);
+  seen.forEach(function (key) {
+    assert.strictEqual(key.indexOf(prefix), 0, key);
+  });
+
+  var publicKey = 'wasted-tower' + '.slot1';
+  var genericProbe = '__wt' + '_probe__';
+  ['preview/js/engine.js', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/index.html'].forEach(function (rel) {
+    var text = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+    assert.ok(text.indexOf(publicKey) < 0, rel);
+    assert.ok(text.indexOf(genericProbe) < 0, rel);
+    var re = /\.(?:setItem|getItem|removeItem)\(\s*(['"])([^'"]+)\1/g;
+    var match;
+    while ((match = re.exec(text))) {
+      assert.strictEqual(match[2].indexOf(prefix), 0, rel + ' writes ' + match[2]);
+    }
+  });
+  var ui = fs.readFileSync(path.join(__dirname, 'preview/js/ui.js'), 'utf8');
+  assert.ok(ui.indexOf('PREVIEW_STORAGE_KEYS.probe') >= 0);
+  assert.ok(ui.indexOf('PREVIEW_STORAGE_KEYS.save') >= 0);
 });
 
 test('class lines, counters, and flag-gated endings', function () {

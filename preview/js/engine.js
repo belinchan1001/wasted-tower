@@ -484,9 +484,22 @@
     return cur;
   }
 
+  // localStorage is shared by every site on this GitHub Pages origin.
+  // Preview keys must not match the public game or any other project.
+  var PREVIEW_STORAGE_PREFIX = 'wasted-tower-preview-';
+  var PREVIEW_STORAGE_KEYS = {
+    save: 'wasted-tower-preview-save',
+    probe: 'wasted-tower-preview-probe'
+  };
+  function previewStorageKeys() {
+    return Object.keys(PREVIEW_STORAGE_KEYS).map(function (name) {
+      return PREVIEW_STORAGE_KEYS[name];
+    });
+  }
+
   function SaveSlot(storage, key) {
     this.storage = storage || null;
-    this.key = key || 'wasted-tower.slot1';
+    this.key = key || PREVIEW_STORAGE_KEYS.save;
   }
   SaveSlot.prototype.read = function () {
     if (!this.storage) return null;
@@ -2943,6 +2956,9 @@
     decodeSaveCode: decodeSaveCode,
     migrateSave: migrateSave,
     loadGame: loadGame,
+    PREVIEW_STORAGE_PREFIX: PREVIEW_STORAGE_PREFIX,
+    PREVIEW_STORAGE_KEYS: PREVIEW_STORAGE_KEYS,
+    previewStorageKeys: previewStorageKeys,
     SaveSlot: SaveSlot,
     layoutEndingCard: layoutEndingCard,
     paintEndingCard: paintEndingCard,

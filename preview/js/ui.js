@@ -68,7 +68,7 @@
   function browserStorage() {
     try {
       var ls = window.localStorage;
-      var probe = '__wt_probe__';
+      var probe = T.PREVIEW_STORAGE_KEYS.probe;
       ls.setItem(probe, '1');
       ls.removeItem(probe);
       return ls;
@@ -81,7 +81,7 @@
   var engine = null;
   var logEl = null, statusEl = null, actionsEl = null;
   var trayMode = null; // null | 'items' | 'export' | {slot:n} | {featureId:id}
-  var slot = new T.SaveSlot(browserStorage());
+  var slot = new T.SaveSlot(browserStorage(), T.PREVIEW_STORAGE_KEYS.save);
   var saveNote = '';
   var endingCanvas = null;
   var revealCode = false;

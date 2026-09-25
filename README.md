@@ -2,7 +2,7 @@
 
 瀏覽器裡的單人一場文字冒險。正式遊戲是靜態檔案：`index.html`、`data/wasted_tower.js`、`js/` 底下的引擎。沒有安裝、登入、伺服器或網絡請求。用瀏覽器直接打開，或發佈到 GitHub Pages 皆可；`file://` 也能玩。
 
-進度會自動寫進這台裝置的一個存檔欄。也可以把存檔碼複製出來，免得瀏覽器（尤其是 iOS Safari）清掉本地記錄。
+進度會自動寫進這台裝置的一個存檔欄，也會在每個行動之後更新。這不是一場打完就消失的進度。也可以把存檔碼複製出來再貼回去，免得瀏覽器（尤其是 iOS Safari）清掉本地記錄。
 
 
 ## 怎樣遊玩
@@ -22,6 +22,8 @@
 ## 發佈
 
 把整個資料夾放到 GitHub Pages 的網站根目錄（不要只上傳 `index.html`）。沒有建置步驟、外部套件、CDN、字型或圖片。
+
+`preview/` 是同一套頁面的副本，路徑不是網站根目錄。改完引擎後執行 `node scripts/build-preview.js`。從倉庫根目錄開靜態伺服器時，預覽網址是 `/preview/`。正式站的根目錄仍是倉庫根上的 `index.html`。
 
 `node test-engine.js` 會檢查腳本圖、舊內容、存檔與結局卡。它不是玩家需要的檔案。
 
@@ -71,7 +73,98 @@
 - `give` / `take`：給予或拿走物品
 - `hp_delta`：生命變化
 
-`flag_defs` 用來告訴結局卡哪些旗標要顯示。`key: true` 的旗標會按發生順序出現，`label` 就是卡上的字。
+`flag_defs` 用來告訴結局卡哪些旗標要顯示。`key: true` 的旗標會按發生順序出現，`label` 就是卡上的字。數字旗標可以寫 `min` / `max`，加減之後會停在這個範圍裡。
+
+開局時引擎會依 `meta.class_flags` 自動設上職業旗標（也可在角色上寫 `class_flag` 蓋過它）：
+
+```js
+"class_flags": {
+  "戰士": "cls_warrior",
+  "遊俠": "cls_ranger",
+  "盜賊": "cls_rogue",
+  "牧師": "cls_cleric",
+  "法師": "cls_mage"
+}
+```
+
+### 條件可以組合
+
+`when` 裡的欄位仍然要全部成立。另外可以嵌：
+
+- `not`：裡面的條件不成立才通過。例如只在旗標 X 沒設時出現：`{ "not": { "all_flags": ["quiet"] } }`
+- `all`：陣列裡每一項都要成立
+- `any`：陣列裡至少一項成立
+
+數字比較沿用這三個欄位：`flag_min` 是 `>=`，`flag_max` 是 `<=`，`flag_eq` 是 `==`。還沒寫過的數字當 0。
+
+```js
+"when": {
+  "all": [{ "flag_eq": { "aff_bandit": 2 } }],
+  "any": [{ "all_flags": ["cls_warrior"] }, { "all_flags": ["cls_cleric"] }]
+}
+```
+
+選項上的 `inc` 是加，`dec` 是減。`flag_defs` 若寫了 `min` / `max`，結果會夾在裡面，例如 `aff_bandit` 停在 0 到 2。
+
+### 換一句或加一句
+
+`facts` 裡的字串一定出現。`{ "text", "when" }` 是條件成立才**附加**。`replace` 是條件成立時**換掉**同一場裡那句原文；條件不成立就留著原句。
+
+```js
+"facts": [
+  "門關著。",
+  { "text": "門已經開了。", "replace": "門關著。", "when": { "all_flags": ["opened"] } },
+  { "text": "你聽見腳步。", "when": { "not": { "all_flags": ["quiet"] } } }
+]
+```
+
+### 檢定的成功和失敗
+
+`check` 仍然是 d20 加調整，點數剛好等於 DC 算成功。`on_success` 和 `on_failure` 可以各自 `set_flag`、`inc`、`dec`、`give`、`take`、`hp_delta`。兩邊的 `success_to` / `fail_to` 可以指向同一場。舊的 `fail_hp_delta` 還在；沒有寫 `min_hp` 時，傷害仍然可以把生命打到 0。
+
+`min_hp`（寫作裡的 minHp，兩個名字都可以）是這次傷害的下限。下面這次失敗最多掉到 1，不會因此死亡：
+
+```js
+"on_failure": { "set_flag": ["slipped"], "hp_delta": -20, "minHp": 1 }
+```
+
+### 物品
+
+`give` 放入物品，`take` 拿走一件。消耗品照舊：`heal` 或 `damage` 二擇一，傷害類只能在戰鬥中用掉。例如獲得一支戰鬥中造成 8 點傷害的鹿角箭，並交出手上的藥水：
+
+```js
+"on_success": { "give": ["antler_arrow"], "take": ["potion"] }
+```
+
+物品本身要先寫在 `items`：`{ "id": "antler_arrow", "name": "鹿角箭", "kind": "consumable", "damage": 8 }`。
+
+### 逃走與歇息
+
+每場戰鬥的 `flee_to` 可以是場景 id。寫成 `"@checkpoint"` 時，逃走會回到這一輪最近踏進的歇腳點；還沒歇過腳就跟沒寫 `flee_to` 一樣，整場重來。現在塔裡的怨靈沒有改這欄，逃走仍然重開。
+
+場景可以帶 `rest`。條件成立時，進入該場回復 `heal` 點生命，不會超過上限：
+
+```js
+"rest": { "heal": 4, "when": { "all_flags": ["cls_cleric"] } }
+```
+
+### 結局卡
+
+結局場景可加 `ending_type`：`lose`、`main`、`variant`、`class`、`secret`。沒寫時，`win` 當 `main`，`secret_win` 當 `secret`，`lose` 當 `lose`。同一刻若有好幾個結局的條件都成立，卡片標題照這個順序挑：lose、secret、class、variant、main。
+
+`closing` 是這張卡最底下的一句，可省略。`class_branches` 描述職業分支。`when` 成立才跟這名角色有關；`completed_when` 成立時卡片多一行 `branch: X (completed)`，否則是 `branch: X (missed): ` 加上 `miss_reason`。隱藏結局同時完成分支時，標題仍是 secret，並加上那一行 completed。
+
+卡片還會列出角色與職業、關鍵選擇、戰鬥 `X/總數（含隱藏）`（`hidden: true` 的戰鬥算進總數；`omit_from_tally: true` 的戰鬥，例如對手對決，不計入）、剩餘生命、有記錄時的遊玩時間。結局畫面的「從頭再玩一次」會用同一個角色重開。
+
+```js
+"class_branches": [{
+  "id": "warrior_branch",
+  "label": "X",
+  "when": { "all_flags": ["cls_warrior"] },
+  "completed_when": { "all_flags": ["branch_done"] },
+  "miss_reason": "沒有完成分支。"
+}]
+```
 
 ### 職業專用分支
 
@@ -137,7 +230,9 @@
 
 不要自創場景 `type`。檢查器只接受上表那五種。
 
-### 存檔版本
+### 存檔與匯出
+
+遊玩時每個行動都會自動寫入這台裝置的一個存檔欄。標題畫面可以「繼續上次的進度」，也可以「清除這個存檔」。戰鬥或歇腳時按「存檔碼」，會得到以 `WT` 加版本號開頭的一段文字；換裝置或瀏覽器清掉記錄時，把整段貼回標題畫面的「讀取存檔碼」。格式不對、版本比遊戲新、或對不上現在的腳本時，只會顯示原因，畫面留在選角。
 
 存檔碼以 `WT` 加版本號開頭。引擎裡的 `formatMigrations` 負責把舊存檔升級到現在的存檔格式；`scriptMigrations` 負責在 `meta.script_version` 提高時，把舊場景 id 改成新的。
 

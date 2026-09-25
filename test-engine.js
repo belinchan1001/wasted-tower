@@ -274,8 +274,16 @@ test('each class can clear the tower and the hidden ending', function () {
     assert.strictEqual(main.character.hp, p.hp_max - 3, p.name + ' hp');
     var card = main.endingCard();
     assert.strictEqual(card.endingName, '通關');
+    assert.strictEqual(card.endingType, 'main');
     assert.strictEqual(card.className, p['class']);
     assert.strictEqual(card.characterName, p.name);
+    assert.strictEqual(card.battlesTotal, 8);
+    assert.strictEqual(card.battlesHidden, 2);
+    assert.strictEqual(card.battlesCleared, 6);
+    assert.ok(/戰鬥 6\/8（含隱藏）/.test(card.battlesLabel));
+    assert.strictEqual(card.hp, p.hp_max - 3);
+    assert.strictEqual(card.playAgainLabel, '從頭再玩一次');
+    assert.ok(card.playTime);
     var labels = card.keyChoices.map(function (k) { return k.label; });
     assert.ok(labels.indexOf('直接進塔') >= 0, p.name);
     assert.ok(labels.indexOf('帶著銅徽離開') >= 0, p.name);
@@ -285,6 +293,8 @@ test('each class can clear the tower and the hidden ending', function () {
     assert.strictEqual(secret.status, 'secret_won', p.name);
     var scard = secret.endingCard();
     assert.strictEqual(scard.endingName, '隱藏結局');
+    assert.strictEqual(scard.endingType, 'secret');
+    assert.strictEqual(scard.battlesCleared, 8);
     assert.ok(scard.keyChoices.some(function (k) { return k.label.indexOf('對手：') === 0; }), p.name);
   });
 });
@@ -445,8 +455,18 @@ test('old save codes migrate and bad codes fail without throwing', function () {
   assert.strictEqual(filled.ok, true, filled.error);
   assert.deepStrictEqual(filled.engine.keyChoices, []);
 
+  var v1 = engine.exportSave();
+  v1.v = 1;
+  delete v1.flags.cls_rogue;
+  delete v1.lastCheckpoint;
+  delete v1.playMs;
+  var upgraded = T.loadGame(adventure, T.encodeSaveCode(v1));
+  assert.strictEqual(upgraded.ok, true, upgraded.error);
+  assert.strictEqual(upgraded.engine.flags.cls_rogue, true);
+  assert.strictEqual(upgraded.engine.playTimeKnown, false);
+
   var newer = engine.exportSave();
-  newer.v = 2;
+  newer.v = 3;
   var tooNew = T.loadGame(adventure, T.encodeSaveCode(newer));
   assert.strictEqual(tooNew.ok, false);
   assert.ok(/較新/.test(tooNew.error));
@@ -687,6 +707,302 @@ test('narrator still speaks scene facts and does not invent checkpoint facts', f
   assert.ok(texts.indexOf('林緣有一座廢塔。') >= 0);
   assert.ok(texts.indexOf('木門半掩。') >= 0);
   assert.ok(texts.indexOf('天色將晚。') >= 0);
+});
+
+test('class flags, counters, text, checks, items, flee, and rest', function () {
+  var classFlag = {
+    '戰士': 'cls_warrior', '遊俠': 'cls_ranger', '盜賊': 'cls_rogue',
+    '牧師': 'cls_cleric', '法師': 'cls_mage'
+  };
+  adventure.pregens.forEach(function (p, i) {
+    var engine = new T.Engine(adventure, { seed: 20 + i });
+    engine.start(i);
+    assert.strictEqual(engine.flags[classFlag[p['class']]], true, p['class']);
+    Object.keys(classFlag).forEach(function (cls) {
+      if (cls !== p['class']) assert.ok(!engine.flags[classFlag[cls]], p['class']);
+    });
+  });
+
+  var story = {
+    id: 'hooks',
+    title: '鉤子',
+    start: 'talk',
+    meta: { class_flags: { '戰士': 'cls_warrior', '牧師': 'cls_cleric' } },
+    flag_defs: {
+      aff_bandit: { min: 0, max: 2, label: '盜墓者親和' },
+      branch_done: { key: true, label: '完成分支' },
+      climbed: { label: '爬過' },
+      slipped: { label: '滑倒' }
+    },
+    class_branches: [{
+      id: 'warrior_branch',
+      label: 'X',
+      when: { all_flags: ['cls_warrior'] },
+      completed_when: { all_flags: ['branch_done'] },
+      miss_reason: '沒有完成分支。'
+    }],
+    items: [
+      { id: 'potion', name: '藥水', kind: 'consumable', heal: 4 },
+      { id: 'antler_arrow', name: '鹿角箭', kind: 'consumable', damage: 8 }
+    ],
+    pregens: [
+      pregen('甲', '戰士'),
+      pregen('乙', '牧師')
+    ],
+    scenes: [
+      {
+        id: 'talk',
+        type: 'beat',
+        facts: [
+          '門關著。',
+          { text: '門已經開了。', replace: '門關著。', when: { all_flags: ['opened'] } },
+          { text: '你聽見腳步。', when: { not: { all_flags: ['quiet'] } } }
+        ],
+        choices: [
+          { id: 'plus', label: '靠近', to: 'talk', inc: { aff_bandit: 1 } },
+          { id: 'minus', label: '後退', to: 'talk', dec: { aff_bandit: 1 }, when: { flag_min: { aff_bandit: 1 } } },
+          {
+            id: 'open',
+            label: '開門',
+            to: 'check',
+            set: { opened: true },
+            when: {
+              all: [{ flag_eq: { aff_bandit: 2 } }],
+              any: [{ all_flags: ['cls_warrior'] }, { all_flags: ['cls_cleric'] }]
+            }
+          },
+          { id: 'skip', label: '跳過', to: 'hurt' }
+        ]
+      },
+      {
+        id: 'check',
+        type: 'check',
+        skill: 'athletics',
+        dc: 15,
+        success_to: 'camp',
+        fail_to: 'camp',
+        on_success: { set_flag: ['climbed'], give: ['antler_arrow'], take: ['potion'] },
+        on_failure: { set_flag: ['slipped'], hp_delta: -20, minHp: 1 }
+      },
+      {
+        id: 'hurt',
+        type: 'check',
+        skill: 'athletics',
+        dc: 30,
+        success_to: 'dead_end_win',
+        fail_to: 'dead_end_win',
+        fail_hp_delta: -20
+      },
+      {
+        id: 'camp',
+        type: 'checkpoint',
+        floor: 1,
+        name: '歇',
+        facts: ['歇一下。'],
+        continue_to: 'boss',
+        rest: { heal: 4, when: { all_flags: ['cls_cleric'] } }
+      },
+      {
+        id: 'boss',
+        type: 'combat',
+        enemies: [{ name: '頭目', ac: 10, hp: 8, atk: 0, damage: '1d4' }],
+        win_to: 'split',
+        flee_to: '@checkpoint'
+      },
+      {
+        id: 'split',
+        type: 'beat',
+        facts: ['分路。'],
+        choices: [
+          { id: 'main', label: '主線', to: 'main_end' },
+          { id: 'variant', label: '變體', to: 'variant_end', set_flag: ['variant_on'] },
+          { id: 'klass', label: '職業', to: 'class_end', set_flag: ['branch_done'], when: { all_flags: ['cls_warrior'] } },
+          { id: 'secret', label: '隱藏', to: 'secret_end', set_flag: ['secret_on'] }
+        ]
+      },
+      { id: 'main_end', type: 'end', end: 'win', ending_type: 'main', name: '主線', facts: ['主。'], closing: '到此為止。' },
+      {
+        id: 'variant_end', type: 'end', end: 'win', ending_type: 'variant', name: '變體',
+        when: { all_flags: ['variant_on'] }, facts: ['變。']
+      },
+      {
+        id: 'class_end', type: 'end', end: 'win', ending_type: 'class', name: '職業結局',
+        when: { all_flags: ['branch_done'] }, facts: ['職。']
+      },
+      {
+        id: 'secret_end', type: 'end', end: 'secret_win', ending_type: 'secret', name: '隱藏結局',
+        when: { all_flags: ['secret_on'] }, facts: ['隱。']
+      },
+      { id: 'dead_end_win', type: 'end', end: 'win', ending_type: 'main', name: '力盡', facts: ['停。'] }
+    ]
+  };
+  story.pregens[0].inventory = ['potion'];
+  story.pregens[1].inventory = ['potion'];
+  var report = T.validateAdventure(story);
+  assert.strictEqual(report.ok, true, report.errors.join('\n'));
+
+  var warrior = new T.Engine(story, { seed: 1 });
+  var began = warrior.start(0);
+  var facts = began.events.filter(function (e) { return e.t === 'scene'; })[0].facts;
+  assert.deepStrictEqual(facts, ['門關著。', '你聽見腳步。']);
+  assert.strictEqual(warrior.flags.cls_warrior, true);
+  choose(warrior, 'plus');
+  choose(warrior, 'plus');
+  choose(warrior, 'plus');
+  assert.strictEqual(warrior.flags.aff_bandit, 2);
+  choose(warrior, 'minus');
+  assert.strictEqual(warrior.flags.aff_bandit, 1);
+  choose(warrior, 'minus');
+  assert.strictEqual(warrior.flags.aff_bandit, 0);
+  assert.ok(choiceIds(warrior).indexOf('minus') < 0);
+  choose(warrior, 'plus');
+  choose(warrior, 'plus');
+  assert.ok(choiceIds(warrior).indexOf('open') >= 0);
+  choose(warrior, 'open');
+  assert.strictEqual(warrior.sceneId, 'check');
+  warrior.flags.quiet = true;
+  assert.deepStrictEqual(T.resolveFacts(warrior.scenes.talk.facts, warrior.conditionState()), ['門已經開了。']);
+
+  warrior.rng = seqRng([20]);
+  assert.strictEqual(warrior.perform({ type: 'roll' }).ok, true);
+  assert.strictEqual(warrior.flags.climbed, true);
+  assert.ok(warrior.character.inventory.indexOf('antler_arrow') >= 0);
+  assert.ok(warrior.character.inventory.indexOf('potion') < 0);
+  assert.strictEqual(warrior.sceneId, 'camp');
+  assert.strictEqual(warrior.character.hp, 12);
+
+  var cleric = new T.Engine(story, { seed: 2 });
+  cleric.start(1);
+  cleric.character.hp = 5;
+  choose(cleric, 'plus');
+  choose(cleric, 'plus');
+  choose(cleric, 'open');
+  cleric.rng = seqRng([1]);
+  var failedRoll = cleric.perform({ type: 'roll' });
+  assert.strictEqual(cleric.flags.slipped, true);
+  var floored = failedRoll.events.filter(function (e) { return e.t === 'hp'; })[0];
+  assert.strictEqual(floored.hp, 1);
+  assert.strictEqual(cleric.sceneId, 'camp');
+  assert.strictEqual(cleric.character.hp, 5);
+  var restEv = cleric.events.filter(function (e) { return e.t === 'rest'; })[0];
+  assert.strictEqual(restEv.healed, 4);
+
+  var killer = new T.Engine(story, { seed: 3 });
+  killer.start(0);
+  choose(killer, 'skip');
+  killer.rng = seqRng([1]);
+  killer.perform({ type: 'roll' });
+  assert.strictEqual(killer.status, 'lost');
+  assert.strictEqual(killer.character.hp, 0);
+  assert.strictEqual(killer.endingCard().endingType, 'lose');
+  assert.strictEqual(killer.endingCard().endingName, '失敗');
+
+  cont(cleric);
+  assert.strictEqual(cleric.sceneId, 'boss');
+  var slot = cleric.character.inventory.indexOf('antler_arrow');
+  assert.ok(slot < 0);
+  var arrowUser = new T.Engine(story, { seed: 4 });
+  arrowUser.start(0);
+  choose(arrowUser, 'plus');
+  choose(arrowUser, 'plus');
+  choose(arrowUser, 'open');
+  arrowUser.rng = seqRng([20]);
+  arrowUser.perform({ type: 'roll' });
+  cont(arrowUser);
+  var arrowSlot = arrowUser.character.inventory.indexOf('antler_arrow');
+  var shot = arrowUser.perform({ type: 'use_item', slot: arrowSlot, target: 0 });
+  assert.strictEqual(shot.ok, true);
+  var arrowHit = shot.events.filter(function (e) { return e.t === 'item_damage'; })[0];
+  assert.strictEqual(arrowHit.amount, 8);
+  assert.strictEqual(arrowHit.targetHp, 0);
+  assert.ok(arrowUser.character.inventory.indexOf('antler_arrow') < 0);
+
+  var fleeing = new T.Engine(story, { seed: 5 });
+  fleeing.start(0);
+  choose(fleeing, 'plus');
+  choose(fleeing, 'plus');
+  choose(fleeing, 'open');
+  fleeing.rng = seqRng([20]);
+  fleeing.perform({ type: 'roll' });
+  assert.strictEqual(fleeing.lastCheckpoint, 'camp');
+  cont(fleeing);
+  assert.strictEqual(fleeing.sceneId, 'boss');
+  fleeing.perform({ type: 'flee' });
+  assert.strictEqual(fleeing.sceneId, 'camp');
+  assert.ok(!fleeing.clearedCombats.boss);
+
+  function finish(engine, id) {
+    if (engine.sceneId === 'camp') cont(engine);
+    if (engine.sceneId === 'boss') winCombat(engine);
+    choose(engine, id);
+  }
+  var secret = new T.Engine(story, { seed: 6 });
+  secret.start(0);
+  choose(secret, 'plus');
+  choose(secret, 'plus');
+  choose(secret, 'open');
+  secret.rng = seqRng([20]);
+  secret.perform({ type: 'roll' });
+  finish(secret, 'secret');
+  var secretCard = secret.endingCard();
+  assert.strictEqual(secret.status, 'secret_won');
+  assert.strictEqual(secretCard.endingType, 'secret');
+  assert.strictEqual(secretCard.endingName, '隱藏結局');
+  assert.ok(secretCard.branchLines.indexOf('branch: X (missed): 沒有完成分支。') >= 0);
+
+  var both = new T.Engine(story, { seed: 7 });
+  both.start(0);
+  choose(both, 'plus');
+  choose(both, 'plus');
+  choose(both, 'open');
+  both.rng = seqRng([20]);
+  both.perform({ type: 'roll' });
+  finish(both, 'klass');
+  assert.strictEqual(both.endingCard().endingType, 'class');
+  assert.strictEqual(both.endingCard().endingName, '職業結局');
+  assert.ok(both.endingCard().branchLines.indexOf('branch: X (completed)') >= 0);
+  assert.strictEqual(both.endingCard().closing, '');
+
+  both.flags.secret_on = true;
+  both.flags.variant_on = true;
+  var overlaid = both.endingCard();
+  assert.strictEqual(overlaid.endingType, 'secret');
+  assert.strictEqual(overlaid.endingName, '隱藏結局');
+  assert.ok(overlaid.branchLines.indexOf('branch: X (completed)') >= 0);
+
+  var plain = new T.Engine(story, { seed: 8 });
+  plain.start(1);
+  choose(plain, 'plus');
+  choose(plain, 'plus');
+  choose(plain, 'open');
+  plain.rng = seqRng([20]);
+  plain.perform({ type: 'roll' });
+  finish(plain, 'main');
+  assert.strictEqual(plain.endingCard().endingType, 'main');
+  assert.strictEqual(plain.endingCard().closing, '到此為止。');
+  assert.deepStrictEqual(plain.endingCard().branchLines, []);
+  plain.flags.variant_on = true;
+  assert.strictEqual(plain.endingCard().endingType, 'variant');
+  assert.strictEqual(plain.endingCard().endingName, '變體');
+
+  var painted = T.paintEndingCard({
+    font: '', fillStyle: '', textAlign: '', textBaseline: '', strokeStyle: '', lineWidth: 1,
+    measureText: function (s) { return { width: String(s).length * 10 }; },
+    fillRect: function () {}, strokeRect: function () {}, fillText: function () {}
+  }, 720, overlaid);
+  var text = painted.blocks.map(function (b) { return b.text; }).join('\n');
+  assert.ok(text.indexOf('類型　secret') >= 0);
+  assert.ok(text.indexOf('branch: X (completed)') >= 0);
+  assert.ok(text.indexOf('剩餘生命') >= 0);
+  assert.ok(text.indexOf('戰鬥') >= 0);
+});
+
+test('preview build matches the playable files', function () {
+  ['index.html', 'data/wasted_tower.js', 'js/engine.js', 'js/narrator.js', 'js/ui.js'].forEach(function (rel) {
+    var live = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+    var copy = fs.readFileSync(path.join(__dirname, 'preview', rel), 'utf8');
+    assert.strictEqual(copy, live, rel);
+  });
 });
 
 test('player-facing sources do not name a tabletop trademark', function () {

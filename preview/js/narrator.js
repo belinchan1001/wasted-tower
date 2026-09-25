@@ -5,15 +5,63 @@
   var T = global.TOWER;
 
   function sign(n) { return (n >= 0 ? '+' : '−') + Math.abs(n); }
-  function dieBreakdown(ev) {
-    if (ev.dice && ev.dice.length > 1) return 'd20(' + ev.dice.join('、') + ' → ' + ev.d20 + ')';
-    return 'd20(' + ev.d20 + ')';
-  }
   function diceText(d) {
     // "[5,3] +2" style breakdown of a rolled dice string
     var s = '[' + d.rolls.join('、') + ']';
     if (d.mod) s += ' ' + sign(d.mod);
     return s;
+  }
+
+  // Frozen combat-log sentences. The words are the rolls already stored on the
+  // event; this does not draw dice.
+  function modeLine(ev) {
+    if (ev.mode !== 'advantage' && ev.mode !== 'disadvantage') return null;
+    var label = ev.mode === 'advantage' ? '優勢' : '劣勢';
+    return label + '：擲出 ' + (ev.dice || []).join(' 同 ') + '，取 ' + ev.d20;
+  }
+  function checkRollLines(ev) {
+    if (ev.d20 == null) return [];
+    var lines = [];
+    var mode = modeLine(ev);
+    if (mode) lines.push(mode);
+    var result = ev.success ? '成功' : '失敗';
+    if (ev.nat === 20 || ev.d20 === 20) result = '自然 20，' + result;
+    else if (ev.nat === 1 || ev.d20 === 1) result = '自然 1，' + result;
+    var ability = (T.ABILITY_LABEL && T.ABILITY_LABEL[ev.ability]) || '屬性';
+    var text = 'd20 擲出 ' + ev.d20 + '，' + ability + ' ' + sign(ev.mod || 0);
+    if (ev.prof) text += '，熟練 ' + sign(ev.prof);
+    text += '，總數 ' + ev.total + '，難度 ' + ev.dc + '，' + result;
+    lines.push(text);
+    return lines;
+  }
+  function attackRollLines(ev) {
+    if (ev.d20 == null) return [];
+    var lines = [];
+    var mode = modeLine(ev);
+    if (mode) lines.push(mode);
+    var result;
+    if (ev.nat === 20 || ev.d20 === 20) result = '自然 20，暴擊';
+    else if (ev.nat === 1 || ev.d20 === 1) result = '自然 1，失手';
+    else if (ev.crit) result = '暴擊';
+    else result = ev.hit ? '命中' : '落空';
+    var dc = ev.dc != null ? ev.dc : ev.ac;
+    lines.push('d20 擲出 ' + ev.d20 + '，攻擊 ' + sign(ev.bonus || 0) + '，總數 ' + ev.total + '，難度 ' + dc + '，' + result);
+    return lines;
+  }
+  function initiativeRollLines(ev) {
+    return (ev.order || []).map(function (row) {
+      return '先攻。d20 擲出 ' + row.roll + '，加值 ' + sign(row.bonus || 0) + '，總數 ' + row.total;
+    });
+  }
+  function rollLines(ev) {
+    if (!ev) return [];
+    if (ev.t === 'check') return checkRollLines(ev);
+    if (ev.t === 'attack' || ev.t === 'enemy_attack') return attackRollLines(ev);
+    if (ev.t === 'initiative') return initiativeRollLines(ev);
+    return [];
+  }
+  function pushRolls(out, ev) {
+    rollLines(ev).forEach(function (text) { out.push({ tone: 'roll', text: text }); });
   }
 
   // ------------------------------------------------------------- Mechanics
@@ -44,38 +92,12 @@
           out.push({ tone: 'sys', text: '〔擲骰〕這項檢定已經擲過了。' });
           break;
         case 'check':
-          out.push({ tone: 'roll', text: '〔擲骰〕難度 ' + ev.dc + '。' });
-          if (ev.nat === 20 || ev.d20 === 20) {
-            out.push({ tone: 'good', text: '〔擲骰〕自然 20。' });
-          } else if (ev.nat === 1 || ev.d20 === 1) {
-            out.push({ tone: 'bad', text: '〔擲骰〕自然 1。' });
-          }
-          out.push({
-            tone: 'roll',
-            text: '〔擲骰〕' + (T.SKILL_LABEL[ev.skill] || ev.skill) + '檢定：' +
-                  dieBreakdown(ev) + ' ' + sign(ev.mod) + '（' + (T.ABILITY_LABEL[ev.ability] || ev.ability) + '）' +
-                  (ev.prof ? ' ' + sign(ev.prof) + '（熟練）' : '') +
-                  ' ＝ ' + ev.total + '　／　難度 ' + ev.dc + ' → ' + (ev.success ? '成功' : '失敗')
-          });
+          pushRolls(out, ev);
           break;
         case 'attack':
-          if (ev.dc != null) out.push({ tone: 'roll', text: '〔擲骰〕難度 ' + ev.dc + '。' });
-          if (ev.nat === 20) out.push({ tone: 'good', text: '〔擲骰〕自然 20，暴擊。' });
-          else if (ev.nat === 1) out.push({ tone: 'bad', text: '〔擲骰〕自然 1，失手。' });
-          else if (ev.crit) out.push({ tone: 'good', text: '〔擲骰〕暴擊。' });
-          if (ev.mode === 'advantage' || ev.mode === 'disadvantage') {
-            out.push({ tone: 'roll', text: '〔擲骰〕' + (ev.mode === 'advantage' ? '優勢' : '劣勢') + '：' +
-              (ev.dice || []).join(' 與 ') + '，取 ' + ev.d20 + '。' });
-          }
+          pushRolls(out, ev);
           if (ev.d20 == null) {
-            out.push({ tone: 'roll', text: '〔擲骰〕' + ev.attackName + '：自動命中。' });
-          } else {
-            out.push({
-              tone: 'roll',
-              text: '〔擲骰〕' + ev.attackName + '：' + dieBreakdown(ev) + ' ' + sign(ev.bonus) +
-                    ' ＝ ' + ev.total + '　／　' + ev.targetName + ' 難度 ' + ev.ac +
-                    ' → ' + (ev.hit ? '命中' : '落空')
-            });
+            out.push({ tone: 'roll', text: ev.attackName + '：自動命中。' });
           }
           if (ev.hit) {
             out.push({
@@ -129,18 +151,7 @@
           out.push({ tone: 'sys', text: '〔第 ' + ev.round + ' 回合〕敵方行動' });
           break;
         case 'enemy_attack':
-          if (ev.dc != null) out.push({ tone: 'roll', text: '〔擲骰〕難度 ' + ev.dc + '。' });
-          if (ev.nat === 20) out.push({ tone: 'bad', text: '〔擲骰〕自然 20，暴擊。' });
-          else if (ev.nat === 1) out.push({ tone: 'good', text: '〔擲骰〕自然 1，失手。' });
-          if (ev.mode === 'advantage' || ev.mode === 'disadvantage') {
-            out.push({ tone: 'roll', text: '〔擲骰〕' + (ev.mode === 'advantage' ? '優勢' : '劣勢') + '：' +
-              (ev.dice || []).join(' 與 ') + '，取 ' + ev.d20 + '。' });
-          }
-          out.push({
-            tone: 'roll',
-            text: '〔擲骰〕' + ev.enemyName + '攻擊：' + dieBreakdown(ev) + ' ' + sign(ev.bonus) +
-                  ' ＝ ' + ev.total + '　／　你的難度 ' + ev.ac + ' → ' + (ev.hit ? '命中' : '落空')
-          });
+          pushRolls(out, ev);
           if (ev.hit) {
             out.push({
               tone: 'bad',
@@ -156,12 +167,7 @@
           out.push({ tone: 'act', text: '〔行動〕防守。到下次行動前，敵方攻擊有劣勢。' });
           break;
         case 'initiative':
-          out.push({
-            tone: 'sys',
-            text: '〔先攻〕' + (ev.order || []).map(function (row) {
-              return row.name + ' ' + row.total;
-            }).join('，')
-          });
+          pushRolls(out, ev);
           break;
         case 'reaction':
           out.push({
@@ -294,8 +300,8 @@
           if (d) {
             if (d.dc != null) out.push({ tone: 'narr', text: '難度 ' + d.dc + '。' });
             if (d.mode === 'advantage' || d.mode === 'disadvantage') {
-              out.push({ tone: 'narr', text: (d.mode === 'advantage' ? '優勢' : '劣勢') + '：' +
-                (d.dice || []).join(' 與 ') + '，取 ' + d.d20 + '。' });
+              out.push({ tone: 'narr', text: (d.mode === 'advantage' ? '優勢' : '劣勢') + '：擲出 ' +
+                (d.dice || []).join(' 同 ') + '，取 ' + d.d20 + '。' });
             }
             if (d.nat === 20) out.push({ tone: 'narr', text: '天時地利，這一擊正中要害。暴擊。傷害骰再擲一次。' });
             else if (d.nat === 1) out.push({ tone: 'narr', text: '腳下一滑，武器擦過石壁。這一擊沒有打中。' });
@@ -328,8 +334,8 @@
         case 'enemy_attack':
           if (d && d.dc != null) out.push({ tone: 'narr', text: '難度 ' + d.dc + '。' });
           if (d && (d.mode === 'advantage' || d.mode === 'disadvantage')) {
-            out.push({ tone: 'narr', text: (d.mode === 'advantage' ? '優勢' : '劣勢') + '：' +
-              (d.dice || []).join(' 與 ') + '，取 ' + d.d20 + '。' });
+            out.push({ tone: 'narr', text: (d.mode === 'advantage' ? '優勢' : '劣勢') + '：擲出 ' +
+              (d.dice || []).join(' 同 ') + '，取 ' + d.d20 + '。' });
           }
           if (d && d.nat === 20) out.push({ tone: 'narr', text: '敵人這一擊勢不可擋。暴擊。' });
           else if (d && d.nat === 1) out.push({ tone: 'narr', text: '敵人腳下一滑，這一擊沒有打中。' });
@@ -429,6 +435,7 @@
   }
 
   global.TOWER = global.TOWER || {};
+  Mechanics.rollLines = rollLines;
   global.TOWER.Mechanics = Mechanics;
   global.TOWER.OfflineNarrator = OfflineNarrator;
   global.TOWER.narrator = OfflineNarrator; // the shipped narrator

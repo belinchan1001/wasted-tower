@@ -125,6 +125,9 @@
     endingCanvas = null;
     renderPlayShell();
     trayMode = null;
+    (engine.rollLog || []).forEach(function (entry) {
+      appendLines((entry.lines || []).map(function (text) { return { tone: 'roll', text: text }; }));
+    });
     handle(engine.resumeView());
   }
 

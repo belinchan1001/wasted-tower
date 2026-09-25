@@ -2128,7 +2128,9 @@ test('advantage keeps the high die and disadvantage keeps the low die', function
   assert.strictEqual(atk.d20, 16);
   assert.strictEqual(atk.hit, true);
   var mech = narrator.Mechanics.format(atk).map(function (l) { return l.text; }).join('\n');
-  assert.ok(mech.indexOf('優勢：7 與 16，取 16。') >= 0);
+  assert.ok(mech.indexOf('優勢：擲出 7 同 16，取 16') >= 0);
+  assert.ok(mech.indexOf('d20 擲出 16') >= 0);
+  assert.ok(mech.indexOf('難度 ' + atk.ac) >= 0);
 
   var guard = new T.Engine(adventure, { seed: 42 });
   guard.start(0);
@@ -2142,6 +2144,10 @@ test('advantage keeps the high die and disadvantage keeps the low die', function
   assert.strictEqual(swings[0].mode, 'disadvantage');
   assert.strictEqual(swings[0].d20, 2);
   assert.strictEqual(swings[0].hit, false);
+  var low = narrator.Mechanics.rollLines(swings[0]).join('\n');
+  assert.ok(low.indexOf('劣勢：擲出 2 同 18，取 2') >= 0);
+  assert.ok(low.indexOf('d20 擲出 2') >= 0);
+  assert.ok(low.indexOf('難度 ' + swings[0].ac) >= 0);
   assert.deepStrictEqual(swings[1].dice, [3, 17]);
   assert.strictEqual(swings[1].d20, 3);
 });
@@ -2431,6 +2437,105 @@ test('WT3 migrates, checkpoints restore uses only, and retry takes a new seed', 
   assert.notStrictEqual(rest.rng.seed, seedAtRest);
   assert.notStrictEqual(rest.rng.seed, diedSeed || 0);
   assert.ok(again.events.some(function (e) { return e.t === 'retry'; }));
+});
+
+test('visible combat rolls match the RNG and survive a reload', function () {
+  var mark = 'D' + '&' + 'D';
+  var phrase = ('Dungeons' + ' & ' + 'Dragons').toLowerCase();
+  var check = new T.Engine(adventure, { seed: 92 });
+  check.start(0);
+  choose(check, 'rush');
+  winCombat(check);
+  answerInserted(check);
+  choose(check, 'climb');
+  check.rng = seqRng([12]);
+  var rolled = check.perform({ type: 'roll' });
+  assert.strictEqual(rolled.ok, true, rolled.error);
+  var chk = rolled.events.filter(function (e) { return e.t === 'check'; })[0];
+  assert.strictEqual(chk.d20, 12);
+  assert.strictEqual(chk.total, 17);
+  var checkText = narrator.Mechanics.rollLines(chk).join('\n');
+  assert.ok(checkText.indexOf('d20 擲出 12，力量 +3，熟練 +2，總數 17，難度 12，成功') >= 0);
+  var storedCheck = check.rollLog.filter(function (row) { return row.t === 'check'; }).pop();
+  assert.deepStrictEqual(storedCheck.lines, narrator.Mechanics.rollLines(chk));
+
+  var fighter = new T.Engine(adventure, { seed: 93 });
+  fighter.start(0);
+  fighter.enterScene('f1_bandit');
+  heroFirst(fighter);
+  fighter.rng = seqRng([12, 4, 1]);
+  var swing = fighter.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(swing.ok, true, swing.error);
+  var atk = swing.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(atk.d20, 12);
+  var attackText = narrator.Mechanics.rollLines(atk).join('\n');
+  assert.ok(attackText.indexOf('d20 擲出 12') >= 0);
+  assert.ok(attackText.indexOf('總數 ' + atk.total) >= 0);
+  assert.ok(attackText.indexOf('難度 ' + atk.ac) >= 0);
+  assert.strictEqual(atk.ac, fighter.encounter ? 13 : atk.ac);
+  assert.ok(attackText.indexOf('難度 13') >= 0);
+  var stored = fighter.rollLog.filter(function (row) { return row.t === 'attack'; }).pop();
+  assert.deepStrictEqual(stored.lines, narrator.Mechanics.rollLines(atk));
+  assert.ok(attackText.indexOf(mark) < 0);
+  assert.ok(attackText.toLowerCase().indexOf(phrase) < 0);
+
+  heroFirst(fighter);
+  fighter.encounter.enemies[0].ac = 11;
+  fighter.encounter.enemies[0].hp = 11;
+  fighter.encounter.enemies[0].yielded = false;
+  fighter.rng = seqRng([20, 8, 8, 1]);
+  var crit = fighter.perform({ actor: 0, action: 'attack', target: 0 });
+  var critEv = crit.events.filter(function (e) { return e.t === 'attack'; })[0];
+  var critText = narrator.Mechanics.rollLines(critEv).join('\n');
+  assert.ok(critText.indexOf('自然 20，暴擊') >= 0);
+  assert.ok(critText.indexOf('d20 擲出 20') >= 0);
+
+  var live = new T.Engine(adventure, { seed: 94 });
+  live.start(0);
+  live.enterScene('f1_bandit');
+  heroFirst(live);
+  var before = live.rng.rolled();
+  var hit = live.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(hit.ok, true, hit.error);
+  var seen = live.rollLog.map(function (row) { return row.lines.join('\n'); }).join('\n');
+  var count = live.rng.rolled();
+  assert.ok(count > before);
+  var code = T.encodeSaveCode(live.exportSave());
+  var nextFace = live.rng.die(20);
+  var loaded = T.loadGame(adventure, code);
+  assert.strictEqual(loaded.ok, true, loaded.error);
+  assert.strictEqual(loaded.engine.rng.rolled(), count);
+  assert.strictEqual(loaded.engine.rollLog.map(function (row) { return row.lines.join('\n'); }).join('\n'), seen);
+  var resumed = loaded.engine.resumeView();
+  assert.strictEqual(resumed.ok, true, resumed.error);
+  assert.strictEqual(loaded.engine.rng.rolled(), count);
+  assert.strictEqual(loaded.engine.rng.die(20), nextFace);
+});
+
+test('visible roll text does not name a tabletop trademark', function () {
+  var mark = 'D' + '&' + 'D';
+  var phrase = ('Dungeons' + ' & ' + 'Dragons').toLowerCase();
+  var sample = narrator.Mechanics.rollLines({
+    t: 'attack', d20: 20, dice: [7, 20], mode: 'advantage', bonus: 5, total: 25,
+    ac: 13, dc: 13, hit: true, crit: true, nat: 20
+  }).concat(narrator.Mechanics.rollLines({
+    t: 'check', d20: 1, mod: 3, prof: 2, total: 6, dc: 12, success: false, ability: 'str', nat: 1
+  })).concat(narrator.Mechanics.rollLines({
+    t: 'enemy_attack', d20: 7, dice: [7, 16], mode: 'disadvantage', bonus: 2, total: 9,
+    ac: 16, dc: 16, hit: false, nat: 7
+  })).join('\n');
+  assert.ok(sample.indexOf('優勢：擲出 7 同 20，取 20') >= 0);
+  assert.ok(sample.indexOf('劣勢：擲出 7 同 16，取 7') >= 0);
+  assert.ok(sample.indexOf('d20') >= 0);
+  assert.ok(sample.indexOf('難度') >= 0);
+  assert.ok(sample.indexOf('暴擊') >= 0);
+  assert.ok(sample.indexOf(mark) < 0);
+  assert.ok(sample.toLowerCase().indexOf(phrase) < 0);
+  ['preview/index.html', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/js/engine.js', 'preview/data/wasted_tower.js', 'index.html'].forEach(function (rel) {
+    var text = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+    assert.ok(text.indexOf(mark) < 0, rel);
+    assert.ok(text.toLowerCase().indexOf(phrase) < 0, rel);
+  });
 });
 
 test('the same command shape resolves whether it comes from the menu or a later client', function () {

@@ -1972,6 +1972,7 @@
     this.encounter = null;
     this.round = 0;
     this.events = [];
+    this.rollLog = [];
     this.lastCheckpoint = null;
     this.startedAt = null;
     this.playMs = 0;
@@ -2025,7 +2026,22 @@
   Engine.prototype.emit = function (ev) {
     ev.view = this.narrationView(null);
     this.events.push(ev);
+    this.captureRoll(ev);
     return ev;
+  };
+
+  // Store the sentences the player already saw. Later loads print these
+  // strings and do not draw the dice again.
+  Engine.prototype.captureRoll = function (ev) {
+    var root = typeof globalThis !== 'undefined' ? globalThis : this;
+    var mechanics = root.TOWER && root.TOWER.Mechanics;
+    if (!mechanics || typeof mechanics.rollLines !== 'function') return;
+    var lines = mechanics.rollLines(ev);
+    if (!lines || !lines.length) return;
+    if (!this.rollLog) this.rollLog = [];
+    var copy = lines.slice();
+    ev.rollLines = copy;
+    this.rollLog.push({ t: ev.t, lines: copy });
   };
   Engine.prototype.ok = function () { return { ok: true, error: null, events: this.events.slice() }; };
   // reject() never mutates game state; the caller's attempt simply did not happen.
@@ -2346,6 +2362,7 @@
     for (allyN = 1; allyN < this.partySize; allyN++) this.party.push(this.makeAlly(allyN));
     this.checkpointSnap = null;
     this.retryCount = 0;
+    this.rollLog = [];
     this.flags = {};
     this.done = {};
     this._autoHops = 0;
@@ -3748,7 +3765,8 @@
       rng: (this.rng && this.rng.exportState) ? this.rng.exportState() : null,
       allies: (this.party || []).slice(1).map(function (a) { return deepCopy(a); }),
       checkpointSnap: this.checkpointSnap ? deepCopy(this.checkpointSnap) : null,
-      retryCount: this.retryCount || 0
+      retryCount: this.retryCount || 0,
+      rollLog: deepCopy(this.rollLog || [])
     };
   };
 
@@ -3864,6 +3882,16 @@
     }
     this.checkpointSnap = save.checkpointSnap && typeof save.checkpointSnap === 'object' ? deepCopy(save.checkpointSnap) : null;
     this.retryCount = Number.isInteger(save.retryCount) && save.retryCount > 0 ? save.retryCount : 0;
+    this.rollLog = [];
+    if (Array.isArray(save.rollLog)) {
+      save.rollLog.forEach(function (row) {
+        if (!row || !Array.isArray(row.lines)) return;
+        this.rollLog.push({
+          t: typeof row.t === 'string' ? row.t : 'roll',
+          lines: row.lines.map(function (line) { return String(line); })
+        });
+      }, this);
+    }
     this.status = save.status;
     this.events = [];
     if (save.rng && this.rng && typeof this.rng.importState === 'function') this.rng.importState(save.rng);

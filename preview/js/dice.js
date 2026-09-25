@@ -266,8 +266,9 @@
     var lastTs = 0;
 
     function budget() {
-      var sum = 800;
-      records.forEach(function (rec) { sum += durationOf(rec, false) + RESULT_HOLD_MS; });
+      // If frames stall, still release the buttons. A smooth spin finishes first.
+      var sum = 1600;
+      records.forEach(function (rec) { sum += (durationOf(rec, false) + RESULT_HOLD_MS) * 2; });
       return sum;
     }
     safety = setTimeout(finish, budget());
@@ -317,7 +318,7 @@
       }
       var dt = ts - lastTs;
       if (dt < 0) dt = 0;
-      if (dt > 48) dt = 48;
+      if (dt > 200) dt = 200;
       lastTs = ts;
       var view = anim.tick(dt);
       paintDice(nodes, view);

@@ -1,46 +1,144 @@
 # 廢塔一夜
 
-這是一款在瀏覽器內運行的單人一場 TRPG。正式遊戲只有一個檔案：`index.html`。毋須安裝、登入或連線，也不會儲存進度。
+瀏覽器裡的單人一場文字冒險。正式遊戲是靜態檔案：`index.html`、`data/wasted_tower.js`、`js/` 底下的引擎。沒有安裝、登入、伺服器或網絡請求。用瀏覽器直接打開，或發佈到 GitHub Pages 皆可；`file://` 也能玩。
 
+進度會自動寫進這台裝置的一個存檔欄。也可以把存檔碼複製出來，免得瀏覽器（尤其是 iOS Safari）清掉本地記錄。
 
-## 地城加長與隱藏結局
-三層主線六場戰鬥，可選兩場隱藏戰。清齊八場後可在出塔時挑戰其餘預製冒險者，達成隱藏結局。對手只用普通攻擊。
 
 ## 怎樣遊玩
 
-1. 直接雙擊 `index.html`，或把它發佈到 GitHub Pages 後開啟網址。
-2. 選擇一名預設角色。
-3. 按畫面下方的按鈕行動。程式會處理擲骰、生命、物品、戰鬥和場景轉換。
-4. 擲骰明細會顯示在紀錄內。戰鬥時每回合由玩家先行動，然後仍然存活的敵人還擊。
-5. 生命降至 0、或到達失敗結局後，整場冒險會結束；按「從頭再玩一次」即可用全新狀態重來。
+1. 雙擊 `index.html`，或開啟 GitHub Pages 網址。
+2. 選一個角色。若存檔欄已有進度，可以按「繼續上次的進度」。
+3. 按畫面下方的按鈕行動。程式處理擲骰、生命、物品、戰鬥和場景。
+4. 擲骰明細在紀錄裡。戰鬥時玩家先行動，仍然活著的敵人才還擊。
+5. 每層結束會出現歇腳：看一段短摘要，然後「繼續前進」或「先離開」。先離開不會丟掉進度。
+6. 任何結局都會顯示結局卡（職業、關鍵選擇、結局名稱），可下載成 PNG。
+7. 生命歸零即失敗。可以「從頭再玩一次」，或回到標題畫面繼續上次自動存下的進度。
+8. 「存檔碼」會顯示一整段文字。換裝置時，在標題畫面貼上並按「讀取存檔碼」。格式不對、版本太新、或對不上現在的腳本時，遊戲會說明原因，不會把畫面弄壞。
+
+一場大約 15–20 分鐘，中間可以在歇腳點把手機放下。
+
 
 ## 發佈
 
-把 `index.html` 放到 GitHub Pages 網站根目錄即可。它沒有建置步驟、外部套件、CDN、字型、圖片或網絡請求；從 `file://` 開啟亦可正常遊玩。
+把整個資料夾放到 GitHub Pages 的網站根目錄（不要只上傳 `index.html`）。沒有建置步驟、外部套件、CDN、字型或圖片。
 
-`test-engine.js` 是 Node.js 測試程式，`browser-test.js` 是開發時使用的 Chromium 點擊測試，兩者均不是正式遊戲所需。
+`node test-engine.js` 會檢查腳本圖、舊內容、存檔與結局卡。它不是玩家需要的檔案。
 
-## 加入另一個冒險
 
-1. 用文字編輯器開啟 `index.html`。
-2. 找到有清楚標記的 `ADVENTURE DATA BLOCK`。
-3. 在 `ADVENTURES` 物件內加入一個新鍵和完整的冒險物件，例如：
+## 腳本資料格式
 
-   ```js
-   var ADVENTURES = {
-     wasted_tower: { /* 原有冒險 */ },
-     my_adventure: { /* 新冒險資料 */ }
-   };
-   ```
+寫故事的人只改 `data/wasted_tower.js` 裡的 `wasted_tower` 物件。不要改 `js/engine.js` 來加劇情。物件本體是 JSON：鍵要加引號，不要留行尾逗號。檔頭和檔尾的程式包裝要留著。
 
-4. 把同一區塊內的 `DEFAULT_ADVENTURE_ID` 改成新鍵：
+啟動時檢查器會拒絕不完整的資料，並逐項列出問題。`node test-engine.js` 還會把整張腳本圖走一遍：每個結局都要走得到，每個場景都要有路可走，不能有死路。
 
-   ```js
-   var DEFAULT_ADVENTURE_ID = 'my_adventure';
-   ```
+### 一場冒險最少要有
 
-5. 儲存並重新開啟頁面。啟動檢查器會拒絕不完整的資料，並把問題逐項列出。
+`id`、`title`、`start`、`items`、`pregens`、`scenes`。
 
-新冒險須沿用現有資料結構，最少包括 `title`、`start`、`items`、`pregens` 和 `scenes`。場景類型只可用 `beat`、`check`、`combat`、`end`；技能只可用 `athletics`、`stealth`、`perception`、`insight`、`persuasion`。所有場景及物品引用都必須指向已存在的 ID。消耗品必須有 `heal` 或 `damage` 其中一項，但不可兩項都有。每位預設角色剛好有一個 `features`（職業招式），效果類型為 `damage`、`heal` 或 `ac_bonus`（僅限本場戰鬥）。
+場景 `type` 只用這幾種：
 
-如要一次內嵌多個冒險，繼續在同一個 `ADVENTURES` 物件加入鍵即可；每次只會載入 `DEFAULT_ADVENTURE_ID` 指定的一個。
+| type | 用途 |
+| --- | --- |
+| `beat` | 敘事同選項 |
+| `check` | 技能檢定。技能只限 `athletics`、`stealth`、`perception`、`insight`、`persuasion` |
+| `combat` | 戰鬥。`win_to` 必填，`flee_to` 可省略 |
+| `checkpoint` | 一層結束的歇腳。要有 `floor`、`name`、`facts`、`continue_to` |
+| `end` | 結局。`end` 是 `win`、`lose` 或 `secret_win`；`name` 是結局卡上的名字 |
+
+角色沿用現有預製角色的欄位。每人剛好一個 `features`（`damage`、`heal` 或 `ac_bonus`，`uses` 為 3）。消耗品要有 `heal` 或 `damage` 其中一項，不能兩項都有。
+
+`facts` 可以是字串，也可以是 `{ "text": "……", "when": { … } }`。有 `when` 的句子只在條件成立時出現。現有句子請保持原樣，不要改寫。
+
+### 條件 `when`
+
+用在選項、句子或結局場景上。全部條件都要成立才算通過。可以寫的欄位：
+
+- `class`：一個職業，或職業陣列（例如 `"戰士"`）
+- `all_flags` / `none_flags`：旗標陣列。旗標要為真／要為假
+- `flag_eq`：旗標必須等於某個布林、數字或字串
+- `flag_min` / `flag_max`：數字旗標的下限／上限。還沒寫過的數字當 0
+- `has_item` / `missing_item`：物品 id
+- `cleared`：已經打贏的戰鬥場景 id
+
+舊欄位仍然有效：選項上的 `require_flag`、`require_item`。
+
+選項還可以：
+
+- `set_flag`：把這些旗標設成真
+- `set`：把旗標設成指定的布林、數字或字串
+- `inc`：把數字加上去（沒有則從 0 起）
+- `give` / `take`：給予或拿走物品
+- `hp_delta`：生命變化
+
+`flag_defs` 用來告訴結局卡哪些旗標要顯示。`key: true` 的旗標會按發生順序出現，`label` 就是卡上的字。
+
+### 職業專用分支
+
+在選項或句子加上 `when.class`。其他職業看不到那句話、也不能按那個選項。同一場 `beat` 請留至少一個沒有職業限制的選項，否則其他職業會走進死路，檢查器會拒絕。
+
+### 用旗標打開一個結局
+
+結局場景自己的 `when` 會擋結局。條件要在**進入該場景之前**已經成立（通常寫在前一個選項的 `set_flag` 或 `inc`）。只靠「打完所有戰鬥」不是唯一辦法；`meta.required_for_secret` 仍然會在打齊指定戰鬥後設上 `secret_ready`，隱藏結局另外用 `when.all_flags` 要求這個旗標。
+
+下面這段**不是**現在塔裡的劇情，只示範格式。真的加進 `scenes` 時，還要讓前後場景接得上，並且跑 `node test-engine.js`。
+
+```js
+{
+  "id": "bandit_talk",
+  "type": "beat",
+  "facts": [
+    "盜墓者放下短斧。",
+    { "text": "他看著你的長劍，沒有再靠近。", "when": { "class": "戰士" } }
+  ],
+  "choices": [
+    {
+      "id": "spare",
+      "label": "放過他",
+      "to": "mercy_end",
+      "when": { "class": "戰士" },
+      "set_flag": ["bandit_spared"],
+      "inc": { "bandit_affinity": 1 }
+    },
+    { "id": "go", "label": "繼續前進", "to": "下一場的id" }
+  ]
+}
+```
+
+```js
+{
+  "id": "mercy_end",
+  "type": "end",
+  "end": "win",
+  "name": "手下留情",
+  "when": {
+    "all_flags": ["bandit_spared"],
+    "flag_min": { "bandit_affinity": 1 }
+  },
+  "facts": ["你沒有殺他。這一夜仍然結束。"]
+}
+```
+
+並在 `flag_defs` 加上：
+
+```js
+"bandit_spared": { "key": true, "label": "放過他" }
+```
+
+戰士選「放過他」會進入「手下留情」，結局卡會列出「放過他」。其他職業只能走「繼續前進」。若 `inc` 忘了寫，親和沒有達到 1，這個結局就走不到，檢查器會報錯。
+
+### 預留、這一階段不會結算
+
+這些欄位可以先寫上，引擎會忽略內容，但格式不對會被拒絕，方便以後再加玩法：
+
+- `achievements`：陣列
+- `bestiary`：陣列
+- 敵人的 `skills`：陣列
+
+不要自創場景 `type`。檢查器只接受上表那五種。
+
+### 存檔版本
+
+存檔碼以 `WT` 加版本號開頭。引擎裡的 `formatMigrations` 負責把舊存檔升級到現在的存檔格式；`scriptMigrations` 負責在 `meta.script_version` 提高時，把舊場景 id 改成新的。
+
+改寫句子、加分支，通常不用動這兩個表。若你**改了已經上線的場景 id**，舊存檔會打不開，除非在 `js/engine.js` 的 `scriptMigrations` 加上一步：鍵是舊的 `scriptVersion`，函式回傳的存檔要把 `scriptVersion` 加一。沒有對應的升級時，遊戲會告訴玩家這份存檔讀不了，而不會直接當掉。

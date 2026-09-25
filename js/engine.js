@@ -1,0 +1,1966 @@
+
+
+(function (global) {
+  'use strict';
+
+  // ---------------------------------------------------------------- constants
+  var PROFICIENCY_BONUS = 2;
+
+  // The only skills that exist, mapped to the ability they use.
+  var SKILL_ABILITY = {
+    athletics: 'str',
+    stealth: 'dex',
+    perception: 'wis',
+    insight: 'wis',
+    persuasion: 'cha'
+  };
+
+  var SKILL_LABEL = {
+    athletics: '運動', stealth: '隱匿', perception: '察覺',
+    insight: '洞察', persuasion: '說服'
+  };
+
+  var ABILITY_LABEL = {
+    str: '力量', dex: '敏捷', con: '體質', int: '智力', wis: '感知', cha: '魅力'
+  };
+
+  var SCENE_TYPES = ['beat', 'check', 'combat', 'checkpoint', 'end'];
+  var SAVE_VERSION = 1;
+  var ITEM_KINDS = ['gear', 'key', 'consumable'];
+
+  // ---------------------------------------------------------------------- rng
+  // Every die in the game goes through an rng object exposing die(sides).
+  // makeRng is a seeded mulberry32 so a seed replays an identical run.
+  function makeRng(seed) {
+    var usedSeed = (seed >>> 0) || 0x9e3779b9;
+    var s = usedSeed;
+    var count = 0;
+    function next() {
+      s = (s + 0x6d2b79f5) | 0;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+    return {
+      kind: 'seeded',
+      seed: usedSeed,
+      next: next,
+      rolled: function () { return count; },
+      die: function (sides) { count++; return Math.floor(next() * sides) + 1; },
+      exportState: function () { return { kind: 'seeded', seed: usedSeed, s: s >>> 0, count: count }; },
+      importState: function (st) {
+        if (!st || st.kind !== 'seeded' || typeof st.s !== 'number' || !isFinite(st.s)) return false;
+        if (!Number.isInteger(st.count) || st.count < 0) return false;
+        s = (st.s >>> 0) | 0;
+        count = st.count;
+        return true;
+      }
+    };
+  }
+
+  // Fixed-sequence rng: same interface, used by tests that need exact faces.
+  function makeFixedRng(values) {
+    var i = 0;
+    return {
+      kind: 'fixed',
+      next: function () { return 0; },
+      rolled: function () { return i; },
+      die: function (sides) {
+        if (i >= values.length) throw new Error('fixed rng exhausted');
+        var v = values[i++];
+        return Math.max(1, Math.min(sides, v));
+      }
+    };
+  }
+
+  // --------------------------------------------------------------------- dice
+  var DICE_RE = /^\s*(\d+)\s*[dD]\s*(\d+)\s*(?:([+-])\s*(\d+))?\s*$/;
+
+  function parseDice(spec) {
+    if (typeof spec !== 'string') return null;
+    var m = DICE_RE.exec(spec);
+    if (!m) return null;
+    var count = parseInt(m[1], 10);
+    var sides = parseInt(m[2], 10);
+    var mod = m[4] ? parseInt(m[4], 10) * (m[3] === '-' ? -1 : 1) : 0;
+    if (!(count >= 1) || !(sides >= 2)) return null;
+    return { count: count, sides: sides, mod: mod };
+  }
+
+  function rollDice(spec, rng) {
+    var p = parseDice(spec);
+    if (!p) throw new Error('bad dice spec: ' + spec);
+    var rolls = [], total = 0;
+    for (var i = 0; i < p.count; i++) {
+      var r = rng.die(p.sides);
+      rolls.push(r);
+      total += r;
+    }
+    total += p.mod;
+    return { spec: spec, rolls: rolls, mod: p.mod, total: total };
+  }
+
+  function abilityMod(score) { return Math.floor((score - 10) / 2); }
+
+  function copyMap(obj) {
+    var out = {};
+    if (!obj) return out;
+    for (var k in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, k)) out[k] = obj[k];
+    }
+    return out;
+  }
+
+  function deepCopy(v) { return JSON.parse(JSON.stringify(v)); }
+
+  // Flag / class / item conditions. `when` omitted means always true.
+  // state: { cls, flags, inventory, cleared }
+  function conditionsPass(when, state) {
+    if (when == null) return true;
+    if (!when || typeof when !== 'object') return false;
+    state = state || {};
+    var flags = state.flags || {};
+    var inventory = state.inventory || [];
+    var cleared = state.cleared || {};
+    var cls = state.cls || '';
+    var i, k, list, cur;
+    if (when['class'] != null) {
+      list = Array.isArray(when['class']) ? when['class'] : [when['class']];
+      if (list.indexOf(cls) < 0) return false;
+    }
+    list = when.all_flags;
+    if (list) {
+      for (i = 0; i < list.length; i++) if (!flags[list[i]]) return false;
+    }
+    list = when.none_flags;
+    if (list) {
+      for (i = 0; i < list.length; i++) if (flags[list[i]]) return false;
+    }
+    if (when.flag_eq) {
+      for (k in when.flag_eq) if (Object.prototype.hasOwnProperty.call(when.flag_eq, k)) {
+        if (flags[k] !== when.flag_eq[k]) return false;
+      }
+    }
+    if (when.flag_min) {
+      for (k in when.flag_min) if (Object.prototype.hasOwnProperty.call(when.flag_min, k)) {
+        cur = typeof flags[k] === 'number' ? flags[k] : 0;
+        if (!(cur >= when.flag_min[k])) return false;
+      }
+    }
+    if (when.flag_max) {
+      for (k in when.flag_max) if (Object.prototype.hasOwnProperty.call(when.flag_max, k)) {
+        cur = typeof flags[k] === 'number' ? flags[k] : 0;
+        if (!(cur <= when.flag_max[k])) return false;
+      }
+    }
+    list = when.has_item;
+    if (list) {
+      for (i = 0; i < list.length; i++) if (inventory.indexOf(list[i]) < 0) return false;
+    }
+    list = when.missing_item;
+    if (list) {
+      for (i = 0; i < list.length; i++) if (inventory.indexOf(list[i]) >= 0) return false;
+    }
+    list = when.cleared;
+    if (list) {
+      for (i = 0; i < list.length; i++) if (!cleared[list[i]]) return false;
+    }
+    return true;
+  }
+
+  function resolveFacts(facts, state) {
+    var out = [];
+    if (!Array.isArray(facts)) return out;
+    facts.forEach(function (f) {
+      if (typeof f === 'string') out.push(f);
+      else if (f && typeof f.text === 'string' && conditionsPass(f.when, state)) out.push(f.text);
+    });
+    return out;
+  }
+
+  function applyFlagWrites(flags, choice) {
+    var out = copyMap(flags);
+    var k;
+    (choice.set_flag || []).forEach(function (f) { out[f] = true; });
+    if (choice.set && typeof choice.set === 'object') {
+      for (k in choice.set) if (Object.prototype.hasOwnProperty.call(choice.set, k)) out[k] = choice.set[k];
+    }
+    if (choice.inc && typeof choice.inc === 'object') {
+      for (k in choice.inc) if (Object.prototype.hasOwnProperty.call(choice.inc, k)) {
+        var cur = typeof out[k] === 'number' ? out[k] : 0;
+        out[k] = cur + choice.inc[k];
+      }
+    }
+    return out;
+  }
+
+  function refreshSecretFlags(flags, cleared, adventure) {
+    var next = copyMap(flags);
+    var req = (adventure.meta && adventure.meta.required_for_secret) || [];
+    if (!req.length) return next;
+    var i;
+    for (i = 0; i < req.length; i++) {
+      if (!cleared[req[i]]) {
+        if (next.secret_ready) delete next.secret_ready;
+        return next;
+      }
+    }
+    next.secret_ready = true;
+    return next;
+  }
+
+  // ---------------------------------------------------------------- save format
+  // Save codes are `WT<version>.<base64 json>`. formatMigrations[N] upgrades a
+  // save of version N to N+1. scriptMigrations[N] upgrades scriptVersion N when
+  // adventure.meta.script_version has moved on (scene renames and similar).
+  function SaveError(message) {
+    this.name = 'SaveError';
+    this.message = message;
+  }
+  SaveError.prototype = Object.create(Error.prototype);
+  SaveError.prototype.constructor = SaveError;
+
+  var formatMigrations = {
+    0: function (save) {
+      var next = deepCopy(save);
+      next.v = 1;
+      if (!next.flags || typeof next.flags !== 'object' || Array.isArray(next.flags)) next.flags = {};
+      if (!next.clearedCombats || typeof next.clearedCombats !== 'object' || Array.isArray(next.clearedCombats)) {
+        next.clearedCombats = {};
+      }
+      if (!Array.isArray(next.keyChoices)) next.keyChoices = [];
+      if (!Number.isInteger(next.scriptVersion) || next.scriptVersion < 1) next.scriptVersion = 1;
+      return next;
+    }
+  };
+
+  var scriptMigrations = {
+    // 1: function (save, adventure) { save.scriptVersion = 2; return save; }
+  };
+
+  function utf8ToB64(str) {
+    var bytes = new TextEncoder().encode(str);
+    var bin = '';
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+
+  function b64ToUtf8(b64) {
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  function encodeSaveCode(save) {
+    if (!save || !Number.isInteger(save.v)) throw new SaveError('存檔缺少版本號。');
+    return 'WT' + save.v + '.' + utf8ToB64(JSON.stringify(save));
+  }
+
+  function decodeSaveCode(text) {
+    if (typeof text !== 'string') return { ok: false, error: '存檔碼格式不正確。', save: null };
+    var t = text.replace(/\s+/g, '');
+    if (!t) return { ok: false, error: '存檔碼是空的。', save: null };
+    var m = /^WT(\d+)\.([A-Za-z0-9+/]+=*)$/.exec(t);
+    if (!m) return { ok: false, error: '存檔碼格式不正確。', save: null };
+    var obj;
+    try {
+      obj = JSON.parse(b64ToUtf8(m[2]));
+    } catch (e) {
+      return { ok: false, error: '存檔碼無法讀取。', save: null };
+    }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+      return { ok: false, error: '存檔碼內容不正確。', save: null };
+    }
+    if (!Number.isInteger(obj.v)) return { ok: false, error: '存檔缺少版本號。', save: null };
+    if (String(obj.v) !== m[1]) return { ok: false, error: '存檔碼版本對不上。', save: null };
+    return { ok: true, error: null, save: obj };
+  }
+
+  function migrateSave(save, adventure, hooks) {
+    if (!save || typeof save !== 'object' || Array.isArray(save)) throw new SaveError('存檔是空的。');
+    if (!Number.isInteger(save.v)) throw new SaveError('存檔缺少版本號。');
+    if (save.v > SAVE_VERSION) throw new SaveError('這份存檔來自較新的版本，無法讀取。');
+    if (save.v < 0) throw new SaveError('存檔版本不正確。');
+    var fmt = (hooks && hooks.formatMigrations) || formatMigrations;
+    var cur = deepCopy(save);
+    var guard = 0;
+    while (cur.v < SAVE_VERSION) {
+      var fn = fmt[cur.v];
+      if (typeof fn !== 'function') throw new SaveError('這份存檔太舊，找不到對應的升級。');
+      var from = cur.v;
+      cur = fn(cur, adventure);
+      if (!cur || cur.v !== from + 1) throw new SaveError('存檔升級沒有前進到下一版。');
+      if (++guard > 20) throw new SaveError('存檔升級未能完成。');
+    }
+    var scripts = (hooks && hooks.scriptMigrations) || scriptMigrations;
+    var target = (adventure && adventure.meta && adventure.meta.script_version) || 1;
+    if (!Number.isInteger(target) || target < 1) target = 1;
+    if (!Number.isInteger(cur.scriptVersion) || cur.scriptVersion < 1) cur.scriptVersion = 1;
+    if (cur.scriptVersion > target) throw new SaveError('這份存檔對應較新的腳本，無法讀取。');
+    guard = 0;
+    while (cur.scriptVersion < target) {
+      var sfn = scripts[cur.scriptVersion];
+      if (typeof sfn !== 'function') throw new SaveError('腳本已更新，但這份舊存檔無法升級。');
+      var sfrom = cur.scriptVersion;
+      cur = sfn(cur, adventure);
+      if (!cur || !Number.isInteger(cur.scriptVersion) || cur.scriptVersion <= sfrom) {
+        throw new SaveError('腳本存檔升級沒有前進。');
+      }
+      if (++guard > 20) throw new SaveError('腳本存檔升級未能完成。');
+    }
+    return cur;
+  }
+
+  function SaveSlot(storage, key) {
+    this.storage = storage || null;
+    this.key = key || 'wasted-tower.slot1';
+  }
+  SaveSlot.prototype.read = function () {
+    if (!this.storage) return null;
+    try { return this.storage.getItem(this.key); } catch (e) { return null; }
+  };
+  SaveSlot.prototype.write = function (code) {
+    if (!this.storage) return { ok: false, error: '這個瀏覽器不能儲存進度，請改用匯出存檔碼。' };
+    try {
+      this.storage.setItem(this.key, code);
+      return { ok: true, error: null };
+    } catch (e) {
+      return { ok: false, error: '無法寫入本機存檔，請改用匯出存檔碼。' };
+    }
+  };
+  SaveSlot.prototype.clear = function () {
+    if (!this.storage) return;
+    try { this.storage.removeItem(this.key); } catch (e) {}
+  };
+
+  function layoutEndingCard(card) {
+    card = card || {};
+    var choices = (card.keyChoices || []).map(function (k) {
+      return typeof k === 'string' ? k : (k && k.label) || '';
+    }).filter(function (t) { return !!t; });
+    return {
+      title: card.title || '',
+      endingName: card.endingName || '',
+      identity: (card.characterName || '') + '　·　' + (card.className || ''),
+      race: card.race || '',
+      keyChoices: choices
+    };
+  }
+
+  // Draws the ending card into a 2D context. Returns the layout it painted.
+  // width is the CSS pixel width; the caller sizes the canvas.
+  function paintEndingCard(ctx, width, card) {
+    var layout = layoutEndingCard(card);
+    var pad = 40;
+    var maxText = width - pad * 2;
+    var lineH = 32;
+    function wrap(text, font) {
+      ctx.font = font;
+      var lines = [];
+      var cur = '';
+      var i;
+      for (i = 0; i < text.length; i++) {
+        var ch = text.charAt(i);
+        if (ctx.measureText(cur + ch).width > maxText && cur) {
+          lines.push(cur);
+          cur = ch;
+        } else cur += ch;
+      }
+      if (cur) lines.push(cur);
+      if (!lines.length) lines.push('');
+      return lines;
+    }
+    var blocks = [];
+    function add(text, font, color, gap) {
+      var lines = wrap(String(text), font);
+      for (var i = 0; i < lines.length; i++) {
+        blocks.push({ text: lines[i], font: font, color: color, gap: i === 0 ? gap : 4 });
+      }
+    }
+    add(layout.title, '600 26px sans-serif', '#e3b04b', 0);
+    add(layout.endingName, '700 42px sans-serif', '#f4f1e8', 18);
+    add(layout.identity, '500 24px sans-serif', '#d5dbe6', 14);
+    if (layout.race) add(layout.race, '400 18px sans-serif', '#98a1af', 6);
+    add('關鍵選擇', '600 16px sans-serif', '#e3b04b', 26);
+    if (!layout.keyChoices.length) add('（這場沒有記下關鍵選擇）', '400 22px sans-serif', '#98a1af', 12);
+    layout.keyChoices.forEach(function (t) { add('· ' + t, '400 22px sans-serif', '#e8eaee', 8); });
+
+    var y = pad;
+    var i;
+    for (i = 0; i < blocks.length; i++) y += blocks[i].gap + lineH;
+    var height = y + pad;
+
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#141820';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = '#e3b04b';
+    ctx.lineWidth = 3;
+    if (ctx.strokeRect) ctx.strokeRect(10, 10, width - 20, height - 20);
+
+    y = pad;
+    for (i = 0; i < blocks.length; i++) {
+      y += blocks[i].gap;
+      ctx.font = blocks[i].font;
+      ctx.fillStyle = blocks[i].color;
+      ctx.fillText(blocks[i].text, pad, y);
+      y += lineH;
+    }
+    return { width: width, height: height, blocks: blocks, layout: layout };
+  }
+
+  function drawEndingCard(canvas, card) {
+    var width = 720;
+    var dpr = 1;
+    if (typeof window !== 'undefined' && window.devicePixelRatio) {
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+    }
+    var probe = canvas.getContext('2d');
+    var measured = paintEndingCard(probe, width, card);
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(measured.height * dpr);
+    if (canvas.style) {
+      canvas.style.width = '100%';
+      canvas.style.maxWidth = width + 'px';
+      canvas.style.height = 'auto';
+    }
+    var ctx = canvas.getContext('2d');
+    if (ctx.setTransform) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return paintEndingCard(ctx, width, card);
+  }
+
+  // ---------------------------------------------------------------- graph walk
+  // Proves every ending can be reached and that no reachable state is stuck.
+  // Combat is assumed winnable; both check outcomes are taken. HP is ignored.
+  function walkScript(adventure) {
+    var errors = [];
+    var scenes = {};
+    (adventure.scenes || []).forEach(function (sc) { if (sc && sc.id) scenes[sc.id] = sc; });
+    var pregens = adventure.pregens || [];
+    var reachableScenes = {};
+    var reached = {};
+    var deadScenes = {};
+    var blockedEnds = {};
+
+    // Only flags/items/clears that conditions actually read affect reachability.
+    // Key-choice flags that nothing tests must not multiply the graph.
+    var relevantFlags = { secret_ready: 1 };
+    var flagMode = { secret_ready: 'bool' };
+    var flagCap = {};
+    var eqValues = {};
+    var relevantItems = {};
+    var relevantCleared = {};
+    function noteFlag(id, mode, cap) {
+      if (typeof id !== 'string' || !id) return;
+      relevantFlags[id] = 1;
+      if (mode === 'num') {
+        flagMode[id] = 'num';
+        if (typeof cap === 'number' && (flagCap[id] == null || cap > flagCap[id])) flagCap[id] = cap;
+      } else if (mode === 'eq') {
+        if (flagMode[id] !== 'num') flagMode[id] = 'eq';
+      } else if (!flagMode[id]) flagMode[id] = 'bool';
+    }
+    function noteWhen(when) {
+      if (!when || typeof when !== 'object') return;
+      (when.all_flags || []).forEach(function (f) { noteFlag(f, 'bool'); });
+      (when.none_flags || []).forEach(function (f) { noteFlag(f, 'bool'); });
+      if (when.flag_eq) Object.keys(when.flag_eq).forEach(function (k) {
+        var v = when.flag_eq[k];
+        if (typeof v === 'number') noteFlag(k, 'num', Math.abs(v) + 1);
+        else {
+          noteFlag(k, 'eq');
+          eqValues[k] = eqValues[k] || {};
+          eqValues[k][JSON.stringify(v)] = 1;
+        }
+      });
+      if (when.flag_min) Object.keys(when.flag_min).forEach(function (k) {
+        noteFlag(k, 'num', when.flag_min[k]);
+      });
+      if (when.flag_max) Object.keys(when.flag_max).forEach(function (k) {
+        noteFlag(k, 'num', when.flag_max[k] + 1);
+      });
+      (when.has_item || []).forEach(function (id) { relevantItems[id] = 1; });
+      (when.missing_item || []).forEach(function (id) { relevantItems[id] = 1; });
+      (when.cleared || []).forEach(function (id) { relevantCleared[id] = 1; });
+    }
+    ((adventure.meta && adventure.meta.required_for_secret) || []).forEach(function (id) {
+      relevantCleared[id] = 1;
+    });
+    (adventure.scenes || []).forEach(function (sc) {
+      if (!sc) return;
+      noteWhen(sc.when);
+      (sc.facts || []).forEach(function (f) { if (f && typeof f === 'object') noteWhen(f.when); });
+      (sc.choices || []).forEach(function (c) {
+        if (!c) return;
+        noteWhen(c.when);
+        (c.require_flag || []).forEach(function (f) { noteFlag(f, 'bool'); });
+        (c.require_item || []).forEach(function (id) { relevantItems[id] = 1; });
+      });
+    });
+    function projectFlag(id, value) {
+      if (flagMode[id] === 'num') {
+        var n = typeof value === 'number' ? value : 0;
+        var cap = flagCap[id] == null ? n : flagCap[id];
+        if (n > cap) n = cap;
+        if (n < -Math.abs(cap)) n = -Math.abs(cap);
+        return String(n);
+      }
+      if (flagMode[id] === 'eq') {
+        var s = JSON.stringify(value);
+        if (eqValues[id] && eqValues[id][s]) return s;
+        return '"*"';
+      }
+      return value ? '1' : '0';
+    }
+
+    function pass(when, st) {
+      return conditionsPass(when, {
+        cls: st.cls, flags: st.flags, inventory: st.items, cleared: st.cleared
+      });
+    }
+    function choiceOpen(st, c) {
+      var i;
+      if (!c || typeof c.to !== 'string') return false;
+      if (Array.isArray(c.require_flag)) {
+        for (i = 0; i < c.require_flag.length; i++) if (!st.flags[c.require_flag[i]]) return false;
+      }
+      if (Array.isArray(c.require_item)) {
+        for (i = 0; i < c.require_item.length; i++) if (st.items.indexOf(c.require_item[i]) < 0) return false;
+      }
+      return pass(c.when, st);
+    }
+    function stateKey(st) {
+      var flagPart = Object.keys(relevantFlags).sort().map(function (k) {
+        return k + ':' + projectFlag(k, st.flags[k]);
+      }).join('&');
+      var seenItem = {};
+      var itemPart = [];
+      st.items.forEach(function (id) {
+        if (relevantItems[id] && !seenItem[id]) { seenItem[id] = 1; itemPart.push(id); }
+      });
+      itemPart.sort();
+      var clearPart = Object.keys(st.cleared).filter(function (id) {
+        return relevantCleared[id];
+      }).sort().join('&');
+      return st.pregen + '|' + st.scene + '|' + itemPart.join(',') + '|' + flagPart + '|' + clearPart;
+    }
+    function cloneState(st) {
+      return {
+        scene: st.scene, cls: st.cls, pregen: st.pregen,
+        items: st.items.slice(), flags: copyMap(st.flags), cleared: copyMap(st.cleared)
+      };
+    }
+    function arrive(st, sceneId) {
+      var n = cloneState(st);
+      n.scene = sceneId;
+      n.flags = refreshSecretFlags(n.flags, n.cleared, adventure);
+      return n;
+    }
+    function afterChoice(st, choice) {
+      var n = cloneState(st);
+      n.flags = applyFlagWrites(n.flags, choice);
+      (choice.give || []).forEach(function (id) { n.items.push(id); });
+      (choice.take || []).forEach(function (id) {
+        var at = n.items.indexOf(id);
+        if (at >= 0) n.items.splice(at, 1);
+      });
+      n.scene = choice.to;
+      n.flags = refreshSecretFlags(n.flags, n.cleared, adventure);
+      return n;
+    }
+
+    var exploded = false;
+    for (var pi = 0; pi < pregens.length; pi++) {
+      if (exploded) break;
+      var p = pregens[pi];
+      var start = {
+        scene: adventure.start,
+        cls: p['class'],
+        pregen: pi,
+        items: (p.inventory || []).slice(),
+        flags: {},
+        cleared: {}
+      };
+      start.flags = refreshSecretFlags(start.flags, start.cleared, adventure);
+      var queue = [start];
+      var seen = {};
+      var localStates = {};
+      var edges = [];
+      seen[stateKey(start)] = true;
+      localStates[stateKey(start)] = start;
+      var qi = 0;
+      while (qi < queue.length) {
+        if (queue.length > 25000) {
+          errors.push('腳本圖太大，無法在上限內走完。');
+          exploded = true;
+          break;
+        }
+        var st = queue[qi++];
+        var key = stateKey(st);
+        reachableScenes[st.scene] = true;
+        var sc = scenes[st.scene];
+        if (!sc) {
+          errors.push('走到不存在的場景「' + st.scene + '」。');
+          continue;
+        }
+        if (sc.type === 'end') {
+          if (pass(sc.when, st)) {
+            if (!reached[sc.id]) reached[sc.id] = {};
+            reached[sc.id][p['class']] = true;
+          }
+          continue;
+        }
+        var nexts = [];
+        if (sc.type === 'beat') {
+          var choices = [];
+          if (sc.choices_from === 'other_pregens') choices.push({ id: '_rival', to: sc.choice_to });
+          else choices = sc.choices || [];
+          choices.forEach(function (c) {
+            if (!choiceOpen(st, c)) return;
+            nexts.push(afterChoice(st, c));
+          });
+        } else if (sc.type === 'check') {
+          [sc.success_to, sc.fail_to].forEach(function (id) {
+            if (typeof id === 'string') nexts.push(arrive(st, id));
+          });
+        } else if (sc.type === 'combat') {
+          var won = cloneState(st);
+          won.cleared[sc.id] = true;
+          won.scene = sc.win_to;
+          won.flags = refreshSecretFlags(won.flags, won.cleared, adventure);
+          nexts.push(won);
+          if (sc.flee_to) nexts.push(arrive(st, sc.flee_to));
+        } else if (sc.type === 'checkpoint') {
+          if (typeof sc.continue_to === 'string') nexts.push(arrive(st, sc.continue_to));
+        }
+        if (!nexts.length) deadScenes[st.scene] = true;
+        nexts.forEach(function (n) {
+          var nk = stateKey(n);
+          edges.push([key, nk]);
+          if (!seen[nk]) {
+            seen[nk] = true;
+            localStates[nk] = n;
+            queue.push(n);
+          }
+        });
+      }
+      if (exploded) break;
+
+      var rev = {};
+      edges.forEach(function (e) { (rev[e[1]] = rev[e[1]] || []).push(e[0]); });
+      var good = {};
+      var rq = [];
+      Object.keys(localStates).forEach(function (k) {
+        var node = localStates[k];
+        var nodeSc = scenes[node.scene];
+        if (nodeSc && nodeSc.type === 'end' && pass(nodeSc.when, node)) {
+          good[k] = true;
+          rq.push(k);
+        }
+      });
+      var ri = 0;
+      while (ri < rq.length) {
+        var gk = rq[ri++];
+        (rev[gk] || []).forEach(function (prev) {
+          if (!good[prev]) { good[prev] = true; rq.push(prev); }
+        });
+      }
+      Object.keys(seen).forEach(function (k) {
+        if (good[k]) return;
+        var node = localStates[k];
+        var nodeSc = scenes[node.scene];
+        if (nodeSc && nodeSc.type === 'end') blockedEnds[node.scene] = true;
+        else if (node) deadScenes[node.scene] = true;
+      });
+    }
+
+    if (!exploded) {
+      (adventure.scenes || []).forEach(function (sc) {
+        if (!sc || !sc.id) return;
+        if (!reachableScenes[sc.id]) errors.push('場景「' + sc.id + '」從起點走不到。');
+        if (sc.type === 'end' && !reached[sc.id]) errors.push('結局場景「' + sc.id + '」從起點走不到。');
+        if (sc.type === 'end' && sc.when && sc.when['class'] != null && reached[sc.id]) {
+          var list = Array.isArray(sc.when['class']) ? sc.when['class'] : [sc.when['class']];
+          list.forEach(function (cls) {
+            var has = false;
+            pregens.forEach(function (p) { if (p['class'] === cls) has = true; });
+            if (has && !reached[sc.id][cls]) errors.push('結局場景「' + sc.id + '」在職業「' + cls + '」走不到。');
+          });
+        }
+      });
+      Object.keys(deadScenes).forEach(function (id) {
+        var sc = scenes[id];
+        if (sc && sc.type === 'end') return;
+        errors.push('場景「' + id + '」有走不出去的狀態（死路）。');
+      });
+      Object.keys(blockedEnds).forEach(function (id) {
+        errors.push('結局「' + id + '」有條件未滿足就到達的路徑，玩家會停在那裡。');
+      });
+    }
+
+    return { ok: errors.length === 0, errors: errors, reached: reached, reachable: Object.keys(reachableScenes) };
+  }
+
+  // ---------------------------------------------------------------- validator
+  // Runs over the embedded data at startup. If it returns ok:false the UI
+  // refuses to start and prints the messages.
+  function validateAdventure(adv, options) {
+    options = options || {};
+    var errors = [];
+    function err(msg) { errors.push(msg); }
+
+    if (!adv || typeof adv !== 'object') {
+      return { ok: false, errors: ['冒險資料不存在或格式錯誤。'] };
+    }
+    if (typeof adv.title !== 'string' || !adv.title) err('冒險缺少 title。');
+    if (typeof adv.start !== 'string' || !adv.start) err('冒險缺少 start（起始場景）。');
+
+    // --- items
+    var items = {};
+    if (!Array.isArray(adv.items)) {
+      err('冒險缺少 items 陣列。');
+    } else {
+      adv.items.forEach(function (it, i) {
+        var where = '物品 #' + i;
+        if (!it || typeof it.id !== 'string' || !it.id) { err(where + ' 缺少 id。'); return; }
+        where = '物品「' + it.id + '」';
+        if (items[it.id]) err(where + ' 的 id 重複。');
+        items[it.id] = it;
+        if (typeof it.name !== 'string' || !it.name) err(where + ' 缺少 name。');
+        if (ITEM_KINDS.indexOf(it.kind) < 0) err(where + ' 的 kind「' + it.kind + '」不合法（只能是 gear / key / consumable）。');
+        var hasHeal = it.heal !== undefined && it.heal !== null;
+        var hasDmg = it.damage !== undefined && it.damage !== null;
+        if (it.kind === 'consumable') {
+          if (hasHeal && hasDmg) err(where + ' 同時有 heal 和 damage，消耗品只能二擇其一。');
+          if (!hasHeal && !hasDmg) err(where + ' 既沒有 heal 也沒有 damage，消耗品必須二擇其一。');
+          if (hasHeal && !Number.isInteger(it.heal)) err(where + ' 的 heal 必須是整數。');
+          if (hasDmg && !Number.isInteger(it.damage)) err(where + ' 的 damage 必須是整數。');
+        } else if (hasHeal || hasDmg) {
+          err(where + ' 不是消耗品，卻有 heal / damage。');
+        }
+      });
+    }
+    function checkItem(id, where) {
+      if (!items[id]) err(where + ' 指向不存在的物品「' + id + '」。');
+    }
+
+    // --- scenes
+    var scenes = {};
+    if (!Array.isArray(adv.scenes) || adv.scenes.length === 0) {
+      err('冒險缺少 scenes 陣列。');
+    } else {
+      adv.scenes.forEach(function (sc, i) {
+        if (!sc || typeof sc.id !== 'string' || !sc.id) { err('場景 #' + i + ' 缺少 id。'); return; }
+        if (scenes[sc.id]) err('場景「' + sc.id + '」的 id 重複。');
+        scenes[sc.id] = sc;
+      });
+    }
+    function checkScene(id, where) {
+      if (typeof id !== 'string' || !scenes[id]) err(where + ' 指向不存在的場景「' + id + '」。');
+    }
+
+    var WHEN_KEYS = {
+      'class': 1, all_flags: 1, none_flags: 1, flag_eq: 1, flag_min: 1, flag_max: 1,
+      has_item: 1, missing_item: 1, cleared: 1
+    };
+    function validateWhen(when, where) {
+      if (!when || typeof when !== 'object' || Array.isArray(when)) {
+        err(where + ' 的 when 必須是物件。');
+        return;
+      }
+      Object.keys(when).forEach(function (k) {
+        if (!WHEN_KEYS[k]) err(where + ' 的 when 含有未知欄位「' + k + '」。');
+      });
+      if (when['class'] !== undefined) {
+        var classes = Array.isArray(when['class']) ? when['class'] : [when['class']];
+        if (!classes.length) err(where + ' 的 when.class 是空的。');
+        classes.forEach(function (c) {
+          if (typeof c !== 'string' || !c) err(where + ' 的 when.class 必須是職業名稱。');
+        });
+      }
+      ['all_flags', 'none_flags'].forEach(function (f) {
+        if (when[f] === undefined) return;
+        if (!Array.isArray(when[f])) { err(where + ' 的 when.' + f + ' 必須是陣列。'); return; }
+        when[f].forEach(function (id) {
+          if (typeof id !== 'string' || !id) err(where + ' 的 when.' + f + ' 必須是旗標名稱。');
+        });
+      });
+      ['flag_eq', 'flag_min', 'flag_max'].forEach(function (f) {
+        if (when[f] === undefined) return;
+        if (!when[f] || typeof when[f] !== 'object' || Array.isArray(when[f])) {
+          err(where + ' 的 when.' + f + ' 必須是物件。');
+          return;
+        }
+        Object.keys(when[f]).forEach(function (k) {
+          var v = when[f][k];
+          if (f === 'flag_eq') {
+            if (typeof v !== 'boolean' && typeof v !== 'number' && typeof v !== 'string') {
+              err(where + ' 的 when.flag_eq.' + k + ' 必須是布林、數字或字串。');
+            }
+          } else if (typeof v !== 'number') {
+            err(where + ' 的 when.' + f + '.' + k + ' 必須是數字。');
+          }
+        });
+      });
+      ['has_item', 'missing_item'].forEach(function (f) {
+        if (when[f] === undefined) return;
+        if (!Array.isArray(when[f])) { err(where + ' 的 when.' + f + ' 必須是陣列。'); return; }
+        when[f].forEach(function (id) { checkItem(id, where + ' 的 when.' + f); });
+      });
+      if (when.cleared !== undefined) {
+        if (!Array.isArray(when.cleared)) err(where + ' 的 when.cleared 必須是陣列。');
+        else when.cleared.forEach(function (id) {
+          if (!scenes[id]) err(where + ' 的 when.cleared 指向不存在的場景「' + id + '」。');
+          else if (scenes[id].type !== 'combat') err(where + ' 的 when.cleared「' + id + '」必須是 combat。');
+        });
+      }
+    }
+    function checkFacts(facts, where) {
+      if (facts === undefined) return;
+      if (!Array.isArray(facts)) { err(where + ' 的 facts 必須是陣列。'); return; }
+      facts.forEach(function (f, i) {
+        if (typeof f === 'string') return;
+        if (!f || typeof f !== 'object' || typeof f.text !== 'string' || !f.text) {
+          err(where + ' 的 facts[' + i + '] 必須是字串，或含有 text 的物件。');
+          return;
+        }
+        if (f.when !== undefined) validateWhen(f.when, where + ' 的 facts[' + i + ']');
+      });
+    }
+
+    if (typeof adv.start === 'string' && adv.start && !scenes[adv.start]) {
+      err('起始場景「' + adv.start + '」不存在。');
+    }
+
+    (Array.isArray(adv.scenes) ? adv.scenes : []).forEach(function (sc) {
+      if (!sc || typeof sc.id !== 'string') return;
+      var where = '場景「' + sc.id + '」';
+      if (SCENE_TYPES.indexOf(sc.type) < 0) { err(where + ' 的 type「' + sc.type + '」不合法。'); return; }
+      checkFacts(sc.facts, where);
+      if (sc.when !== undefined) validateWhen(sc.when, where);
+
+      if (sc.type === 'beat') {
+        var fromPregens = sc.choices_from === 'other_pregens';
+        if (fromPregens) {
+          if (typeof sc.choice_to !== 'string' || !sc.choice_to) err(where + ' 使用 choices_from 時必須有 choice_to。');
+          else checkScene(sc.choice_to, where + ' 的 choice_to');
+        } else if (!Array.isArray(sc.choices) || sc.choices.length === 0) {
+          err(where + ' 沒有 choices。');
+          return;
+        }
+        (Array.isArray(sc.choices) ? sc.choices : []).forEach(function (c, ci) {
+          var cw = where + ' 的選項 #' + ci;
+          if (!c || typeof c.id !== 'string' || !c.id) err(cw + ' 缺少 id。');
+          else cw = where + ' 的選項「' + c.id + '」';
+          if (!c || typeof c.label !== 'string' || !c.label) err(cw + ' 缺少 label。');
+          if (!c) return;
+          checkScene(c.to, cw + ' 的 to');
+          ['give', 'take', 'require_item'].forEach(function (f) {
+            if (c[f] === undefined) return;
+            if (!Array.isArray(c[f])) { err(cw + ' 的 ' + f + ' 必須是陣列。'); return; }
+            c[f].forEach(function (id) { checkItem(id, cw + ' 的 ' + f); });
+          });
+          ['require_flag', 'set_flag'].forEach(function (f) {
+            if (c[f] === undefined) return;
+            if (!Array.isArray(c[f])) { err(cw + ' 的 ' + f + ' 必須是陣列。'); return; }
+            c[f].forEach(function (id) {
+              if (typeof id !== 'string' || !id) err(cw + ' 的 ' + f + ' 必須是旗標名稱。');
+            });
+          });
+          if (c.when !== undefined) validateWhen(c.when, cw);
+          if (c.set !== undefined) {
+            if (!c.set || typeof c.set !== 'object' || Array.isArray(c.set)) err(cw + ' 的 set 必須是物件。');
+            else Object.keys(c.set).forEach(function (k) {
+              var v = c.set[k];
+              if (typeof v !== 'boolean' && typeof v !== 'number' && typeof v !== 'string') {
+                err(cw + ' 的 set.' + k + ' 必須是布林、數字或字串。');
+              }
+            });
+          }
+          if (c.inc !== undefined) {
+            if (!c.inc || typeof c.inc !== 'object' || Array.isArray(c.inc)) err(cw + ' 的 inc 必須是物件。');
+            else Object.keys(c.inc).forEach(function (k) {
+              if (typeof c.inc[k] !== 'number') err(cw + ' 的 inc.' + k + ' 必須是數字。');
+            });
+          }
+          if (c.hp_delta !== undefined && !Number.isInteger(c.hp_delta)) err(cw + ' 的 hp_delta 必須是整數。');
+        });
+      } else if (sc.type === 'check') {
+        if (!SKILL_ABILITY[sc.skill]) {
+          err(where + ' 的 skill「' + sc.skill + '」不在允許的五項技能內（athletics / stealth / perception / insight / persuasion）。');
+        }
+        if (!Number.isInteger(sc.dc)) err(where + ' 的 dc 必須是整數。');
+        checkScene(sc.success_to, where + ' 的 success_to');
+        checkScene(sc.fail_to, where + ' 的 fail_to');
+        if (sc.fail_hp_delta !== undefined && !Number.isInteger(sc.fail_hp_delta)) err(where + ' 的 fail_hp_delta 必須是整數。');
+      } else if (sc.type === 'combat') {
+        if (!Array.isArray(sc.enemies) || sc.enemies.length === 0) err(where + ' 沒有 enemies。');
+        else sc.enemies.forEach(function (e, ei) {
+          var ew = where + ' 的敵人 #' + ei;
+          if (!e) { err(ew + ' 缺少資料。'); return; }
+          if (e.skills !== undefined && !Array.isArray(e.skills)) {
+            err(ew + ' 的 skills 必須是陣列（預留，本階段不會發動）。');
+          }
+          if (e.from_pregen) {
+            if (e.from_pregen !== 'selected_rival') err(ew + ' 的 from_pregen 只接受 selected_rival。');
+            return;
+          }
+          if (typeof e.name !== 'string' || !e.name) err(ew + ' 缺少 name。');
+          ['ac', 'hp', 'atk'].forEach(function (f) {
+            if (!Number.isInteger(e[f])) err(ew + ' 的 ' + f + ' 必須是整數。');
+          });
+          if (!parseDice(e.damage)) err(ew + ' 的 damage「' + e.damage + '」不是合法骰子字串。');
+        });
+        checkScene(sc.win_to, where + ' 的 win_to');
+        if (sc.flee_to !== undefined && sc.flee_to !== null) checkScene(sc.flee_to, where + ' 的 flee_to');
+      } else if (sc.type === 'checkpoint') {
+        if (!Number.isInteger(sc.floor) || sc.floor < 1) err(where + ' 的 floor 必須是正整數。');
+        if (typeof sc.name !== 'string' || !sc.name) err(where + ' 缺少 name。');
+        if (!Array.isArray(sc.facts) || sc.facts.length === 0) err(where + ' 需要一段歇腳摘要（facts）。');
+        checkScene(sc.continue_to, where + ' 的 continue_to');
+        if (sc.continue_label !== undefined && (typeof sc.continue_label !== 'string' || !sc.continue_label)) {
+          err(where + ' 的 continue_label 必須是非空字串。');
+        }
+      } else if (sc.type === 'end') {
+        if (sc.end !== 'win' && sc.end !== 'lose' && sc.end !== 'secret_win') {
+          err(where + ' 的 end 必須是 win / lose / secret_win。');
+        }
+        if (typeof sc.name !== 'string' || !sc.name) err(where + ' 缺少 name（結局卡上的名字）。');
+      }
+    });
+
+    // --- meta.required_for_secret
+    if (adv.meta !== undefined && adv.meta !== null) {
+      if (typeof adv.meta !== 'object' || Array.isArray(adv.meta)) {
+        err('meta 必須是物件。');
+      } else {
+        ['schema_version', 'script_version'].forEach(function (f) {
+          if (adv.meta[f] === undefined) return;
+          if (!Number.isInteger(adv.meta[f]) || adv.meta[f] < 1) err('meta.' + f + ' 必須是正整數。');
+        });
+        if (adv.meta.required_for_secret !== undefined) {
+          var req = adv.meta.required_for_secret;
+          if (!Array.isArray(req)) err('meta.required_for_secret 必須是陣列。');
+          else req.forEach(function (id, i) {
+            if (typeof id !== 'string' || !id) { err('meta.required_for_secret[' + i + '] 必須是非空字串。'); return; }
+            if (!scenes[id]) err('meta.required_for_secret 指向不存在的場景「' + id + '」。');
+            else if (scenes[id].type !== 'combat') err('meta.required_for_secret 的「' + id + '」必須是 combat 場景。');
+          });
+        }
+      }
+    }
+
+    if (adv.flag_defs !== undefined) {
+      if (!adv.flag_defs || typeof adv.flag_defs !== 'object' || Array.isArray(adv.flag_defs)) {
+        err('flag_defs 必須是物件。');
+      } else {
+        Object.keys(adv.flag_defs).forEach(function (id) {
+          var d = adv.flag_defs[id];
+          var w = '旗標「' + id + '」';
+          if (!d || typeof d !== 'object' || Array.isArray(d)) { err(w + ' 必須是物件。'); return; }
+          if (d.key !== undefined && typeof d.key !== 'boolean') err(w + ' 的 key 必須是布林。');
+          if (d.label !== undefined && typeof d.label !== 'string') err(w + ' 的 label 必須是字串。');
+          if (d.key && (typeof d.label !== 'string' || !d.label)) err(w + ' 標成關鍵選擇時必須有 label。');
+        });
+      }
+    }
+    if (adv.achievements !== undefined && !Array.isArray(adv.achievements)) {
+      err('achievements 必須是陣列（預留，本階段不會結算）。');
+    }
+    if (adv.bestiary !== undefined && !Array.isArray(adv.bestiary)) {
+      err('bestiary 必須是陣列（預留，本階段不會結算）。');
+    }
+
+    // --- pregens
+    if (!Array.isArray(adv.pregens) || adv.pregens.length === 0) {
+      err('冒險缺少 pregens 陣列。');
+    } else {
+      adv.pregens.forEach(function (p, i) {
+        var pw = '角色 #' + i;
+        if (!p || typeof p.name !== 'string' || !p.name) { err(pw + ' 缺少 name。'); return; }
+        pw = '角色「' + p.name + '」';
+        ['class', 'race'].forEach(function (f) {
+          if (typeof p[f] !== 'string' || !p[f]) err(pw + ' 缺少 ' + f + '。');
+        });
+        ['str', 'dex', 'con', 'int', 'wis', 'cha', 'ac', 'hp_max'].forEach(function (f) {
+          if (!Number.isInteger(p[f])) err(pw + ' 的 ' + f + ' 必須是整數。');
+        });
+        if (!Array.isArray(p.skills)) err(pw + ' 的 skills 必須是陣列。');
+        else p.skills.forEach(function (s) {
+          if (!SKILL_ABILITY[s]) err(pw + ' 的技能「' + s + '」不在允許的五項技能內。');
+        });
+        if (!p.attack || typeof p.attack !== 'object') err(pw + ' 缺少 attack。');
+        else {
+          if (typeof p.attack.name !== 'string' || !p.attack.name) err(pw + ' 的 attack 缺少 name。');
+          if (!Number.isInteger(p.attack.bonus)) err(pw + ' 的 attack.bonus 必須是整數。');
+          if (!parseDice(p.attack.damage)) err(pw + ' 的 attack.damage「' + p.attack.damage + '」不是合法骰子字串。');
+        }
+        if (!Array.isArray(p.inventory)) err(pw + ' 的 inventory 必須是陣列。');
+        else p.inventory.forEach(function (id) { checkItem(id, pw + ' 的 inventory'); });
+        if (!Array.isArray(p.features) || p.features.length !== 1) {
+          err(pw + ' 必須剛好有 1 個 features。');
+        } else {
+          var f = p.features[0];
+          if (!f || typeof f.id !== 'string' || !f.id) err(pw + ' 的 feature 缺少 id。');
+          if (!f || typeof f.name !== 'string' || !f.name) err(pw + ' 的 feature 缺少 name。');
+          if (!f || f.uses !== 3) err(pw + ' 的 feature.uses 必須是 3。');
+          if (!f || !f.effect || typeof f.effect !== 'object') err(pw + ' 的 feature 缺少 effect。');
+          else {
+            var et = f.effect.type;
+            if (et === 'damage' || et === 'heal') {
+              if (!Number.isInteger(f.effect.amount) || f.effect.amount < 1) {
+                err(pw + ' 的 feature.effect.amount 必須是正整數。');
+              }
+            } else if (et === 'ac_bonus') {
+              if (!Number.isInteger(f.effect.amount) || f.effect.amount < 1) {
+                err(pw + ' 的 feature.effect.amount 必須是正整數。');
+              }
+              if (f.effect.duration !== 'combat') {
+                err(pw + ' 的 feature.effect.duration 必須是 "combat"。');
+              }
+            } else {
+              err(pw + ' 的 feature.effect.type 必須是 damage / heal / ac_bonus。');
+            }
+          }
+        }
+      });
+    }
+
+    if (options.walk !== false && errors.length === 0) {
+      var walked = walkScript(adv);
+      if (!walked.ok) walked.errors.forEach(err);
+    }
+
+    return { ok: errors.length === 0, errors: errors };
+  }
+
+  // ------------------------------------------------------------------- engine
+  // status: 'idle' (no run yet) | 'playing' | 'won' | 'secret_won' | 'lost'
+  function Engine(adventure, options) {
+    options = options || {};
+    var report = validateAdventure(adventure, { walk: false });
+    if (!report.ok) throw new Error('invalid adventure: ' + report.errors.join(' / '));
+    this.adventure = adventure;
+    this.rng = options.rng || makeRng(options.seed == null ? 20260904 : options.seed);
+    this.items = {};
+    adventure.items.forEach(function (it) { this.items[it.id] = it; }, this);
+    this.scenes = {};
+    adventure.scenes.forEach(function (sc) { this.scenes[sc.id] = sc; }, this);
+    this.status = 'idle';
+    this.pregenIndex = null;
+    this.character = null;
+    this.scene = null;
+    this.sceneId = null;
+    this.flags = {};
+    this.clearedCombats = {};
+    this.keyChoices = [];
+    this.rivalPregenIndex = null;
+    this.encounter = null;
+    this.round = 0;
+    this.events = [];
+  }
+
+  // --- internal plumbing -----------------------------------------------------
+  // Every event carries the frozen narration allowlist exactly as it stood the
+  // moment the engine settled that event, so prose can never read later state.
+  Engine.prototype.emit = function (ev) {
+    ev.view = this.narrationView(null);
+    this.events.push(ev);
+    return ev;
+  };
+  Engine.prototype.ok = function () { return { ok: true, error: null, events: this.events.slice() }; };
+  // reject() never mutates game state; the caller's attempt simply did not happen.
+  Engine.prototype.reject = function (msg) { return { ok: false, error: msg, events: this.events.slice() }; };
+
+  Engine.prototype.itemName = function (id) {
+    return this.items[id] ? this.items[id].name : id;
+  };
+
+  Engine.prototype.inventoryNames = function () {
+    return this.character ? this.character.inventory.map(this.itemName, this) : [];
+  };
+
+  Engine.prototype.livingEnemies = function () {
+    if (!this.encounter) return [];
+    var out = [];
+    this.encounter.enemies.forEach(function (e, i) {
+      if (e.hp > 0) out.push({ index: i, ref: e, name: e.name, hp: e.hp, hp_max: e.hp_max });
+    });
+    return out;
+  };
+
+  Engine.prototype.enemySnapshot = function () {
+    if (!this.encounter) return [];
+    return this.encounter.enemies.map(function (e, i) {
+      return { index: i, name: e.name, hp: e.hp, hp_max: e.hp_max, alive: e.hp > 0 };
+    });
+  };
+
+  // --- run lifecycle ---------------------------------------------------------
+  Engine.prototype.characterFromPregen = function (p) {
+    return {
+      name: p.name, cls: p['class'], race: p.race,
+      str: p.str, dex: p.dex, con: p.con, int: p['int'], wis: p.wis, cha: p.cha,
+      ac: p.ac, acBonus: 0, hp: p.hp_max, hp_max: p.hp_max,
+      skills: p.skills.slice(),
+      attack: { name: p.attack.name, bonus: p.attack.bonus, damage: p.attack.damage },
+      inventory: p.inventory.slice(),
+      features: (p.features || []).map(function (f) {
+        return {
+          id: f.id, name: f.name, uses: f.uses, usesMax: f.uses,
+          effect: JSON.parse(JSON.stringify(f.effect))
+        };
+      })
+    };
+  };
+
+  Engine.prototype.effectiveAc = function () {
+    return this.character ? this.character.ac + (this.character.acBonus || 0) : 0;
+  };
+
+  Engine.prototype.clearCombatBonuses = function () {
+    if (this.character && this.character.acBonus) this.character.acBonus = 0;
+  };
+
+  Engine.prototype.refreshSecretReady = function () {
+    this.flags = refreshSecretFlags(this.flags, this.clearedCombats, this.adventure);
+  };
+
+  Engine.prototype.conditionState = function () {
+    return {
+      cls: this.character ? this.character.cls : '',
+      flags: this.flags,
+      inventory: this.character ? this.character.inventory : [],
+      cleared: this.clearedCombats
+    };
+  };
+
+  Engine.prototype.conditionsPass = function (when) {
+    return conditionsPass(when, this.conditionState());
+  };
+
+  Engine.prototype.noteKey = function (id, label) {
+    var defs = (this.adventure && this.adventure.flag_defs) || {};
+    var def = defs[id];
+    if (!def || !def.key) return;
+    var text = label || def.label || id;
+    var i;
+    for (i = 0; i < this.keyChoices.length; i++) {
+      if (this.keyChoices[i].id === id) return;
+    }
+    this.keyChoices.push({ id: id, label: text });
+  };
+
+  Engine.prototype.applyFlagEffects = function (choice) {
+    this.flags = applyFlagWrites(this.flags, choice);
+    var self = this;
+    (choice.set_flag || []).forEach(function (f) { self.noteKey(f); });
+    if (choice.set && typeof choice.set === 'object') {
+      Object.keys(choice.set).forEach(function (k) {
+        var v = choice.set[k];
+        if (v !== false && v !== '' && v !== 0 && v !== null) self.noteKey(k);
+      });
+    }
+    if (choice.inc && typeof choice.inc === 'object') {
+      Object.keys(choice.inc).forEach(function (k) { self.noteKey(k); });
+    }
+  };
+
+  Engine.prototype.markCombatCleared = function (sceneId) {
+    if (sceneId) this.clearedCombats[sceneId] = true;
+    this.refreshSecretReady();
+  };
+
+  Engine.prototype.resolveEnemy = function (e, index) {
+    if (e && e.from_pregen === 'selected_rival') {
+      var idx = this.rivalPregenIndex;
+      if (idx === null || idx === undefined) throw new Error('selected_rival but no rival chosen');
+      var p = this.adventure.pregens[idx];
+      if (!p) throw new Error('invalid rival pregen index');
+      return {
+        id: 'rival',
+        name: p.name,
+        cls: p.class,
+        race: p.race,
+        ac: p.ac,
+        hp: p.hp_max,
+        hp_max: p.hp_max,
+        atk: p.attack.bonus,
+        damage: p.attack.damage
+      };
+    }
+    return {
+      id: e.id || ('enemy_' + index),
+      name: e.name,
+      cls: e.class || null,
+      race: e.race || null,
+      ac: e.ac,
+      hp: e.hp,
+      hp_max: e.hp,
+      atk: e.atk,
+      damage: e.damage
+    };
+  };
+
+  Engine.prototype.resolvedChoices = function () {
+    var sc = this.scene;
+    if (!sc || sc.type !== 'beat') return [];
+    if (sc.choices_from === 'other_pregens') {
+      var out = [];
+      var self = this;
+      var to = sc.choice_to;
+      this.adventure.pregens.forEach(function (p, i) {
+        if (i === self.pregenIndex) return;
+        out.push({
+          id: 'rival_' + i,
+          label: p.name + '（' + p.class + '／' + p.race + '）',
+          to: to,
+          _rival_index: i
+        });
+      });
+      return out;
+    }
+    return (sc.choices || []).slice();
+  };
+
+  // Fresh character state, flags cleared, back to the start scene.
+  Engine.prototype.beginRun = function (pregenIndex) {
+    var p = this.adventure.pregens[pregenIndex];
+    if (!p) return this.reject('沒有這個角色。');
+    this.pregenIndex = pregenIndex;
+    this.character = this.characterFromPregen(p);
+    this.flags = {};
+    this.clearedCombats = {};
+    this.keyChoices = [];
+    this.rivalPregenIndex = null;
+    this.encounter = null;
+    this.round = 0;
+    this.status = 'playing';
+    this.emit({
+      t: 'run_start',
+      name: this.character.name, cls: this.character.cls, race: this.character.race,
+      hp: this.character.hp, hp_max: this.character.hp_max,
+      inventory: this.inventoryNames()
+    });
+    this.enterScene(this.adventure.start);
+    return this.ok();
+  };
+
+  Engine.prototype.start = function (pregenIndex) {
+    this.events = [];
+    return this.beginRun(pregenIndex);
+  };
+
+  // Full restart from the start scene with fresh character state.
+  Engine.prototype.restart = function () {
+    this.events = [];
+    if (this.pregenIndex == null) return this.reject('還沒有選角色。');
+    return this.beginRun(this.pregenIndex);
+  };
+
+  Engine.prototype.lose = function (cause) {
+    this.status = 'lost';
+    this.emit({ t: 'end', outcome: 'lost', cause: cause || 'hp' });
+  };
+
+  Engine.prototype.enterScene = function (id) {
+    var sc = this.scenes[id];
+    if (!sc) throw new Error('unknown scene: ' + id); // validator makes this unreachable
+    // Combat-only AC bonus ends when leaving combat (flee or all enemies dead).
+    this.clearCombatBonuses();
+    this.sceneId = id;
+    this.scene = sc;
+    this.encounter = null;
+    this.refreshSecretReady();
+    if (sc.type === 'combat') {
+      this.round = 1;
+      var self = this;
+      this.encounter = {
+        enemies: sc.enemies.map(function (e, i) { return self.resolveEnemy(e, i); })
+      };
+    }
+    if (sc.type === 'end' && sc.when && !this.conditionsPass(sc.when)) {
+      this.emit({
+        t: 'scene',
+        sceneType: sc.type,
+        facts: resolveFacts(sc.facts, this.conditionState()),
+        name: sc.name || null,
+        floor: sc.floor || null,
+        enemies: [],
+        blocked: true
+      });
+      this.emit({ t: 'end_blocked', name: sc.name || sc.id });
+      return;
+    }
+    this.emit({
+      t: 'scene',
+      sceneType: sc.type,
+      facts: resolveFacts(sc.facts, this.conditionState()),
+      name: sc.name || null,
+      floor: sc.floor || null,
+      enemies: this.enemySnapshot()
+    });
+    if (sc.type === 'end') {
+      if (sc.end === 'win') this.status = 'won';
+      else if (sc.end === 'secret_win') this.status = 'secret_won';
+      else this.status = 'lost';
+      this.emit({ t: 'end', outcome: this.status, cause: 'scene' });
+    }
+  };
+
+  // --- hp helper -------------------------------------------------------------
+  // Single place where player HP moves outside of combat damage.
+  Engine.prototype.applyHpDelta = function (delta, reason) {
+    var c = this.character;
+    c.hp = Math.min(c.hp_max, c.hp + delta);
+    if (c.hp < 0) c.hp = 0;
+    this.emit({ t: 'hp', delta: delta, hp: c.hp, hp_max: c.hp_max, reason: reason || null });
+    if (c.hp <= 0) { this.lose('hp'); return false; }
+    return true;
+  };
+
+  // --- legal actions ---------------------------------------------------------
+  Engine.prototype.choiceVisible = function (c) {
+    var i;
+    if (!this.conditionsPass(c.when)) return false;
+    if (Array.isArray(c.require_flag)) {
+      for (i = 0; i < c.require_flag.length; i++) if (!this.flags[c.require_flag[i]]) return false;
+    }
+    if (Array.isArray(c.require_item)) {
+      for (i = 0; i < c.require_item.length; i++) {
+        if (this.character.inventory.indexOf(c.require_item[i]) < 0) return false;
+      }
+    }
+    return true;
+  };
+
+  // Every inventory slot, with whether use_item on it is legal right now.
+  // use_item is always offered in beat / check / combat scenes; it is never
+  // authored as a choice in the data.
+  Engine.prototype.itemActions = function () {
+    var self = this;
+    var inCombat = this.scene && this.scene.type === 'combat';
+    var living = this.livingEnemies();
+    return this.character.inventory.map(function (id, slot) {
+      var it = self.items[id];
+      var act = {
+        type: 'use_item', slot: slot, itemId: id, itemName: it.name, kind: it.kind,
+        effect: null, amount: 0, enabled: false, needsTarget: false, reason: null
+      };
+      if (it.kind !== 'consumable') {
+        act.reason = '這件物品不能使用。';
+        return act;
+      }
+      if (it.heal !== undefined && it.heal !== null) {
+        act.effect = 'heal';
+        act.amount = it.heal;
+        act.enabled = true;
+      } else {
+        act.effect = 'damage';
+        act.amount = it.damage;
+        if (!inCombat) act.reason = '只能在戰鬥中使用。';
+        else if (living.length === 0) act.reason = '沒有目標。';
+        else { act.enabled = true; act.needsTarget = living.length > 1; }
+      }
+      return act;
+    });
+  };
+
+  // Class features with remaining uses, and whether use_feature is legal now.
+  // use_feature is always offered in beat / check / combat when uses remain;
+  // effect legality (combat-only damage/ac_bonus) gates enabled.
+  Engine.prototype.featureActions = function () {
+    var self = this;
+    var inCombat = this.scene && this.scene.type === 'combat';
+    var living = this.livingEnemies();
+    var features = (this.character && this.character.features) || [];
+    return features.filter(function (f) { return f.uses > 0; }).map(function (f) {
+      var act = {
+        type: 'use_feature', featureId: f.id, featureName: f.name, uses: f.uses,
+        usesMax: f.usesMax, effect: f.effect.type, amount: f.effect.amount,
+        enabled: false, needsTarget: false, reason: null
+      };
+      if (f.effect.type === 'heal') {
+        act.enabled = true;
+      } else if (f.effect.type === 'damage') {
+        if (!inCombat) act.reason = '只能在戰鬥中使用。';
+        else if (living.length === 0) act.reason = '沒有目標。';
+        else { act.enabled = true; act.needsTarget = living.length > 1; }
+      } else if (f.effect.type === 'ac_bonus') {
+        if (!inCombat) act.reason = '只能在戰鬥中使用。';
+        else if ((self.character.acBonus || 0) > 0) act.reason = '這一場已經有護甲加成。';
+        else act.enabled = true;
+      } else {
+        act.reason = '未知的特性效果。';
+      }
+      return act;
+    });
+  };
+
+  Engine.prototype.legalActions = function () {
+    if (this.status !== 'playing' || !this.scene) return [];
+    var sc = this.scene, acts = [], self = this;
+    if (sc.type === 'beat') {
+      this.refreshSecretReady();
+      this.resolvedChoices().forEach(function (c) {
+        if (!self.choiceVisible(c)) return; // hidden when requirements unmet
+        acts.push({ type: 'choice', id: c.id, label: c.label });
+      });
+    } else if (sc.type === 'check') {
+      // No roll happens on entry: the player presses this.
+      acts.push({ type: 'roll', skill: sc.skill, dc: sc.dc });
+    } else if (sc.type === 'combat') {
+      this.livingEnemies().forEach(function (e) {
+        acts.push({ type: 'attack', target: e.index, targetName: e.name, targetHp: e.hp, targetHpMax: e.hp_max });
+      });
+      acts.push({ type: 'flee', to: sc.flee_to || null });
+    } else if (sc.type === 'checkpoint') {
+      acts.push({ type: 'continue', label: sc.continue_label || '繼續前進' });
+    }
+    if (sc.type === 'beat' || sc.type === 'check' || sc.type === 'combat') {
+      acts = acts.concat(this.itemActions());
+      acts = acts.concat(this.featureActions());
+    }
+    return acts;
+  };
+
+  // --- actions ---------------------------------------------------------------
+  Engine.prototype.perform = function (action) {
+    this.events = [];
+    if (!action || typeof action.type !== 'string') return this.reject('未知的行動。');
+    if (action.type === 'restart') return this.restart();
+    if (this.status !== 'playing') return this.reject('這一場已經結束了。');
+    switch (action.type) {
+      case 'choice':      return this.doChoice(action.id);
+      case 'roll':        return this.doRoll();
+      case 'attack':      return this.doAttack(action.target);
+      case 'use_item':    return this.doUseItem(action.slot, action.target);
+      case 'use_feature': return this.doUseFeature(action.featureId, action.target);
+      case 'flee':        return this.doFlee();
+      case 'continue':    return this.doContinue();
+      default:            return this.reject('未知的行動。');
+    }
+  };
+
+  Engine.prototype.doChoice = function (id) {
+    var sc = this.scene, self = this;
+    if (sc.type !== 'beat') return this.reject('現在不能做這個選擇。');
+    this.refreshSecretReady();
+    var choice = null;
+    this.resolvedChoices().forEach(function (c) { if (c.id === id) choice = c; });
+    if (!choice) return this.reject('沒有這個選項。');
+    if (!this.choiceVisible(choice)) return this.reject('現在還做不到這件事。');
+
+    this.emit({ t: 'choice', label: choice.label });
+    if (choice._rival_index !== undefined && choice._rival_index !== null) {
+      self.rivalPregenIndex = choice._rival_index;
+      var rp = self.adventure.pregens[choice._rival_index];
+      if (rp) {
+        self.flags.rival = rp.name;
+        self.noteKey('rival', '對手：' + rp.name + '（' + rp['class'] + '）');
+      }
+    }
+    this.applyFlagEffects(choice);
+    (choice.give || []).forEach(function (itemId) {
+      self.character.inventory.push(itemId);
+      self.emit({ t: 'give', itemName: self.itemName(itemId) });
+    });
+    (choice.take || []).forEach(function (itemId) {
+      var i = self.character.inventory.indexOf(itemId);
+      if (i >= 0) {
+        self.character.inventory.splice(i, 1);
+        self.emit({ t: 'take', itemName: self.itemName(itemId) });
+      }
+    });
+    if (choice.hp_delta) {
+      if (!this.applyHpDelta(choice.hp_delta, 'choice')) return this.ok();
+    }
+    this.enterScene(choice.to);
+    return this.ok();
+  };
+
+  Engine.prototype.doContinue = function () {
+    var sc = this.scene;
+    if (!sc || sc.type !== 'checkpoint') return this.reject('現在不是歇腳點。');
+    this.emit({ t: 'checkpoint', action: 'continue', floor: sc.floor || null, name: sc.name || '' });
+    this.enterScene(sc.continue_to);
+    return this.ok();
+  };
+
+  Engine.prototype.doRoll = function () {
+    var sc = this.scene, c = this.character;
+    if (sc.type !== 'check') return this.reject('現在不需要擲骰。');
+    var ability = SKILL_ABILITY[sc.skill];
+    var mod = abilityMod(c[ability]);
+    var prof = c.skills.indexOf(sc.skill) >= 0 ? PROFICIENCY_BONUS : 0;
+    var d20 = this.rng.die(20);
+    var total = d20 + mod + prof;
+    var success = total >= sc.dc; // landing exactly on the DC succeeds
+    this.emit({
+      t: 'check', skill: sc.skill, ability: ability,
+      d20: d20, mod: mod, prof: prof, total: total, dc: sc.dc, success: success
+    });
+    if (!success && sc.fail_hp_delta) {
+      if (!this.applyHpDelta(sc.fail_hp_delta, 'check_fail')) return this.ok();
+    }
+    this.enterScene(success ? sc.success_to : sc.fail_to);
+    return this.ok();
+  };
+
+  Engine.prototype.doAttack = function (targetIndex) {
+    var sc = this.scene, c = this.character;
+    if (sc.type !== 'combat') return this.reject('這裡沒有可以攻擊的對象。');
+    var living = this.livingEnemies();
+    if (living.length === 0) return this.reject('沒有目標。');
+    var target = null;
+    if (targetIndex === undefined || targetIndex === null) {
+      if (living.length > 1) return this.reject('要先選一個目標。');
+      target = living[0].ref;
+      targetIndex = living[0].index;
+    } else {
+      var e = this.encounter.enemies[targetIndex];
+      if (!e || e.hp <= 0) return this.reject('這個目標不能攻擊。');
+      target = e;
+    }
+    var d20 = this.rng.die(20);
+    var total = d20 + c.attack.bonus;
+    var hit = total >= target.ac; // natural 20 is just a normal hit
+    var dmg = null;
+    var before = target.hp;
+    if (hit) {
+      dmg = rollDice(c.attack.damage, this.rng);
+      target.hp = Math.max(0, target.hp - dmg.total);
+    }
+    this.emit({
+      t: 'attack', attackName: c.attack.name, attackerName: c.name,
+      d20: d20, bonus: c.attack.bonus, total: total, ac: target.ac, hit: hit,
+      damage: dmg, targetName: target.name, targetHpBefore: before,
+      targetHp: target.hp, targetHpMax: target.hp_max, targetDown: target.hp <= 0
+    });
+    return this.endPlayerTurn();
+  };
+
+  Engine.prototype.doUseItem = function (slot, targetIndex) {
+    var c = this.character, sc = this.scene;
+    if (sc.type !== 'beat' && sc.type !== 'check' && sc.type !== 'combat') {
+      return this.reject('現在不能使用物品。');
+    }
+    if (!Number.isInteger(slot) || slot < 0 || slot >= c.inventory.length) {
+      return this.reject('沒有這件物品。');
+    }
+    var item = this.items[c.inventory[slot]];
+    if (!item) return this.reject('沒有這件物品。');
+    if (item.kind !== 'consumable') return this.reject(item.name + '不能使用。');
+
+    var isDamage = item.damage !== undefined && item.damage !== null;
+    if (isDamage) {
+      // Damage items are combat-only. Outside combat the attempt is rejected
+      // and the item is NOT consumed.
+      if (sc.type !== 'combat') return this.reject(item.name + '只能在戰鬥中使用。');
+      var living = this.livingEnemies();
+      if (living.length === 0) return this.reject('沒有目標。');
+      var target = null;
+      if (targetIndex === undefined || targetIndex === null) {
+        if (living.length > 1) return this.reject('要先選一個目標。');
+        target = living[0].ref;
+      } else {
+        var e = this.encounter.enemies[targetIndex];
+        if (!e || e.hp <= 0) return this.reject('這個目標不能攻擊。');
+        target = e;
+      }
+      var before = target.hp;
+      target.hp = Math.max(0, target.hp - item.damage); // automatic hit, cannot miss
+      c.inventory.splice(slot, 1);                      // single use
+      this.emit({
+        t: 'item_damage', itemName: item.name, amount: item.damage,
+        targetName: target.name, targetHpBefore: before, targetHp: target.hp,
+        targetHpMax: target.hp_max, targetDown: target.hp <= 0,
+        inventory: this.inventoryNames()
+      });
+      return this.endPlayerTurn();
+    }
+
+    var hpBefore = c.hp;
+    c.hp = Math.min(c.hp_max, c.hp + item.heal); // capped at hp_max
+    c.inventory.splice(slot, 1);                 // single use
+    this.emit({
+      t: 'item_heal', itemName: item.name, amount: item.heal,
+      healed: c.hp - hpBefore, hp: c.hp, hp_max: c.hp_max,
+      inventory: this.inventoryNames()
+    });
+    if (sc.type === 'combat') return this.endPlayerTurn();
+    return this.ok();
+  };
+
+  Engine.prototype.doUseFeature = function (featureId, targetIndex) {
+    var c = this.character, sc = this.scene;
+    if (sc.type !== 'beat' && sc.type !== 'check' && sc.type !== 'combat') {
+      return this.reject('現在不能使用特性。');
+    }
+    var features = c.features || [];
+    var usable = features.filter(function (f) { return f.uses > 0; });
+    if (usable.length === 0) return this.reject('沒有可用的特性。');
+    var feature = null;
+    if (featureId === undefined || featureId === null || featureId === '') {
+      if (usable.length > 1) return this.reject('要先選一個特性。');
+      feature = usable[0];
+    } else {
+      features.forEach(function (f) { if (f.id === featureId) feature = f; });
+      if (!feature) return this.reject('沒有這個特性。');
+      if (feature.uses <= 0) return this.reject(feature.name + '已經沒有次數了。');
+    }
+    var effect = feature.effect;
+
+    if (effect.type === 'damage') {
+      if (sc.type !== 'combat') return this.reject(feature.name + '只能在戰鬥中使用。');
+      var living = this.livingEnemies();
+      if (living.length === 0) return this.reject('沒有目標。');
+      var target = null;
+      if (targetIndex === undefined || targetIndex === null) {
+        if (living.length > 1) return this.reject('要先選一個目標。');
+        target = living[0].ref;
+      } else {
+        var e = this.encounter.enemies[targetIndex];
+        if (!e || e.hp <= 0) return this.reject('這個目標不能攻擊。');
+        target = e;
+      }
+      var before = target.hp;
+      target.hp = Math.max(0, target.hp - effect.amount); // automatic hit
+      feature.uses -= 1;
+      this.emit({
+        t: 'feature_damage', featureId: feature.id, featureName: feature.name,
+        amount: effect.amount, uses: feature.uses, usesMax: feature.usesMax,
+        targetName: target.name, targetHpBefore: before, targetHp: target.hp,
+        targetHpMax: target.hp_max, targetDown: target.hp <= 0
+      });
+      return this.endPlayerTurn();
+    }
+
+    if (effect.type === 'heal') {
+      if (c.hp >= c.hp_max) {
+        // Full HP: reject and do NOT deduct uses.
+        return this.reject(feature.name + '：生命已滿，沒有使用。');
+      }
+      var hpBefore = c.hp;
+      c.hp = Math.min(c.hp_max, c.hp + effect.amount);
+      feature.uses -= 1;
+      this.emit({
+        t: 'feature_heal', featureId: feature.id, featureName: feature.name,
+        amount: effect.amount, healed: c.hp - hpBefore,
+        uses: feature.uses, usesMax: feature.usesMax,
+        hp: c.hp, hp_max: c.hp_max
+      });
+      if (sc.type === 'combat') return this.endPlayerTurn();
+      return this.ok();
+    }
+
+    if (effect.type === 'ac_bonus') {
+      if (sc.type !== 'combat') return this.reject(feature.name + '只能在戰鬥中使用。');
+      // Already buffed this combat: reject, do not deduct uses, no stacking.
+      if ((c.acBonus || 0) > 0) {
+        return this.reject(feature.name + '：這一場已經有護甲加成。');
+      }
+      c.acBonus = effect.amount;
+      feature.uses -= 1;
+      this.emit({
+        t: 'feature_ac', featureId: feature.id, featureName: feature.name,
+        amount: effect.amount, uses: feature.uses, usesMax: feature.usesMax,
+        ac: this.effectiveAc(), acBase: c.ac, acBonus: c.acBonus
+      });
+      return this.endPlayerTurn();
+    }
+
+    return this.reject('未知的特性效果。');
+  };
+
+  Engine.prototype.doFlee = function () {
+    var sc = this.scene;
+    if (sc.type !== 'combat') return this.reject('這裡沒有要逃走的東西。');
+    if (sc.flee_to) {
+      this.emit({ t: 'flee', escaped: true });
+      this.enterScene(sc.flee_to);
+      return this.ok();
+    }
+    // No flee_to: the whole run restarts.
+    this.emit({ t: 'flee', escaped: false });
+    this.emit({ t: 'run_restart', reason: 'flee' });
+    return this.beginRun(this.pregenIndex);
+  };
+
+  // After the player's single action, every living enemy attacks.
+  Engine.prototype.endPlayerTurn = function () {
+    var c = this.character, self = this;
+    var living = this.livingEnemies();
+    if (living.length === 0) {
+      this.emit({ t: 'combat_win' });
+      this.markCombatCleared(this.sceneId);
+      this.enterScene(this.scene.win_to);
+      return this.ok();
+    }
+    this.emit({ t: 'enemy_phase', round: this.round });
+    for (var i = 0; i < living.length; i++) {
+      if (this.status !== 'playing') break;
+      var e = living[i].ref;
+      var d20 = this.rng.die(20);
+      var total = d20 + e.atk;
+      var playerAc = self.effectiveAc();
+      var hit = total >= playerAc;
+      var dmg = null;
+      if (hit) {
+        dmg = rollDice(e.damage, this.rng);
+        c.hp = c.hp - dmg.total;
+        if (c.hp < 0) c.hp = 0;
+      }
+      this.emit({
+        t: 'enemy_attack', enemyName: e.name, d20: d20, bonus: e.atk, total: total,
+        ac: playerAc, hit: hit, damage: dmg, hp: c.hp, hp_max: c.hp_max
+      });
+      if (c.hp <= 0) this.lose('hp');
+    }
+    if (this.status === 'playing') this.round++;
+    return this.ok();
+  };
+
+  // --- views -----------------------------------------------------------------
+  // Everything the UI needs to draw the screen.
+  Engine.prototype.uiState = function () {
+    var c = this.character;
+    return {
+      status: this.status,
+      sceneId: this.sceneId,
+      sceneType: this.scene ? this.scene.type : null,
+      round: this.round,
+      character: c ? {
+        name: c.name, cls: c.cls, race: c.race,
+        ac: this.effectiveAc(), acBase: c.ac, acBonus: c.acBonus || 0,
+        hp: c.hp, hp_max: c.hp_max,
+        abilities: { str: c.str, dex: c.dex, con: c.con, int: c.int, wis: c.wis, cha: c.cha },
+        skills: c.skills.slice(),
+        inventory: c.inventory.slice(), inventoryNames: this.inventoryNames(),
+        attack: { name: c.attack.name, bonus: c.attack.bonus, damage: c.attack.damage },
+        features: (c.features || []).map(function (f) {
+          return { id: f.id, name: f.name, uses: f.uses, usesMax: f.usesMax, effect: f.effect.type, amount: f.effect.amount };
+        })
+      } : null,
+      enemies: this.enemySnapshot()
+    };
+  };
+
+  // STRICT narration allowlist. The narrator sees nothing else: scene facts,
+  // name/class/race, hp/hp_max, inventory item names, encounter enemy
+  // names/HP, and this action's dice result. Frozen so it cannot be a channel
+  // back into engine state.
+  Engine.prototype.narrationView = function (dice) {
+    var c = this.character;
+    var enemies = (this.encounter ? this.encounter.enemies : []).map(function (e) {
+      return Object.freeze({ name: e.name, hp: e.hp });
+    });
+    return Object.freeze({
+      facts: Object.freeze(resolveFacts(this.scene && this.scene.facts, this.conditionState())),
+      name: c ? c.name : '', cls: c ? c.cls : '', race: c ? c.race : '',
+      hp: c ? c.hp : 0, hp_max: c ? c.hp_max : 0,
+      inventory: Object.freeze(this.inventoryNames()),
+      enemies: Object.freeze(enemies),
+      dice: dice ? Object.freeze(dice) : null
+    });
+  };
+
+  Engine.prototype.endingCard = function () {
+    if (!this.character) return null;
+    if (this.status !== 'won' && this.status !== 'secret_won' && this.status !== 'lost') return null;
+    var endingName = '失敗';
+    if (this.status === 'won' || this.status === 'secret_won') {
+      endingName = (this.scene && this.scene.name) || (this.status === 'secret_won' ? '隱藏結局' : '通關');
+    }
+    return {
+      title: this.adventure.title,
+      endingName: endingName,
+      outcome: this.status,
+      className: this.character.cls,
+      characterName: this.character.name,
+      race: this.character.race,
+      keyChoices: this.keyChoices.slice()
+    };
+  };
+
+  Engine.prototype.exportSave = function () {
+    if (!this.character || this.status === 'idle') return null;
+    return {
+      v: SAVE_VERSION,
+      adventureId: this.adventure.id || null,
+      scriptVersion: (this.adventure.meta && this.adventure.meta.script_version) || 1,
+      pregenIndex: this.pregenIndex,
+      character: deepCopy(this.character),
+      sceneId: this.sceneId,
+      flags: deepCopy(this.flags),
+      clearedCombats: deepCopy(this.clearedCombats),
+      keyChoices: deepCopy(this.keyChoices),
+      rivalPregenIndex: this.rivalPregenIndex,
+      encounter: this.encounter ? deepCopy(this.encounter) : null,
+      round: this.round,
+      status: this.status,
+      rng: (this.rng && this.rng.exportState) ? this.rng.exportState() : null
+    };
+  };
+
+  Engine.prototype.applySave = function (save) {
+    if (!save || typeof save !== 'object') return { ok: false, error: '存檔是空的。' };
+    var aid = this.adventure.id || null;
+    if (save.adventureId && aid && save.adventureId !== aid) {
+      return { ok: false, error: '這份存檔屬於另一個冒險。' };
+    }
+    if (!Number.isInteger(save.pregenIndex) || !this.adventure.pregens[save.pregenIndex]) {
+      return { ok: false, error: '存檔裡的角色已經不存在。' };
+    }
+    var sc = this.scenes[save.sceneId];
+    if (!sc) return { ok: false, error: '存檔裡的場景已經不存在。' };
+    var statuses = { playing: 1, won: 1, secret_won: 1, lost: 1 };
+    if (!statuses[save.status]) return { ok: false, error: '存檔狀態不正確。' };
+    var c = save.character;
+    if (!c || typeof c.name !== 'string' || typeof c.cls !== 'string' || typeof c.race !== 'string') {
+      return { ok: false, error: '存檔裡的角色資料不完整。' };
+    }
+    var scores = ['str', 'dex', 'con', 'int', 'wis', 'cha', 'ac', 'hp', 'hp_max'];
+    var si;
+    for (si = 0; si < scores.length; si++) {
+      if (!Number.isInteger(c[scores[si]])) return { ok: false, error: '存檔裡的角色資料不完整。' };
+    }
+    if (c.hp_max < 1 || !Array.isArray(c.inventory) || !Array.isArray(c.skills) || !Array.isArray(c.features)) {
+      return { ok: false, error: '存檔裡的角色資料不完整。' };
+    }
+    if (!c.attack || typeof c.attack.name !== 'string' || !Number.isInteger(c.attack.bonus) || !parseDice(c.attack.damage)) {
+      return { ok: false, error: '存檔裡的角色資料不完整。' };
+    }
+    var ii;
+    for (ii = 0; ii < c.inventory.length; ii++) {
+      if (!this.items[c.inventory[ii]]) return { ok: false, error: '存檔裡的物品已經不存在。' };
+    }
+    if (save.status === 'playing' && c.hp <= 0) return { ok: false, error: '存檔狀態互相矛盾。' };
+    if (save.status === 'playing' && sc.type === 'end') return { ok: false, error: '存檔狀態互相矛盾。' };
+    if (save.status === 'won' && !(sc.type === 'end' && sc.end === 'win')) return { ok: false, error: '存檔狀態互相矛盾。' };
+    if (save.status === 'secret_won' && !(sc.type === 'end' && sc.end === 'secret_win')) {
+      return { ok: false, error: '存檔狀態互相矛盾。' };
+    }
+    if (sc.type === 'combat') {
+      if (!save.encounter || !Array.isArray(save.encounter.enemies) || save.encounter.enemies.length !== sc.enemies.length) {
+        return { ok: false, error: '存檔與腳本對不上，無法還原這場戰鬥。' };
+      }
+      for (ii = 0; ii < save.encounter.enemies.length; ii++) {
+        var e = save.encounter.enemies[ii];
+        if (!e || typeof e.name !== 'string' || !Number.isInteger(e.ac) || !Number.isInteger(e.hp) ||
+            !Number.isInteger(e.hp_max) || !Number.isInteger(e.atk) || !parseDice(e.damage)) {
+          return { ok: false, error: '存檔與腳本對不上，無法還原這場戰鬥。' };
+        }
+      }
+    }
+    if (save.rivalPregenIndex != null) {
+      if (!Number.isInteger(save.rivalPregenIndex) || !this.adventure.pregens[save.rivalPregenIndex]) {
+        return { ok: false, error: '存檔裡的對手已經不存在。' };
+      }
+    }
+
+    var character = deepCopy(c);
+    if (character.hp > character.hp_max) character.hp = character.hp_max;
+    if (character.hp < 0) character.hp = 0;
+    if (!Number.isInteger(character.acBonus) || character.acBonus < 0) character.acBonus = 0;
+
+    this.pregenIndex = save.pregenIndex;
+    this.character = character;
+    this.sceneId = save.sceneId;
+    this.scene = sc;
+    this.flags = (save.flags && typeof save.flags === 'object' && !Array.isArray(save.flags)) ? deepCopy(save.flags) : {};
+    this.clearedCombats = {};
+    if (save.clearedCombats && typeof save.clearedCombats === 'object') {
+      Object.keys(save.clearedCombats).forEach(function (id) {
+        if (save.clearedCombats[id]) this.clearedCombats[id] = true;
+      }, this);
+    }
+    this.keyChoices = [];
+    if (Array.isArray(save.keyChoices)) {
+      save.keyChoices.forEach(function (k) {
+        if (k && typeof k.id === 'string' && typeof k.label === 'string' && k.label) {
+          this.keyChoices.push({ id: k.id, label: k.label });
+        }
+      }, this);
+    }
+    this.rivalPregenIndex = save.rivalPregenIndex == null ? null : save.rivalPregenIndex;
+    this.encounter = sc.type === 'combat' ? deepCopy(save.encounter) : null;
+    this.round = sc.type === 'combat' && Number.isInteger(save.round) && save.round > 0 ? save.round : (sc.type === 'combat' ? 1 : 0);
+    this.status = save.status;
+    this.events = [];
+    if (save.rng && this.rng && typeof this.rng.importState === 'function') this.rng.importState(save.rng);
+    this.refreshSecretReady();
+    return { ok: true, error: null };
+  };
+
+  Engine.prototype.resumeView = function () {
+    this.events = [];
+    if (!this.character || !this.scene) return this.reject('沒有可以讀取的進度。');
+    this.emit({
+      t: 'resume',
+      name: this.character.name,
+      cls: this.character.cls,
+      sceneType: this.scene.type
+    });
+    this.emit({
+      t: 'scene',
+      sceneType: this.scene.type,
+      facts: resolveFacts(this.scene.facts, this.conditionState()),
+      name: this.scene.name || null,
+      floor: this.scene.floor || null,
+      enemies: this.enemySnapshot()
+    });
+    if (this.status === 'won' || this.status === 'secret_won' || this.status === 'lost') {
+      this.emit({ t: 'end', outcome: this.status, cause: 'resume' });
+    }
+    return this.ok();
+  };
+
+  function loadGame(adventure, code, options) {
+    options = options || {};
+    var decoded = decodeSaveCode(code);
+    if (!decoded.ok) return { ok: false, error: decoded.error, engine: null };
+    try {
+      var save = migrateSave(decoded.save, adventure, options.hooks);
+      var eng = new Engine(adventure, options);
+      var applied = eng.applySave(save);
+      if (!applied.ok) return { ok: false, error: applied.error, engine: null };
+      return { ok: true, error: null, engine: eng };
+    } catch (e) {
+      var msg = (e && e.name === 'SaveError' && e.message) ? e.message : '存檔無法讀取。';
+      return { ok: false, error: msg, engine: null };
+    }
+  }
+
+  // ------------------------------------------------------------------- exports
+  var api = {
+    PROFICIENCY_BONUS: PROFICIENCY_BONUS,
+    SKILL_ABILITY: SKILL_ABILITY,
+    SKILL_LABEL: SKILL_LABEL,
+    ABILITY_LABEL: ABILITY_LABEL,
+    SAVE_VERSION: SAVE_VERSION,
+    makeRng: makeRng,
+    makeFixedRng: makeFixedRng,
+    parseDice: parseDice,
+    rollDice: rollDice,
+    abilityMod: abilityMod,
+    conditionsPass: conditionsPass,
+    resolveFacts: resolveFacts,
+    validateAdventure: validateAdventure,
+    walkScript: walkScript,
+    encodeSaveCode: encodeSaveCode,
+    decodeSaveCode: decodeSaveCode,
+    migrateSave: migrateSave,
+    loadGame: loadGame,
+    SaveSlot: SaveSlot,
+    layoutEndingCard: layoutEndingCard,
+    paintEndingCard: paintEndingCard,
+    drawEndingCard: drawEndingCard,
+    Engine: Engine
+  };
+  global.TOWER = global.TOWER || {};
+  for (var k in api) if (Object.prototype.hasOwnProperty.call(api, k)) global.TOWER[k] = api[k];
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+

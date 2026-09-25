@@ -285,6 +285,7 @@
     if (node.inc && typeof node.inc === 'object' && !Array.isArray(node.inc) && Object.keys(node.inc).length) return true;
     if (node.dec && typeof node.dec === 'object' && !Array.isArray(node.dec) && Object.keys(node.dec).length) return true;
     if (node.hp_delta) return true;
+    if (node.rest && typeof node.rest === 'object') return true;
     return false;
   }
 
@@ -313,6 +314,14 @@
   function restIsOnce(rest) {
     if (!rest || optedOut(rest)) return false;
     return true;
+  }
+
+  // "half" is floor(hp_max / 2). A positive integer is a flat amount.
+  function restHealAmount(rest, hpMax) {
+    if (!rest) return 0;
+    if (rest.heal === 'half') return Math.floor((hpMax || 0) / 2);
+    if (Number.isInteger(rest.heal) && rest.heal > 0) return rest.heal;
+    return 0;
   }
 
   function choiceDoneId(sceneId, choiceId) { return 'choice:' + sceneId + '/' + choiceId; }
@@ -1457,6 +1466,25 @@
       if (node.once !== undefined && typeof node.once !== 'boolean') err(where + ' 的 once 必須是布林。');
       if (node.repeatable !== undefined && typeof node.repeatable !== 'boolean') err(where + ' 的 repeatable 必須是布林。');
     }
+    // clear_status is accepted and ignored until a later phase has statuses.
+    function validateRestSpec(rest, where) {
+      if (!rest || typeof rest !== 'object' || Array.isArray(rest)) {
+        err(where + ' 必須是物件。');
+        return;
+      }
+      var healOk = (Number.isInteger(rest.heal) && rest.heal >= 1) || rest.heal === 'half';
+      if (!healOk) err(where + ' 的 heal 必須是正整數或 half。');
+      if (rest.when !== undefined) validateWhen(rest.when, where);
+      if (rest.clear_status !== undefined && typeof rest.clear_status !== 'boolean') {
+        err(where + ' 的 clear_status 必須是布林。');
+      }
+      Object.keys(rest).forEach(function (k) {
+        if (k !== 'heal' && k !== 'when' && k !== 'once' && k !== 'repeatable' && k !== 'clear_status') {
+          err(where + ' 含有未知欄位「' + k + '」。');
+        }
+      });
+      validateOnceFlags(rest, where);
+    }
     function checkFacts(facts, where) {
       if (facts === undefined) return;
       if (!Array.isArray(facts)) { err(where + ' 的 facts 必須是陣列。'); return; }
@@ -1522,6 +1550,7 @@
           }, cw);
         }
         if (c.hp_delta !== undefined && !Number.isInteger(c.hp_delta)) err(cw + ' 的 hp_delta 必須是整數。');
+        if (c.rest !== undefined) validateRestSpec(c.rest, cw + ' 的 rest');
         return missingTo;
       }
       if (sc.type === 'beat') {
@@ -1628,19 +1657,7 @@
         }
         if (sc.closing !== undefined && typeof sc.closing !== 'string') err(where + ' 的 closing 必須是字串。');
       }
-      if (sc.rest !== undefined) {
-        if (!sc.rest || typeof sc.rest !== 'object' || Array.isArray(sc.rest)) err(where + ' 的 rest 必須是物件。');
-        else {
-          if (!Number.isInteger(sc.rest.heal) || sc.rest.heal < 1) err(where + ' 的 rest.heal 必須是正整數。');
-          if (sc.rest.when !== undefined) validateWhen(sc.rest.when, where + ' 的 rest');
-          Object.keys(sc.rest).forEach(function (k) {
-            if (k !== 'heal' && k !== 'when' && k !== 'once' && k !== 'repeatable') {
-              err(where + ' 的 rest 含有未知欄位「' + k + '」。');
-            }
-          });
-          validateOnceFlags(sc.rest, where + ' 的 rest');
-        }
-      }
+      if (sc.rest !== undefined) validateRestSpec(sc.rest, where + ' 的 rest');
       if (sc.on_enter !== undefined) validateEffect(sc.on_enter, where + ' 的 on_enter');
     });
 
@@ -2156,16 +2173,11 @@
       this.enterScene(sc.next);
       return;
     }
-    if (sc.rest && Number.isInteger(sc.rest.heal) && this.conditionsPass(sc.rest.when)) {
+    if (sc.rest && this.conditionsPass(sc.rest.when)) {
       var rid = restDoneId(id);
       if (!(restIsOnce(sc.rest) && this.done[rid])) {
         if (restIsOnce(sc.rest)) this.done[rid] = true;
-        var beforeHp = this.character.hp;
-        var healed = Math.min(sc.rest.heal, this.character.hp_max - beforeHp);
-        if (healed > 0) {
-          this.character.hp = beforeHp + healed;
-          this.emit({ t: 'rest', healed: healed, hp: this.character.hp, hp_max: this.character.hp_max });
-        }
+        this.applyRest(sc.rest);
       }
     }
     this.emit({
@@ -2187,6 +2199,20 @@
 
   // --- hp helper -------------------------------------------------------------
   // Single place where player HP moves outside of combat damage.
+  // clear_status is left on the rest object for a later phase. Phase 1 has no
+  // status list, so that field is not applied.
+  Engine.prototype.applyRest = function (rest) {
+    if (!rest) return;
+    var amount = restHealAmount(rest, this.character.hp_max);
+    if (amount < 1) return;
+    var beforeHp = this.character.hp;
+    var healed = Math.min(amount, this.character.hp_max - beforeHp);
+    if (healed > 0) {
+      this.character.hp = beforeHp + healed;
+      this.emit({ t: 'rest', healed: healed, hp: this.character.hp, hp_max: this.character.hp_max });
+    }
+  };
+
   Engine.prototype.applyHpDelta = function (delta, reason, floor) {
     var c = this.character;
     var next = c.hp + delta;
@@ -2375,6 +2401,7 @@
       }
     }
     if (!this.applyEffectBundle(choice, 'choice')) return this.ok();
+    if (choice.rest && this.conditionsPass(choice.rest.when)) this.applyRest(choice.rest);
     if (typeof choice.to === 'string' && choice.to) {
       this.enterScene(choice.to);
       return this.ok();

@@ -151,6 +151,7 @@ function answerInserted(engine, opts) {
       else if (opts.spareCult) choose(engine, 'spare');
       else choose(engine, 'kill');
     } else if (id === 'f3_altar') {
+      if (opts.stopAt === 'altar') break;
       if (opts.rest && ids.indexOf('rest') >= 0) choose(engine, 'rest');
       else if (opts.will && ids.indexOf('will') >= 0) choose(engine, 'will');
       else if (opts.cut && ids.indexOf('cut') >= 0) choose(engine, 'cut');
@@ -1526,12 +1527,16 @@ function reachPost(index, opts) {
     return engine;
   }
   winCombat(engine);
+  if (opts.stopAt === 'cult_after') return engine;
   answerInserted(engine, opts);
   if (engine.scene && engine.scene.type === 'check') {
     if (opts.checkFail) failCheck(engine);
     else succeedCheck(engine);
   }
-  if (engine.sceneId === 'f3_altar') answerInserted(engine, opts);
+  if (engine.sceneId === 'f3_altar') {
+    if (opts.stopAt === 'altar') return engine;
+    answerInserted(engine, opts);
+  }
   if (opts.stopAt === 'shrine') return engine;
   if (opts.crypt) {
     choose(engine, 'niche');
@@ -1621,14 +1626,31 @@ test('outline routes reach every class, variant, and secret ending', function ()
   assert.strictEqual(soldCard.endingType, 'variant');
   assert.ok(soldCard.keyChoices.some(function (k) { return k.label === '銅徽：賣咗'; }));
 
+  var miraFailGate = reachPost(3, { insight: true, insightFail: true, stopAt: 'cult_after', seed: 61 });
+  assert.strictEqual(miraFailGate.flags.mira_checked, true);
+  assert.ok(!miraFailGate.flags.mira_truth);
+  assert.ok(choiceIds(miraFailGate).indexOf('redeem') < 0);
+
+  var miraTruthGate = reachPost(3, { insight: true, stopAt: 'cult_after', seed: 62 });
+  assert.strictEqual(miraTruthGate.flags.mira_truth, true);
+  assert.ok(choiceIds(miraTruthGate).indexOf('redeem') >= 0);
+
   var mira = reachPost(3, { robe: true, insight: true, insightFail: true, redeem: true });
   assert.strictEqual(mira.flags.mira_checked, true);
+  assert.ok(!mira.flags.mira_truth);
   assert.ok(!mira.flags.mira_saw_truth);
   assert.strictEqual(mira.flags.mira_redeemed, true);
   assert.ok(mira.character.hp >= 1);
   var miraCard = finishEnding(mira, 'escort');
   assert.strictEqual(miraCard.endingName, '迷途者歸');
   assert.strictEqual(miraCard.endingType, 'class');
+
+  var miraByTruth = reachPost(3, { insight: true, redeem: true, seed: 63 });
+  assert.strictEqual(miraByTruth.flags.mira_truth, true);
+  assert.ok(!miraByTruth.flags.mira_knew_robe);
+  var truthCard = finishEnding(miraByTruth, 'escort');
+  assert.strictEqual(truthCard.endingName, '迷途者歸');
+  assert.strictEqual(truthCard.endingType, 'class');
 
   var orr = reachPost(4, { rune: true, burn: true });
   assert.strictEqual(orr.flags.orr_notes, true);
@@ -1663,6 +1685,46 @@ test('outline routes reach every class, variant, and secret ending', function ()
   assert.ok(dry.sceneId === 'post_tower' || dry.status === 'won' || dry.status === 'playing');
   var hidden = reachPost(0, { drinkBeforeOoze: true, seed: 46, stopAt: 'shrine' });
   assert.ok(hidden, 'dry route built');
+});
+
+test('altar rest heals half of max HP once and keeps clear_status unused', function () {
+  var altarScene = null;
+  adventure.scenes.forEach(function (s) { if (s.id === 'f3_altar') altarScene = s; });
+  var restChoice = null;
+  altarScene.choices.forEach(function (c) { if (c.id === 'rest') restChoice = c; });
+  assert.strictEqual(restChoice.rest.heal, 'half');
+  assert.strictEqual(restChoice.rest.clear_status, true);
+  assert.ok(restChoice.hp_delta === undefined);
+
+  var gated = reachPost(0, { robBones: true, stopAt: 'altar', seed: 80 });
+  assert.ok(!gated.flags.respected_dead);
+  assert.ok(choiceIds(gated).indexOf('rest') < 0);
+
+  var altar = reachPost(0, { stopAt: 'altar', seed: 81 });
+  assert.ok(altar.flags.respected_dead);
+  assert.ok(choiceIds(altar).indexOf('rest') >= 0);
+  altar.character.hp = 1;
+  var max = altar.character.hp_max;
+  var half = Math.floor(max / 2);
+  var res = choose(altar, 'rest');
+  assert.strictEqual(altar.sceneId, 'f3_altar');
+  assert.strictEqual(altar.character.hp, 1 + half);
+  assert.ok(altar.character.hp < max);
+  var restEv = res.events.filter(function (e) { return e.t === 'rest'; })[0];
+  assert.strictEqual(restEv.healed, half);
+  assert.strictEqual(altar.flags.rested, true);
+  assert.ok(choiceIds(altar).indexOf('rest') < 0);
+  altar.character.hp = 1;
+  assert.strictEqual(altar.character.hp, 1);
+  assert.ok(!altar.character.statuses);
+
+  var capped = reachPost(3, { stopAt: 'altar', seed: 82 });
+  capped.character.hp = capped.character.hp_max - 1;
+  var capRes = choose(capped, 'rest');
+  assert.strictEqual(capped.character.hp, capped.character.hp_max);
+  var capEv = capRes.events.filter(function (e) { return e.t === 'rest'; })[0];
+  assert.strictEqual(capEv.healed, 1);
+  assert.ok(choiceIds(capped).indexOf('rest') < 0);
 });
 
 test('potion offer, Mira reroll, and wight flee do not trap the player', function () {

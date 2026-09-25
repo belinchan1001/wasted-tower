@@ -1215,7 +1215,7 @@
       "fail_to": "f3_cult",
       "on_success": {
         "set_flag": [
-          "mira_saw_truth",
+          "mira_truth",
           "mira_checked"
         ]
       },
@@ -1303,7 +1303,7 @@
               },
               {
                 "all_flags": [
-                  "mira_saw_truth"
+                  "mira_truth"
                 ]
               }
             ],
@@ -1342,10 +1342,13 @@
           "id": "rest",
           "label": "為骸骨祈禱後休息",
           "to": "f3_altar",
-          "hp_delta": 3,
           "set_flag": [
             "rested"
           ],
+          "rest": {
+            "heal": "half",
+            "clear_status": true
+          },
           "when": {
             "all_flags": [
               "respected_dead"

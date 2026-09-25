@@ -10,6 +10,7 @@ var path = require('path');
 var data = require('./preview/data/wasted_tower.js');
 var T = require('./preview/js/engine.js');
 var narrator = require('./preview/js/narrator.js');
+var Dice = require('./preview/js/dice.js');
 
 var adventure = data.ADVENTURES.wasted_tower;
 var passed = 0;
@@ -757,7 +758,7 @@ test('preview localStorage keys all start with wasted-tower-preview-', function 
 
   var publicKey = 'wasted-tower' + '.slot1';
   var genericProbe = '__wt' + '_probe__';
-  ['preview/js/engine.js', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/index.html'].forEach(function (rel) {
+  ['preview/js/engine.js', 'preview/js/ui.js', 'preview/js/dice.js', 'preview/js/narrator.js', 'preview/index.html'].forEach(function (rel) {
     var text = fs.readFileSync(path.join(__dirname, rel), 'utf8');
     assert.ok(text.indexOf(publicKey) < 0, rel);
     assert.ok(text.indexOf(genericProbe) < 0, rel);
@@ -869,7 +870,7 @@ test('step 1 keeps statuses empty and simulator rates out of the player text', f
     assert.deepStrictEqual(e.statuses || [], []);
   });
   var phrases = ['通關率', '平均回合', '內部參考'];
-  ['README.md', 'preview/index.html', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/js/engine.js'].forEach(function (rel) {
+  ['README.md', 'preview/index.html', 'preview/js/ui.js', 'preview/js/dice.js', 'preview/js/narrator.js', 'preview/js/engine.js'].forEach(function (rel) {
     var text = fs.readFileSync(path.join(__dirname, rel), 'utf8');
     phrases.forEach(function (phrase) {
       assert.ok(text.indexOf(phrase) < 0, rel + ' shows ' + phrase);
@@ -2440,7 +2441,7 @@ test('preview player-facing text has no Cantonese colloquial spellings', functio
       i++;
     }
   }
-  ['preview/js/engine.js', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/index.html'].forEach(function (rel) {
+  ['preview/js/engine.js', 'preview/js/ui.js', 'preview/js/dice.js', 'preview/js/narrator.js', 'preview/index.html'].forEach(function (rel) {
     takeStrings(stripComments(fs.readFileSync(path.join(__dirname, rel), 'utf8')));
   });
   var problems = [];
@@ -2467,7 +2468,7 @@ test('player-facing sources do not name a tabletop trademark', function () {
   var mark = 'D' + '&' + 'D';
   var phrase = ('Dungeons' + ' & ' + 'Dragons').toLowerCase();
   var publisher = 'Wizards of the Coast';
-  var files = ['index.html', 'README.md', 'preview/index.html', 'preview/data/wasted_tower.js', 'preview/js/engine.js', 'preview/js/narrator.js', 'preview/js/ui.js'];
+  var files = ['index.html', 'README.md', 'preview/index.html', 'preview/data/wasted_tower.js', 'preview/js/engine.js', 'preview/js/narrator.js', 'preview/js/ui.js', 'preview/js/dice.js'];
   var allowed = { 'README.md': 1, 'preview/index.html': 1, 'preview/data/wasted_tower.js': 1 };
   files.forEach(function (file) {
     var text = fs.readFileSync(path.join(__dirname, file), 'utf8');
@@ -2943,7 +2944,7 @@ test('visible roll text does not name a tabletop trademark', function () {
   assert.ok(sample.indexOf('暴擊') >= 0);
   assert.ok(sample.indexOf(mark) < 0);
   assert.ok(sample.toLowerCase().indexOf(phrase) < 0);
-  ['preview/index.html', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/js/engine.js', 'preview/data/wasted_tower.js', 'index.html'].forEach(function (rel) {
+  ['preview/index.html', 'preview/js/ui.js', 'preview/js/dice.js', 'preview/js/narrator.js', 'preview/js/engine.js', 'preview/data/wasted_tower.js', 'index.html'].forEach(function (rel) {
     var text = fs.readFileSync(path.join(__dirname, rel), 'utf8');
     assert.ok(text.indexOf(mark) < 0, rel);
     assert.ok(text.toLowerCase().indexOf(phrase) < 0, rel);
@@ -3510,6 +3511,254 @@ test('root index.html is untouched and the hidden ending still needs eight fight
     'wasted-tower-preview-probe',
     'wasted-tower-preview-save'
   ]);
+});
+
+function diceStory(mode) {
+  var check = {
+    id: 'roll', type: 'check', facts: ['擲。'], skill: 'athletics', dc: 10,
+    success_to: 'end', fail_to: 'end'
+  };
+  if (mode === 'advantage') check.advantage = { stat_min: { str: 1 } };
+  if (mode === 'disadvantage') check.disadvantage = { stat_min: { str: 1 } };
+  return {
+    id: 'dice_box', title: '骰', start: 'go', items: [],
+    pregens: [pregen('甲', '戰士')],
+    scenes: [
+      { id: 'go', type: 'beat', facts: ['起。'], choices: [{ id: 'on', label: '上', to: 'roll' }] },
+      check,
+      { id: 'end', type: 'end', end: 'win', name: '完', facts: ['完。'] }
+    ]
+  };
+}
+
+function rollFaces(save) {
+  return (save.rollLog || []).filter(function (row) { return row && row.roll; }).map(function (row) { return row.roll; });
+}
+
+test('dice animation reads a roll already stored in the save', function () {
+  var story = diceStory('advantage');
+  var report = T.validateAdventure(story, { walk: false });
+  assert.strictEqual(report.ok, true, report.errors.join('\n'));
+  var eng = new T.Engine(story, { seed: 1 });
+  eng.start(0);
+  choose(eng, 'on');
+  eng.rng = seqRng([7, 16]);
+  var beforeHook = 0;
+  var result = eng.perform({ type: 'roll' });
+  assert.strictEqual(result.ok, true, result.error);
+  assert.strictEqual(beforeHook, 0);
+  var ev = result.events.filter(function (e) { return e.t === 'check'; })[0];
+  assert.deepStrictEqual(ev.dice, [7, 16]);
+  assert.strictEqual(ev.d20, 16);
+  assert.strictEqual(ev.mode, 'advantage');
+  var line = narrator.Mechanics.rollLines(ev).join('\n');
+  assert.ok(line.indexOf('優勢：擲出 7 和 16，取 16') >= 0, line);
+  assert.ok(line.indexOf('總數 ' + ev.total) >= 0, line);
+  assert.ok(line.indexOf(ev.success ? '成功' : '失敗') >= 0, line);
+
+  var slot = new T.SaveSlot(memoryStorage());
+  var hooked = false;
+  var rolledAt = eng.rng.rolled();
+  Dice.present(eng, result.events, {
+    writeSave: function (save) {
+      assert.ok(save && rollFaces(save).length >= 1);
+      var stored = rollFaces(save).pop();
+      assert.deepStrictEqual(stored.dice, [7, 16]);
+      assert.strictEqual(stored.d20, 16);
+      assert.strictEqual(stored.mode, 'advantage');
+      assert.strictEqual(stored.side, 'player');
+      assert.strictEqual(slot.write(T.encodeSaveCode(save)).ok, true);
+    },
+    animate: function (records, save) {
+      hooked = true;
+      beforeHook += 1;
+      assert.strictEqual(beforeHook, 1);
+      assert.deepStrictEqual(records[0].dice, [7, 16]);
+      assert.strictEqual(records[0].d20, 16);
+      var loaded = T.loadGame(story, slot.read());
+      assert.strictEqual(loaded.ok, true, loaded.error);
+      var again = rollFaces(loaded.engine.exportSave()).pop();
+      assert.deepStrictEqual(again, rollFaces(save).pop());
+      assert.deepStrictEqual(again.dice, [7, 16]);
+      assert.strictEqual(again.d20, 16);
+      assert.strictEqual(again.mode, 'advantage');
+      assert.strictEqual(eng.rng.rolled(), rolledAt);
+      var shown = Dice.createAnimation(records[0]).skip();
+      assert.deepStrictEqual(shown.faces, records[0].dice);
+      assert.strictEqual(shown.kept, records[0].d20);
+    }
+  });
+  assert.strictEqual(hooked, true);
+  assert.strictEqual(eng.rng.rolled(), rolledAt);
+
+  var plainStory = diceStory('normal');
+  var plain = new T.Engine(plainStory, { seed: 2 });
+  plain.start(0);
+  choose(plain, 'on');
+  plain.rng = seqRng([11]);
+  var plainRes = plain.perform({ type: 'roll' });
+  var plainEv = plainRes.events.filter(function (e) { return e.t === 'check'; })[0];
+  assert.deepStrictEqual(plainEv.dice, [11]);
+  assert.strictEqual(plainEv.d20, 11);
+  assert.strictEqual(plainEv.mode, 'normal');
+  var plainShown = null;
+  Dice.present(plain, plainRes.events, {
+    animate: function (records, save) {
+      plainShown = records[0];
+      var loaded = T.loadGame(plainStory, T.encodeSaveCode(save));
+      assert.strictEqual(loaded.ok, true, loaded.error);
+      assert.deepStrictEqual(rollFaces(loaded.engine.exportSave()).pop().dice, [11]);
+      assert.strictEqual(rollFaces(loaded.engine.exportSave()).pop().d20, 11);
+    }
+  });
+  var single = Dice.createAnimation(plainShown);
+  assert.strictEqual(single.duration, 1000);
+  var singleMid = single.tick(400);
+  assert.strictEqual(singleMid.phase, 'spinning');
+  assert.notDeepStrictEqual(singleMid.faces, [11]);
+  assert.strictEqual(singleMid.kept, null);
+  var singleEnd = single.tick(600);
+  assert.strictEqual(singleEnd.phase, 'result');
+  assert.deepStrictEqual(singleEnd.faces, [11]);
+  assert.deepStrictEqual(singleEnd.text, ['11']);
+  assert.strictEqual(singleEnd.kept, 11);
+  assert.strictEqual(singleEnd.enlarged, true);
+  assert.strictEqual(singleEnd.highlightKept, false);
+
+  var adv = Dice.createAnimation({ kind: 'check', side: 'player', d20: 16, dice: [7, 16], mode: 'advantage' });
+  assert.strictEqual(adv.duration, Dice.PLAYER_MS);
+  assert.strictEqual(Dice.PLAYER_MS, 1000);
+  var mid = adv.tick(999);
+  assert.strictEqual(mid.phase, 'spinning');
+  assert.notDeepStrictEqual(mid.faces, [7, 16]);
+  var advEnd = adv.tick(1);
+  assert.strictEqual(advEnd.phase, 'result');
+  assert.deepStrictEqual(advEnd.faces, [7, 16]);
+  assert.deepStrictEqual(advEnd.text, ['7', '16']);
+  assert.strictEqual(advEnd.kept, 16);
+  assert.strictEqual(advEnd.highlightKept, true);
+  assert.deepStrictEqual(advEnd.keptFlags, [false, true]);
+
+  var foe = Dice.createAnimation({ kind: 'enemy_attack', side: 'enemy', d20: 4, dice: [9, 4], mode: 'disadvantage' });
+  assert.strictEqual(foe.duration, Dice.ENEMY_MS);
+  assert.strictEqual(Dice.ENEMY_MS, 500);
+  assert.strictEqual(foe.tick(499).phase, 'spinning');
+  var foeEnd = foe.tick(1);
+  assert.deepStrictEqual(foeEnd.faces, [9, 4]);
+  assert.strictEqual(foeEnd.kept, 4);
+  assert.deepStrictEqual(foeEnd.keptFlags, [false, true]);
+  assert.strictEqual(foeEnd.highlightKept, true);
+
+  var reduced = Dice.createAnimation(
+    { kind: 'check', side: 'player', d20: 16, dice: [7, 16], mode: 'advantage' },
+    { reducedMotion: true }
+  );
+  assert.strictEqual(reduced.duration, 0);
+  var reducedView = reduced.view();
+  assert.strictEqual(reducedView.phase, 'result');
+  assert.strictEqual(reducedView.elapsed, 0);
+  assert.strictEqual(reducedView.duration, 0);
+  assert.deepStrictEqual(reducedView.faces, [7, 16]);
+  assert.strictEqual(reducedView.kept, 16);
+  assert.strictEqual(Dice.prefersReducedMotion(function () { return true; }), true);
+  var reducedCalls = 0;
+  var reducedPlay = Dice.play(null, [plainShown], {
+    reducedMotion: true,
+    onDone: function () { reducedCalls += 1; }
+  });
+  assert.strictEqual(reducedCalls, 1);
+  assert.strictEqual(reducedPlay.duration, 0);
+
+  var skipAnim = Dice.createAnimation({ kind: 'check', side: 'player', d20: 16, dice: [7, 16], mode: 'advantage' });
+  var skipped = skipAnim.skip();
+  assert.strictEqual(skipped.skipped, true);
+  assert.strictEqual(skipped.phase, 'result');
+  assert.strictEqual(skipped.elapsed, 0);
+  assert.deepStrictEqual(skipped.faces, [7, 16]);
+  assert.strictEqual(skipped.kept, 16);
+  assert.deepStrictEqual(skipped.text, ['7', '16']);
+
+  var fighter = new T.Engine(adventure, { seed: 44 });
+  fighter.start(0);
+  fighter.enterScene('f1_bandit');
+  heroFirst(fighter);
+  fighter.encounter.enemies[0].hp = 80;
+  fighter.encounter.enemies[0].ac = 30;
+  fighter.character.ac = 25;
+  var countBefore = fighter.rng.rolled();
+  var swing = fighter.perform({ type: 'attack', target: 0 });
+  assert.strictEqual(swing.ok, true, swing.error);
+  assert.ok(fighter.rng.rolled() > countBefore);
+  var evAttack = swing.events.filter(function (e) { return e.t === 'attack' && e.d20 != null; })[0];
+  var evEnemy = swing.events.filter(function (e) { return e.t === 'enemy_attack'; })[0];
+  assert.ok(evAttack, 'player attack roll');
+  assert.ok(evEnemy, 'enemy attack roll');
+  var sawCombat = false;
+  Dice.present(fighter, swing.events, {
+    animate: function (records, save) {
+      sawCombat = true;
+      assert.strictEqual(records[0].side, 'player');
+      assert.strictEqual(records[0].d20, evAttack.d20);
+      assert.deepStrictEqual(records[0].dice, evAttack.dice.slice());
+      var enemyRec = records.filter(function (r) { return r.side === 'enemy'; })[0];
+      assert.ok(enemyRec);
+      assert.strictEqual(enemyRec.d20, evEnemy.d20);
+      assert.deepStrictEqual(enemyRec.dice, evEnemy.dice.slice());
+      assert.strictEqual(Dice.createAnimation(records[0]).duration, 1000);
+      assert.strictEqual(Dice.createAnimation(enemyRec).duration, 500);
+      var playerShow = Dice.createAnimation(records[0]);
+      playerShow.tick(playerShow.duration);
+      assert.deepStrictEqual(playerShow.view().faces, records[0].dice);
+      assert.strictEqual(playerShow.view().kept, records[0].d20);
+      var enemyShow = Dice.createAnimation(enemyRec).skip();
+      assert.deepStrictEqual(enemyShow.faces, enemyRec.dice);
+      assert.strictEqual(enemyShow.kept, enemyRec.d20);
+      var loaded = T.loadGame(adventure, T.encodeSaveCode(save));
+      assert.strictEqual(loaded.ok, true, loaded.error);
+      var back = rollFaces(loaded.engine.exportSave());
+      var backEnemy = back.filter(function (r) { return r.side === 'enemy'; }).pop();
+      assert.strictEqual(backEnemy.d20, evEnemy.d20);
+      assert.deepStrictEqual(backEnemy.dice, evEnemy.dice.slice());
+    }
+  });
+  assert.strictEqual(sawCombat, true);
+
+  var engineSrc = fs.readFileSync(path.join(__dirname, 'preview/js/engine.js'), 'utf8');
+  assert.ok(engineSrc.indexOf('DiceAnim') < 0);
+  assert.ok(engineSrc.indexOf('requestAnimationFrame') < 0);
+  var diceSrc = fs.readFileSync(path.join(__dirname, 'preview/js/dice.js'), 'utf8');
+  assert.ok(diceSrc.indexOf('rollD20') < 0);
+});
+
+test('dice playback adds no audio, leaves root index.html, and still needs eight fights', function () {
+  var files = [
+    'index.html', 'preview/index.html', 'preview/js/engine.js', 'preview/js/narrator.js',
+    'preview/js/ui.js', 'preview/js/dice.js'
+  ];
+  files.forEach(function (rel) {
+    var text = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+    assert.ok(!/<audio\b/i.test(text), rel);
+    assert.ok(!/\bnew\s+Audio\b/.test(text), rel);
+    assert.ok(!/\bAudioContext\b/.test(text), rel);
+    assert.ok(!/\bwebkitAudioContext\b/.test(text), rel);
+    assert.ok(!/\bHTMLAudioElement\b/.test(text), rel);
+    assert.ok(!/\bspeechSynthesis\b/.test(text), rel);
+  });
+  var mainHtml = require('child_process').execSync('git show main:index.html', { encoding: 'utf8' });
+  var rootHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.strictEqual(rootHtml, mainHtml);
+  assert.ok(rootHtml.indexOf('dice.js') < 0);
+  assert.ok(rootHtml.indexOf('dice-overlay') < 0);
+  var previewHtml = fs.readFileSync(path.join(__dirname, 'preview/index.html'), 'utf8');
+  assert.ok(previewHtml.indexOf('js/dice.js') >= 0);
+  assert.strictEqual(adventure.meta.required_for_secret.length, 8);
+  var byId = {};
+  adventure.scenes.forEach(function (sc) { byId[sc.id] = sc; });
+  adventure.meta.required_for_secret.forEach(function (id) {
+    assert.strictEqual(byId[id].type, 'combat', id);
+    assert.ok(byId[id].omit_from_tally !== true, id);
+  });
+  assert.deepStrictEqual(byId.secret_win.when, { all_flags: ['secret_ready'] });
 });
 
 if (failed) {

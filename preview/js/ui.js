@@ -402,9 +402,30 @@
 
   function handle(res) {
     if (!res.ok) appendLines([{ tone: 'sys', text: '（' + res.error + '）' }]);
-    renderEvents(res.events);
-    autosave();
-    refresh();
+    if (!res.ok || !T.DiceAnim) {
+      renderEvents(res.events || []);
+      autosave();
+      refresh();
+      return;
+    }
+    // The roll is already on the engine. Write the save, then animate that record.
+    var presented = T.DiceAnim.present(engine, res.events, {
+      writeSave: function () { autosave(); }
+    });
+    function reveal() {
+      renderEvents(res.events);
+      refresh();
+    }
+    if (!presented.records.length || T.DiceAnim.prefersReducedMotion()) {
+      reveal();
+      return;
+    }
+    if (actionsEl) clear(actionsEl);
+    try {
+      T.DiceAnim.play(document.body, presented.records, { onDone: reveal });
+    } catch (e) {
+      reveal();
+    }
   }
 
   function act(action) {

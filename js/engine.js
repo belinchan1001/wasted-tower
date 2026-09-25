@@ -25,7 +25,7 @@
   };
 
   var SCENE_TYPES = ['beat', 'check', 'combat', 'checkpoint', 'end'];
-  var SAVE_VERSION = 2;
+  var SAVE_VERSION = 3;
   var ITEM_KINDS = ['gear', 'key', 'consumable'];
   var ENDING_TYPES = ['lose', 'main', 'variant', 'class', 'secret'];
   // Card title when more than one ending applies. Higher wins.
@@ -117,6 +117,19 @@
 
   function deepCopy(v) { return JSON.parse(JSON.stringify(v)); }
 
+  function countCompare(map, obj, get, cmp) {
+    if (!map) return true;
+    var k, n, need;
+    for (k in map) if (Object.prototype.hasOwnProperty.call(map, k)) {
+      n = get(obj, k);
+      need = map[k];
+      if (cmp === 'min' && !(n >= need)) return false;
+      if (cmp === 'max' && !(n <= need)) return false;
+      if (cmp === 'eq' && n !== need) return false;
+    }
+    return true;
+  }
+
   // Flag / class / item conditions. `when` omitted means always true.
   // state: { cls, flags, inventory, cleared }
   function conditionsPass(when, state) {
@@ -165,6 +178,19 @@
     if (list) {
       for (i = 0; i < list.length; i++) if (inventory.indexOf(list[i]) >= 0) return false;
     }
+    if (!countCompare(when.item_min, inventory, itemCount, 'min')) return false;
+    if (!countCompare(when.item_max, inventory, itemCount, 'max')) return false;
+    if (!countCompare(when.item_eq, inventory, itemCount, 'eq')) return false;
+    var stats = state.stats || {};
+    if (!countCompare(when.stat_min, stats, function (obj, id) {
+      return typeof obj[id] === 'number' ? obj[id] : 0;
+    }, 'min')) return false;
+    if (!countCompare(when.stat_max, stats, function (obj, id) {
+      return typeof obj[id] === 'number' ? obj[id] : 0;
+    }, 'max')) return false;
+    if (!countCompare(when.stat_eq, stats, function (obj, id) {
+      return typeof obj[id] === 'number' ? obj[id] : 0;
+    }, 'eq')) return false;
     list = when.cleared;
     if (list) {
       for (i = 0; i < list.length; i++) if (!cleared[list[i]]) return false;
@@ -243,6 +269,71 @@
     return null;
   }
 
+  function itemCount(list, id) {
+    var n = 0;
+    if (!list) return 0;
+    for (var i = 0; i < list.length; i++) if (list[i] === id) n++;
+    return n;
+  }
+
+  function hasReward(node) {
+    if (!node) return false;
+    if (Array.isArray(node.give) && node.give.length) return true;
+    if (Array.isArray(node.take) && node.take.length) return true;
+    if (Array.isArray(node.set_flag) && node.set_flag.length) return true;
+    if (node.set && typeof node.set === 'object' && !Array.isArray(node.set) && Object.keys(node.set).length) return true;
+    if (node.inc && typeof node.inc === 'object' && !Array.isArray(node.inc) && Object.keys(node.inc).length) return true;
+    if (node.dec && typeof node.dec === 'object' && !Array.isArray(node.dec) && Object.keys(node.dec).length) return true;
+    if (node.hp_delta) return true;
+    return false;
+  }
+
+  function optedOut(node) {
+    return !!(node && (node.repeatable === true || node.once === false));
+  }
+
+  // Reward bundles and skill checks run once unless the writer opts out.
+  function choiceIsOnce(choice) {
+    if (!choice || optedOut(choice)) return false;
+    if (choice.once === true) return true;
+    return hasReward(choice);
+  }
+
+  function checkIsOnce(sc) {
+    if (!sc || optedOut(sc)) return false;
+    return true;
+  }
+
+  function enterIsOnce(effect) {
+    if (!effect || optedOut(effect)) return false;
+    if (effect.once === true) return true;
+    return hasReward(effect);
+  }
+
+  function restIsOnce(rest) {
+    if (!rest || optedOut(rest)) return false;
+    return true;
+  }
+
+  function choiceDoneId(sceneId, choiceId) { return 'choice:' + sceneId + '/' + choiceId; }
+  function checkDoneId(sceneId) { return 'check:' + sceneId; }
+  function enterDoneId(sceneId) { return 'enter:' + sceneId; }
+  function restDoneId(sceneId) { return 'rest:' + sceneId; }
+  function promptDoneId(sceneId, promptId) { return 'prompt:' + sceneId + '/' + promptId; }
+
+  function copyDone(done) {
+    var out = {};
+    if (!done) return out;
+    Object.keys(done).forEach(function (k) {
+      var v = done[k];
+      if (v && typeof v === 'object') out[k] = { success: !!v.success };
+      else if (v) out[k] = true;
+    });
+    return out;
+  }
+
+  var STAT_NAMES = { hp: 1, hp_max: 1, str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1, ac: 1 };
+
   function defaultEndingType(endId) {
     if (endId === 'secret_win') return 'secret';
     if (endId === 'lose') return 'lose';
@@ -305,6 +396,12 @@
       var cls = next.character && next.character.cls;
       var flag = cls && map[cls];
       if (typeof flag === 'string' && flag && !next.flags[flag]) next.flags[flag] = true;
+      return next;
+    },
+    2: function (save) {
+      var next = deepCopy(save);
+      next.v = 3;
+      if (!next.done || typeof next.done !== 'object' || Array.isArray(next.done)) next.done = {};
       return next;
     }
   };
@@ -540,6 +637,10 @@
     var flagCap = {};
     var eqValues = {};
     var relevantItems = {};
+    var countedItems = {};
+    var itemCap = {};
+    var relevantDoneIds = [];
+    var endings = [];
     var relevantCleared = {};
     function noteFlag(id, mode, cap) {
       if (typeof id !== 'string' || !id) return;
@@ -576,6 +677,20 @@
       (when.has_item || []).forEach(function (id) { relevantItems[id] = 1; });
       (when.missing_item || []).forEach(function (id) { relevantItems[id] = 1; });
       (when.cleared || []).forEach(function (id) { relevantCleared[id] = 1; });
+      function noteItemMap(map, extra) {
+        if (!map || typeof map !== 'object') return;
+        Object.keys(map).forEach(function (id) {
+          relevantItems[id] = 1;
+          countedItems[id] = 1;
+          var n = typeof map[id] === 'number' ? map[id] : 0;
+          var need = n + extra;
+          if (need < 0) need = 0;
+          if (itemCap[id] == null || need > itemCap[id]) itemCap[id] = need;
+        });
+      }
+      noteItemMap(when.item_min, 0);
+      noteItemMap(when.item_max, 1);
+      noteItemMap(when.item_eq, 1);
     }
     ((adventure.meta && adventure.meta.required_for_secret) || []).forEach(function (id) {
       relevantCleared[id] = 1;
@@ -596,12 +711,51 @@
       if (sc.rest) noteWhen(sc.rest.when);
       noteWhen(sc.on_success && sc.on_success.when);
       noteWhen(sc.on_failure && sc.on_failure.when);
-      (sc.choices || []).forEach(function (c) {
+      function noteChoice(c) {
         if (!c) return;
         noteWhen(c.when);
         (c.require_flag || []).forEach(function (f) { noteFlag(f, 'bool'); });
         (c.require_item || []).forEach(function (id) { relevantItems[id] = 1; });
+      }
+      (sc.choices || []).forEach(noteChoice);
+      (sc.prompts || []).forEach(function (pr) {
+        if (!pr) return;
+        noteWhen(pr.when);
+        (pr.choices || []).forEach(noteChoice);
       });
+    });
+    function rewardNeedsLock(node) {
+      if (!node) return false;
+      var i, id;
+      var give = node.give || [];
+      for (i = 0; i < give.length; i++) if (countedItems[give[i]]) return true;
+      var take = node.take || [];
+      for (i = 0; i < take.length; i++) if (countedItems[take[i]]) return true;
+      var maps = [node.inc, node.dec, node.set];
+      for (i = 0; i < maps.length; i++) {
+        var m = maps[i];
+        if (!m || typeof m !== 'object') continue;
+        for (id in m) {
+          if (Object.prototype.hasOwnProperty.call(m, id) && flagMode[id] === 'num') return true;
+        }
+      }
+      return false;
+    }
+    (adventure.scenes || []).forEach(function (sc) {
+      if (!sc || !sc.id) return;
+      (sc.prompts || []).forEach(function (pr) {
+        if (!pr || !pr.id) return;
+        relevantDoneIds.push(promptDoneId(sc.id, pr.id));
+        (pr.choices || []).forEach(function (c) {
+          if (c && choiceIsOnce(c) && rewardNeedsLock(c)) relevantDoneIds.push(choiceDoneId(sc.id, c.id));
+        });
+      });
+      (sc.choices || []).forEach(function (c) {
+        if (c && choiceIsOnce(c) && rewardNeedsLock(c)) relevantDoneIds.push(choiceDoneId(sc.id, c.id));
+      });
+      if (sc.on_enter && enterIsOnce(sc.on_enter) && rewardNeedsLock(sc.on_enter)) {
+        relevantDoneIds.push(enterDoneId(sc.id));
+      }
     });
     function projectFlag(id, value) {
       if (flagMode[id] === 'num') {
@@ -621,12 +775,14 @@
 
     function pass(when, st) {
       return conditionsPass(when, {
-        cls: st.cls, flags: st.flags, inventory: st.items, cleared: st.cleared
+        cls: st.cls, flags: st.flags, inventory: st.items, cleared: st.cleared, stats: st.stats
       });
     }
     function choiceOpen(st, c) {
       var i;
-      if (!c || typeof c.to !== 'string') return false;
+      if (!c) return false;
+      if (typeof c.to !== 'string' && !c._prompt) return false;
+      if (choiceIsOnce(c) && st.done[choiceDoneId(st.scene, c.id)]) return false;
       if (Array.isArray(c.require_flag)) {
         for (i = 0; i < c.require_flag.length; i++) if (!st.flags[c.require_flag[i]]) return false;
       }
@@ -639,23 +795,39 @@
       var flagPart = Object.keys(relevantFlags).sort().map(function (k) {
         return k + ':' + projectFlag(k, st.flags[k]);
       }).join('&');
-      var seenItem = {};
+      var counts = {};
+      st.items.forEach(function (id) { counts[id] = (counts[id] || 0) + 1; });
       var itemPart = [];
-      st.items.forEach(function (id) {
-        if (relevantItems[id] && !seenItem[id]) { seenItem[id] = 1; itemPart.push(id); }
+      Object.keys(relevantItems).sort().forEach(function (id) {
+        var n = counts[id] || 0;
+        if (countedItems[id]) {
+          var cap = itemCap[id] == null ? n : itemCap[id];
+          if (n > cap) n = cap;
+          itemPart.push(id + ':' + n);
+        } else if (n > 0) itemPart.push(id);
       });
-      itemPart.sort();
       var clearPart = Object.keys(st.cleared).filter(function (id) {
         return relevantCleared[id];
       }).sort().join('&');
+      var donePart = [];
+      var here = scenes[st.scene];
+      if (here && here.type === 'check' && checkIsOnce(here) && st.done[checkDoneId(st.scene)]) {
+        var lock = st.done[checkDoneId(st.scene)];
+        donePart.push('check:' + (lock && lock.success ? 's' : 'f'));
+      }
+      relevantDoneIds.forEach(function (id) {
+        if (st.done[id]) donePart.push(id);
+      });
       var cpPart = trackCheckpoint ? ('|' + (st.lastCheckpoint || '')) : '';
-      return st.pregen + '|' + st.scene + '|' + itemPart.join(',') + '|' + flagPart + '|' + clearPart + cpPart;
+      return st.pregen + '|' + st.scene + '|' + itemPart.join(',') + '|' + flagPart + '|' + clearPart + '|' + donePart.join(',') + cpPart;
     }
     function cloneState(st) {
       return {
         scene: st.scene, cls: st.cls, pregen: st.pregen,
         items: st.items.slice(), flags: copyMap(st.flags), cleared: copyMap(st.cleared),
-        lastCheckpoint: st.lastCheckpoint || null
+        lastCheckpoint: st.lastCheckpoint || null,
+        done: copyDone(st.done),
+        stats: st.stats
       };
     }
     function arrive(st, sceneId) {
@@ -663,6 +835,13 @@
       n.scene = sceneId;
       if (scenes[sceneId] && scenes[sceneId].type === 'checkpoint') n.lastCheckpoint = sceneId;
       n.flags = refreshSecretFlags(n.flags, n.cleared, adventure);
+      var sc = scenes[sceneId];
+      if (sc && sc.on_enter && !(enterIsOnce(sc.on_enter) && n.done[enterDoneId(sceneId)])) {
+        n = applyBundle(n, sc.on_enter);
+        if (enterIsOnce(sc.on_enter)) n.done[enterDoneId(sceneId)] = true;
+        if (sc.type === 'checkpoint') n.lastCheckpoint = sceneId;
+        n.flags = refreshSecretFlags(n.flags, n.cleared, adventure);
+      }
       return n;
     }
     function applyBundle(st, effect) {
@@ -679,7 +858,22 @@
     }
     function afterChoice(st, choice) {
       var n = applyBundle(st, choice);
-      return arrive(n, choice.to);
+      if (choice._prompt && !choice._promptRepeatable) n.done[promptDoneId(st.scene, choice._prompt)] = true;
+      if (choiceIsOnce(choice) && choice.id) n.done[choiceDoneId(st.scene, choice.id)] = true;
+      if (typeof choice.to === 'string' && choice.to) return arrive(n, choice.to);
+      return arrive(n, st.scene);
+    }
+    function branchInfo(st) {
+      var branches = [];
+      var lines = [];
+      (adventure.class_branches || []).forEach(function (b) {
+        if (!b || !pass(b.when, st)) return;
+        var completed = pass(b.completed_when, st);
+        branches.push({ id: b.id, completed: !!completed, label: b.label });
+        if (completed) lines.push('branch: ' + b.label + ' (completed)');
+        else lines.push('branch: ' + b.label + ' (missed): ' + b.miss_reason);
+      });
+      return { branches: branches, branchLines: lines };
     }
 
     var exploded = false;
@@ -699,9 +893,15 @@
         items: (p.inventory || []).slice(),
         flags: startFlags,
         cleared: {},
-        lastCheckpoint: null
+        lastCheckpoint: null,
+        done: {},
+        stats: {
+          hp: p.hp_max, hp_max: p.hp_max,
+          str: p.str, dex: p.dex, con: p.con, int: p['int'], wis: p.wis, cha: p.cha, ac: p.ac
+        }
       };
       start.flags = refreshSecretFlags(start.flags, start.cleared, adventure);
+      start = arrive(start, adventure.start);
       var queue = [start];
       var seen = {};
       var localStates = {};
@@ -727,21 +927,72 @@
           if (pass(sc.when, st)) {
             if (!reached[sc.id]) reached[sc.id] = {};
             reached[sc.id][p['class']] = true;
+            var info = branchInfo(st);
+            endings.push({
+              'class': st.cls,
+              pregen: st.pregen,
+              endingId: sc.id,
+              endingType: sc.ending_type || defaultEndingType(sc.end),
+              flags: copyMap(st.flags),
+              items: st.items.slice(),
+              branches: info.branches,
+              branchLines: info.branchLines
+            });
           }
           continue;
         }
         var nexts = [];
         if (sc.type === 'beat') {
-          var choices = [];
-          if (sc.choices_from === 'other_pregens') choices.push({ id: '_rival', to: sc.choice_to });
-          else choices = sc.choices || [];
-          choices.forEach(function (c) {
-            if (!choiceOpen(st, c)) return;
-            nexts.push(afterChoice(st, c));
-          });
+          if (Array.isArray(sc.prompts) && sc.prompts.length) {
+            var opened = null;
+            var pri;
+            for (pri = 0; pri < sc.prompts.length && !opened; pri++) {
+              var pr = sc.prompts[pri];
+              if (!pr) continue;
+              if (!pr.repeatable && st.done[promptDoneId(sc.id, pr.id)]) continue;
+              if (!pass(pr.when, st)) continue;
+              var visible = [];
+              (pr.choices || []).forEach(function (c) {
+                if (!c) return;
+                var tagged = {};
+                var ck;
+                for (ck in c) if (Object.prototype.hasOwnProperty.call(c, ck)) tagged[ck] = c[ck];
+                tagged._prompt = pr.id;
+                tagged._promptRepeatable = !!pr.repeatable;
+                if (choiceOpen(st, tagged)) visible.push(tagged);
+              });
+              if (visible.length) opened = visible;
+            }
+            if (!opened) {
+              if (typeof sc.next === 'string') nexts.push(arrive(st, sc.next));
+            } else {
+              opened.forEach(function (c) { nexts.push(afterChoice(st, c)); });
+            }
+          } else {
+            var choices = [];
+            if (sc.choices_from === 'other_pregens') choices.push({ id: '_rival', to: sc.choice_to });
+            else choices = sc.choices || [];
+            choices.forEach(function (c) {
+              if (!choiceOpen(st, c)) return;
+              nexts.push(afterChoice(st, c));
+            });
+          }
         } else if (sc.type === 'check') {
-          if (typeof sc.success_to === 'string') nexts.push(arrive(applyBundle(st, sc.on_success), sc.success_to));
-          if (typeof sc.fail_to === 'string') nexts.push(arrive(applyBundle(st, sc.on_failure), sc.fail_to));
+          var cid = checkDoneId(sc.id);
+          var locked = checkIsOnce(sc) && st.done[cid] && typeof st.done[cid] === 'object';
+          var takeBranch = function (success) {
+            var dest = success ? sc.success_to : sc.fail_to;
+            if (typeof dest !== 'string') return;
+            var n;
+            if (locked) n = cloneState(st);
+            else {
+              n = applyBundle(st, success ? sc.on_success : sc.on_failure);
+              if (checkIsOnce(sc)) n.done[cid] = { success: !!success };
+            }
+            nexts.push(arrive(n, dest));
+          };
+          if (locked) takeBranch(!!st.done[cid].success);
+          else { takeBranch(true); takeBranch(false); }
         } else if (sc.type === 'combat') {
           var won = cloneState(st);
           won.cleared[sc.id] = true;
@@ -818,7 +1069,62 @@
       });
     }
 
-    return { ok: errors.length === 0, errors: errors, reached: reached, reachable: Object.keys(reachableScenes) };
+    return {
+      ok: errors.length === 0,
+      errors: errors,
+      reached: reached,
+      reachable: Object.keys(reachableScenes),
+      endings: endings
+    };
+  }
+
+  // Writer helper: prove a class / ending / flag combination is reachable.
+  // `flags` matches the listed keys exactly. `allFlags` requires those flags
+  // to be truthy. `itemMin` is a minimum count. `branchCompleted` is a branch
+  // id or a list of ids. `branchLine` is a substring of a card branch line.
+  // The walker uses each pregen's starting attributes and does not simulate
+  // hit-point loss, so stat checks see full health.
+  function assertReachable(adventure, spec) {
+    var walk = walkScript(adventure);
+    spec = spec || {};
+    var matches = (walk.endings || []).filter(function (e) {
+      if (spec['class'] && e['class'] !== spec['class']) return false;
+      if (spec.endingId && e.endingId !== spec.endingId) return false;
+      if (spec.endingType && e.endingType !== spec.endingType) return false;
+      var k, i, found;
+      if (spec.flags) {
+        for (k in spec.flags) if (Object.prototype.hasOwnProperty.call(spec.flags, k)) {
+          if (e.flags[k] !== spec.flags[k]) return false;
+        }
+      }
+      if (spec.allFlags) {
+        for (i = 0; i < spec.allFlags.length; i++) if (!e.flags[spec.allFlags[i]]) return false;
+      }
+      if (spec.itemMin) {
+        for (k in spec.itemMin) if (Object.prototype.hasOwnProperty.call(spec.itemMin, k)) {
+          if (itemCount(e.items, k) < spec.itemMin[k]) return false;
+        }
+      }
+      if (spec.branchCompleted) {
+        var ids = Array.isArray(spec.branchCompleted) ? spec.branchCompleted : [spec.branchCompleted];
+        for (i = 0; i < ids.length; i++) {
+          found = false;
+          (e.branches || []).forEach(function (b) {
+            if (b.id === ids[i] && b.completed) found = true;
+          });
+          if (!found) return false;
+        }
+      }
+      if (spec.branchLine) {
+        found = false;
+        (e.branchLines || []).forEach(function (line) {
+          if (String(line).indexOf(spec.branchLine) >= 0) found = true;
+        });
+        if (!found) return false;
+      }
+      return true;
+    });
+    return { ok: !!(walk.ok && matches.length), matches: matches, errors: walk.errors, walkOk: walk.ok };
   }
 
   // ---------------------------------------------------------------- validator
@@ -881,7 +1187,8 @@
 
     var WHEN_KEYS = {
       'class': 1, all_flags: 1, none_flags: 1, flag_eq: 1, flag_min: 1, flag_max: 1,
-      has_item: 1, missing_item: 1, cleared: 1, not: 1, all: 1, any: 1
+      has_item: 1, missing_item: 1, item_min: 1, item_max: 1, item_eq: 1,
+      stat_min: 1, stat_max: 1, stat_eq: 1, cleared: 1, not: 1, all: 1, any: 1
     };
     function validateWhen(when, where) {
       if (!when || typeof when !== 'object' || Array.isArray(when)) {
@@ -927,6 +1234,25 @@
         if (!Array.isArray(when[f])) { err(where + ' 的 when.' + f + ' 必須是陣列。'); return; }
         when[f].forEach(function (id) { checkItem(id, where + ' 的 when.' + f); });
       });
+      function validateNumMap(map, field, idCheck) {
+        if (map === undefined) return;
+        if (!map || typeof map !== 'object' || Array.isArray(map)) {
+          err(where + ' 的 when.' + field + ' 必須是物件。');
+          return;
+        }
+        Object.keys(map).forEach(function (k) {
+          if (typeof map[k] !== 'number') err(where + ' 的 when.' + field + '.' + k + ' 必須是數字。');
+          if (idCheck) idCheck(k, where + ' 的 when.' + field);
+        });
+      }
+      ['item_min', 'item_max', 'item_eq'].forEach(function (f) {
+        validateNumMap(when[f], f, function (id, w) { checkItem(id, w); });
+      });
+      ['stat_min', 'stat_max', 'stat_eq'].forEach(function (f) {
+        validateNumMap(when[f], f, function (id, w) {
+          if (!STAT_NAMES[id]) err(w + ' 的屬性「' + id + '」只能是 hp、hp_max、str、dex、con、int、wis、cha、ac。');
+        });
+      });
       if (when.cleared !== undefined) {
         if (!Array.isArray(when.cleared)) err(where + ' 的 when.cleared 必須是陣列。');
         else when.cleared.forEach(function (id) {
@@ -942,7 +1268,8 @@
       });
     }
     var EFFECT_KEYS = {
-      set_flag: 1, set: 1, inc: 1, dec: 1, give: 1, take: 1, hp_delta: 1, min_hp: 1, minHp: 1
+      set_flag: 1, set: 1, inc: 1, dec: 1, give: 1, take: 1, hp_delta: 1, min_hp: 1, minHp: 1,
+      once: 1, repeatable: 1
     };
     function validateEffect(effect, where) {
       if (!effect || typeof effect !== 'object' || Array.isArray(effect)) {
@@ -986,6 +1313,13 @@
       if (effect.min_hp !== undefined && !Number.isInteger(effect.min_hp)) err(where + ' 的 min_hp 必須是整數。');
       if (effect.minHp !== undefined && !Number.isInteger(effect.minHp)) err(where + ' 的 minHp 必須是整數。');
       if (effect.min_hp !== undefined && effect.minHp !== undefined) err(where + ' 的 min_hp 與 minHp 請只留一個。');
+      if (effect.once !== undefined && typeof effect.once !== 'boolean') err(where + ' 的 once 必須是布林。');
+      if (effect.repeatable !== undefined && typeof effect.repeatable !== 'boolean') err(where + ' 的 repeatable 必須是布林。');
+    }
+    function validateOnceFlags(node, where) {
+      if (!node) return;
+      if (node.once !== undefined && typeof node.once !== 'boolean') err(where + ' 的 once 必須是布林。');
+      if (node.repeatable !== undefined && typeof node.repeatable !== 'boolean') err(where + ' 的 repeatable 必須是布林。');
     }
     function checkFacts(facts, where) {
       if (facts === undefined) return;
@@ -1014,51 +1348,93 @@
       checkFacts(sc.facts, where);
       if (sc.when !== undefined) validateWhen(sc.when, where);
 
+      function validateChoice(c, cw, allowMissingTo) {
+        if (!c || typeof c.id !== 'string' || !c.id) err(cw + ' 缺少 id。');
+        else cw = cw.replace(/選項 #\d+$/, '選項「' + c.id + '」');
+        if (!c || typeof c.label !== 'string' || !c.label) err(cw + ' 缺少 label。');
+        if (!c) return false;
+        var missingTo = c.to === undefined || c.to === null || c.to === '';
+        if (missingTo) {
+          if (!allowMissingTo) err(cw + ' 缺少 to。');
+        } else checkScene(c.to, cw + ' 的 to');
+        validateOnceFlags(c, cw);
+        ['give', 'take', 'require_item'].forEach(function (f) {
+          if (c[f] === undefined) return;
+          if (!Array.isArray(c[f])) { err(cw + ' 的 ' + f + ' 必須是陣列。'); return; }
+          c[f].forEach(function (id) { checkItem(id, cw + ' 的 ' + f); });
+        });
+        ['require_flag', 'set_flag'].forEach(function (f) {
+          if (c[f] === undefined) return;
+          if (!Array.isArray(c[f])) { err(cw + ' 的 ' + f + ' 必須是陣列。'); return; }
+          c[f].forEach(function (id) {
+            if (typeof id !== 'string' || !id) err(cw + ' 的 ' + f + ' 必須是旗標名稱。');
+          });
+        });
+        if (c.when !== undefined) validateWhen(c.when, cw);
+        if (c.set !== undefined) {
+          if (!c.set || typeof c.set !== 'object' || Array.isArray(c.set)) err(cw + ' 的 set 必須是物件。');
+          else Object.keys(c.set).forEach(function (k) {
+            var v = c.set[k];
+            if (typeof v !== 'boolean' && typeof v !== 'number' && typeof v !== 'string') {
+              err(cw + ' 的 set.' + k + ' 必須是布林、數字或字串。');
+            }
+          });
+        }
+        if (c.inc !== undefined || c.dec !== undefined || c.min_hp !== undefined || c.minHp !== undefined) {
+          validateEffect({
+            inc: c.inc, dec: c.dec, min_hp: c.min_hp, minHp: c.minHp
+          }, cw);
+        }
+        if (c.hp_delta !== undefined && !Number.isInteger(c.hp_delta)) err(cw + ' 的 hp_delta 必須是整數。');
+        return missingTo;
+      }
       if (sc.type === 'beat') {
         var fromPregens = sc.choices_from === 'other_pregens';
-        if (fromPregens) {
+        var hasPrompts = sc.prompts !== undefined;
+        if (hasPrompts && fromPregens) err(where + ' 的 prompts 不能和 choices_from 一起用。');
+        if (hasPrompts && Array.isArray(sc.choices) && sc.choices.length) err(where + ' 的 prompts 不能和 choices 一起用。');
+        if (hasPrompts) {
+          if (!Array.isArray(sc.prompts) || sc.prompts.length === 0) err(where + ' 的 prompts 必須是非空陣列。');
+          var promptIds = {};
+          var choiceIds = {};
+          var needsNext = false;
+          (Array.isArray(sc.prompts) ? sc.prompts : []).forEach(function (pr, pi) {
+            var pw = where + ' 的提問 #' + pi;
+            if (!pr || typeof pr !== 'object') { err(pw + ' 必須是物件。'); return; }
+            if (typeof pr.id !== 'string' || !pr.id) err(pw + ' 缺少 id。');
+            else {
+              pw = where + ' 的提問「' + pr.id + '」';
+              if (promptIds[pr.id]) err(pw + ' 的 id 重複。');
+              promptIds[pr.id] = 1;
+            }
+            validateOnceFlags(pr, pw);
+            if (pr.when !== undefined) validateWhen(pr.when, pw);
+            if (!Array.isArray(pr.choices) || pr.choices.length === 0) err(pw + ' 沒有 choices。');
+            (pr.choices || []).forEach(function (c, ci) {
+              var cw = pw + ' 的選項 #' + ci;
+              if (c && c.id && choiceIds[c.id]) err(cw + ' 的 id 與同一場的其他選項重複。');
+              if (c && c.id) choiceIds[c.id] = 1;
+              if (validateChoice(c, cw, true)) needsNext = true;
+            });
+          });
+          if (needsNext) {
+            if (typeof sc.next !== 'string' || !sc.next) err(where + ' 有選項沒有 to，必須寫 next。');
+            else checkScene(sc.next, where + ' 的 next');
+          } else if (sc.next !== undefined) checkScene(sc.next, where + ' 的 next');
+        } else if (fromPregens) {
           if (typeof sc.choice_to !== 'string' || !sc.choice_to) err(where + ' 使用 choices_from 時必須有 choice_to。');
           else checkScene(sc.choice_to, where + ' 的 choice_to');
         } else if (!Array.isArray(sc.choices) || sc.choices.length === 0) {
           err(where + ' 沒有 choices。');
-          return;
+        } else {
+          var seenChoice = {};
+          sc.choices.forEach(function (c, ci) {
+            var cw = where + ' 的選項 #' + ci;
+            if (c && c.id && seenChoice[c.id]) err(cw + ' 的 id 重複。');
+            if (c && c.id) seenChoice[c.id] = 1;
+            validateChoice(c, cw, false);
+          });
         }
-        (Array.isArray(sc.choices) ? sc.choices : []).forEach(function (c, ci) {
-          var cw = where + ' 的選項 #' + ci;
-          if (!c || typeof c.id !== 'string' || !c.id) err(cw + ' 缺少 id。');
-          else cw = where + ' 的選項「' + c.id + '」';
-          if (!c || typeof c.label !== 'string' || !c.label) err(cw + ' 缺少 label。');
-          if (!c) return;
-          checkScene(c.to, cw + ' 的 to');
-          ['give', 'take', 'require_item'].forEach(function (f) {
-            if (c[f] === undefined) return;
-            if (!Array.isArray(c[f])) { err(cw + ' 的 ' + f + ' 必須是陣列。'); return; }
-            c[f].forEach(function (id) { checkItem(id, cw + ' 的 ' + f); });
-          });
-          ['require_flag', 'set_flag'].forEach(function (f) {
-            if (c[f] === undefined) return;
-            if (!Array.isArray(c[f])) { err(cw + ' 的 ' + f + ' 必須是陣列。'); return; }
-            c[f].forEach(function (id) {
-              if (typeof id !== 'string' || !id) err(cw + ' 的 ' + f + ' 必須是旗標名稱。');
-            });
-          });
-          if (c.when !== undefined) validateWhen(c.when, cw);
-          if (c.set !== undefined) {
-            if (!c.set || typeof c.set !== 'object' || Array.isArray(c.set)) err(cw + ' 的 set 必須是物件。');
-            else Object.keys(c.set).forEach(function (k) {
-              var v = c.set[k];
-              if (typeof v !== 'boolean' && typeof v !== 'number' && typeof v !== 'string') {
-                err(cw + ' 的 set.' + k + ' 必須是布林、數字或字串。');
-              }
-            });
-          }
-          if (c.inc !== undefined || c.dec !== undefined || c.min_hp !== undefined || c.minHp !== undefined) {
-            validateEffect({
-              inc: c.inc, dec: c.dec, min_hp: c.min_hp, minHp: c.minHp
-            }, cw);
-          }
-          if (c.hp_delta !== undefined && !Number.isInteger(c.hp_delta)) err(cw + ' 的 hp_delta 必須是整數。');
-        });
       } else if (sc.type === 'check') {
         if (!SKILL_ABILITY[sc.skill]) {
           err(where + ' 的 skill「' + sc.skill + '」不在允許的五項技能內（athletics / stealth / perception / insight / persuasion）。');
@@ -1071,6 +1447,7 @@
         if (sc.minHp !== undefined && !Number.isInteger(sc.minHp)) err(where + ' 的 minHp 必須是整數。');
         if (sc.on_success !== undefined) validateEffect(sc.on_success, where + ' 的 on_success');
         if (sc.on_failure !== undefined) validateEffect(sc.on_failure, where + ' 的 on_failure');
+        validateOnceFlags(sc, where);
       } else if (sc.type === 'combat') {
         if (!Array.isArray(sc.enemies) || sc.enemies.length === 0) err(where + ' 沒有 enemies。');
         else sc.enemies.forEach(function (e, ei) {
@@ -1121,10 +1498,14 @@
           if (!Number.isInteger(sc.rest.heal) || sc.rest.heal < 1) err(where + ' 的 rest.heal 必須是正整數。');
           if (sc.rest.when !== undefined) validateWhen(sc.rest.when, where + ' 的 rest');
           Object.keys(sc.rest).forEach(function (k) {
-            if (k !== 'heal' && k !== 'when') err(where + ' 的 rest 含有未知欄位「' + k + '」。');
+            if (k !== 'heal' && k !== 'when' && k !== 'once' && k !== 'repeatable') {
+              err(where + ' 的 rest 含有未知欄位「' + k + '」。');
+            }
           });
+          validateOnceFlags(sc.rest, where + ' 的 rest');
         }
       }
+      if (sc.on_enter !== undefined) validateEffect(sc.on_enter, where + ' 的 on_enter');
     });
 
     // --- meta.required_for_secret
@@ -1299,6 +1680,7 @@
     this.scene = null;
     this.sceneId = null;
     this.flags = {};
+    this.done = {};
     this.clearedCombats = {};
     this.keyChoices = [];
     this.rivalPregenIndex = null;
@@ -1379,11 +1761,16 @@
   };
 
   Engine.prototype.conditionState = function () {
+    var c = this.character;
     return {
-      cls: this.character ? this.character.cls : '',
+      cls: c ? c.cls : '',
       flags: this.flags,
-      inventory: this.character ? this.character.inventory : [],
-      cleared: this.clearedCombats
+      inventory: c ? c.inventory : [],
+      cleared: this.clearedCombats,
+      stats: c ? {
+        hp: c.hp, hp_max: c.hp_max,
+        str: c.str, dex: c.dex, con: c.con, int: c['int'], wis: c.wis, cha: c.cha, ac: c.ac
+      } : {}
     };
   };
 
@@ -1484,9 +1871,37 @@
     };
   };
 
+  Engine.prototype.currentPrompt = function () {
+    var sc = this.scene;
+    if (!sc || !Array.isArray(sc.prompts)) return null;
+    var i, j, pr, choices;
+    for (i = 0; i < sc.prompts.length; i++) {
+      pr = sc.prompts[i];
+      if (!pr || !pr.id) continue;
+      if (!pr.repeatable && this.done[promptDoneId(sc.id, pr.id)]) continue;
+      if (!this.conditionsPass(pr.when)) continue;
+      choices = pr.choices || [];
+      for (j = 0; j < choices.length; j++) {
+        if (this.choiceVisible(choices[j])) return pr;
+      }
+    }
+    return null;
+  };
+
   Engine.prototype.resolvedChoices = function () {
     var sc = this.scene;
     if (!sc || sc.type !== 'beat') return [];
+    if (Array.isArray(sc.prompts) && sc.prompts.length) {
+      var pr = this.currentPrompt();
+      if (!pr) return [];
+      return (pr.choices || []).map(function (c) {
+        var copy = {};
+        var k;
+        for (k in c) if (Object.prototype.hasOwnProperty.call(c, k)) copy[k] = c[k];
+        copy._prompt = pr.id;
+        return copy;
+      });
+    }
     if (sc.choices_from === 'other_pregens') {
       var out = [];
       var self = this;
@@ -1512,6 +1927,8 @@
     this.pregenIndex = pregenIndex;
     this.character = this.characterFromPregen(p);
     this.flags = {};
+    this.done = {};
+    this._autoHops = 0;
     this.clearedCombats = {};
     this.keyChoices = [];
     this.rivalPregenIndex = null;
@@ -1553,6 +1970,7 @@
   };
 
   Engine.prototype.enterScene = function (id) {
+    if (!Number.isInteger(this._autoHops)) this._autoHops = 0;
     var sc = this.scenes[id];
     if (!sc) throw new Error('unknown scene: ' + id); // validator makes this unreachable
     // Combat-only AC bonus ends when leaving combat (flee or all enemies dead).
@@ -1582,12 +2000,36 @@
       this.emit({ t: 'end_blocked', name: sc.name || sc.id });
       return;
     }
+    if (sc.type === 'check' && checkIsOnce(sc)) {
+      var lock = this.done[checkDoneId(id)];
+      if (lock && typeof lock === 'object' && this._autoHops < 12) {
+        this.emit({ t: 'check_locked', success: !!lock.success, skill: sc.skill, dc: sc.dc });
+        this._autoHops++;
+        this.enterScene(lock.success ? sc.success_to : sc.fail_to);
+        return;
+      }
+    }
+    if (sc.on_enter && !(enterIsOnce(sc.on_enter) && this.done[enterDoneId(id)])) {
+      if (enterIsOnce(sc.on_enter)) this.done[enterDoneId(id)] = true;
+      if (!this.applyEffectBundle(sc.on_enter, 'enter')) return;
+    }
+    if (this.status !== 'playing') return;
+    if (sc.type === 'beat' && Array.isArray(sc.prompts) && sc.prompts.length &&
+        !this.currentPrompt() && typeof sc.next === 'string' && this._autoHops < 12) {
+      this._autoHops++;
+      this.enterScene(sc.next);
+      return;
+    }
     if (sc.rest && Number.isInteger(sc.rest.heal) && this.conditionsPass(sc.rest.when)) {
-      var beforeHp = this.character.hp;
-      var healed = Math.min(sc.rest.heal, this.character.hp_max - beforeHp);
-      if (healed > 0) {
-        this.character.hp = beforeHp + healed;
-        this.emit({ t: 'rest', healed: healed, hp: this.character.hp, hp_max: this.character.hp_max });
+      var rid = restDoneId(id);
+      if (!(restIsOnce(sc.rest) && this.done[rid])) {
+        if (restIsOnce(sc.rest)) this.done[rid] = true;
+        var beforeHp = this.character.hp;
+        var healed = Math.min(sc.rest.heal, this.character.hp_max - beforeHp);
+        if (healed > 0) {
+          this.character.hp = beforeHp + healed;
+          this.emit({ t: 'rest', healed: healed, hp: this.character.hp, hp_max: this.character.hp_max });
+        }
       }
     }
     this.emit({
@@ -1645,6 +2087,8 @@
   // --- legal actions ---------------------------------------------------------
   Engine.prototype.choiceVisible = function (c) {
     var i;
+    if (!c) return false;
+    if (choiceIsOnce(c) && this.sceneId && this.done[choiceDoneId(this.sceneId, c.id)]) return false;
     if (!this.conditionsPass(c.when)) return false;
     if (Array.isArray(c.require_flag)) {
       for (i = 0; i < c.require_flag.length; i++) if (!this.flags[c.require_flag[i]]) return false;
@@ -1731,7 +2175,10 @@
       });
     } else if (sc.type === 'check') {
       // No roll happens on entry: the player presses this.
-      acts.push({ type: 'roll', skill: sc.skill, dc: sc.dc });
+      // A once-only check that already has a result is skipped on re-entry.
+      if (!(checkIsOnce(sc) && this.done[checkDoneId(sc.id)])) {
+        acts.push({ type: 'roll', skill: sc.skill, dc: sc.dc });
+      }
     } else if (sc.type === 'combat') {
       this.livingEnemies().forEach(function (e) {
         acts.push({ type: 'attack', target: e.index, targetName: e.name, targetHp: e.hp, targetHpMax: e.hp_max });
@@ -1750,6 +2197,7 @@
   // --- actions ---------------------------------------------------------------
   Engine.prototype.perform = function (action) {
     this.events = [];
+    this._autoHops = 0;
     if (!action || typeof action.type !== 'string') return this.reject('未知的行動。');
     if (action.type === 'restart') return this.restart();
     if (this.status !== 'playing') return this.reject('這一場已經結束了。');
@@ -1775,6 +2223,13 @@
     if (!this.choiceVisible(choice)) return this.reject('現在還做不到這件事。');
 
     this.emit({ t: 'choice', label: choice.label });
+    if (choice._prompt) {
+      var prompts = sc.prompts || [];
+      var pr = null;
+      prompts.forEach(function (p) { if (p && p.id === choice._prompt) pr = p; });
+      if (pr && !pr.repeatable) this.done[promptDoneId(sc.id, pr.id)] = true;
+    }
+    if (choiceIsOnce(choice) && choice.id) this.done[choiceDoneId(sc.id, choice.id)] = true;
     if (choice._rival_index !== undefined && choice._rival_index !== null) {
       self.rivalPregenIndex = choice._rival_index;
       var rp = self.adventure.pregens[choice._rival_index];
@@ -1784,8 +2239,15 @@
       }
     }
     if (!this.applyEffectBundle(choice, 'choice')) return this.ok();
-    this.enterScene(choice.to);
-    return this.ok();
+    if (typeof choice.to === 'string' && choice.to) {
+      this.enterScene(choice.to);
+      return this.ok();
+    }
+    if (Array.isArray(sc.prompts) && sc.prompts.length) {
+      if (!this.currentPrompt() && typeof sc.next === 'string') this.enterScene(sc.next);
+      return this.ok();
+    }
+    return this.reject('這個選項沒有去向。');
   };
 
   Engine.prototype.doContinue = function () {
@@ -1799,6 +2261,7 @@
   Engine.prototype.doRoll = function () {
     var sc = this.scene, c = this.character;
     if (sc.type !== 'check') return this.reject('現在不需要擲骰。');
+    if (checkIsOnce(sc) && this.done[checkDoneId(sc.id)]) return this.reject('這個檢定已經擲過了。');
     var ability = SKILL_ABILITY[sc.skill];
     var mod = abilityMod(c[ability]);
     var prof = c.skills.indexOf(sc.skill) >= 0 ? PROFICIENCY_BONUS : 0;
@@ -1809,6 +2272,7 @@
       t: 'check', skill: sc.skill, ability: ability,
       d20: d20, mod: mod, prof: prof, total: total, dc: sc.dc, success: success
     });
+    if (checkIsOnce(sc)) this.done[checkDoneId(sc.id)] = { success: success };
     var branch = success ? sc.on_success : sc.on_failure;
     var branchSetsHp = branch && branch.hp_delta != null;
     if (!success && sc.fail_hp_delta && !branchSetsHp) {
@@ -2180,6 +2644,7 @@
       character: deepCopy(this.character),
       sceneId: this.sceneId,
       flags: deepCopy(this.flags),
+      done: copyDone(this.done),
       clearedCombats: deepCopy(this.clearedCombats),
       keyChoices: deepCopy(this.keyChoices),
       rivalPregenIndex: this.rivalPregenIndex,
@@ -2258,6 +2723,7 @@
     this.sceneId = save.sceneId;
     this.scene = sc;
     this.flags = (save.flags && typeof save.flags === 'object' && !Array.isArray(save.flags)) ? deepCopy(save.flags) : {};
+    this.done = copyDone(save.done);
     this.clearedCombats = {};
     if (save.clearedCombats && typeof save.clearedCombats === 'object') {
       Object.keys(save.clearedCombats).forEach(function (id) {
@@ -2349,6 +2815,7 @@
     resolveFacts: resolveFacts,
     validateAdventure: validateAdventure,
     walkScript: walkScript,
+    assertReachable: assertReachable,
     encodeSaveCode: encodeSaveCode,
     decodeSaveCode: decodeSaveCode,
     migrateSave: migrateSave,

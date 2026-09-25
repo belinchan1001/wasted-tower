@@ -36,6 +36,9 @@
         case 'rest':
           out.push({ tone: 'good', text: '〔歇息〕回復 ' + ev.healed + '　→　生命 ' + ev.hp + '/' + ev.hp_max });
           break;
+        case 'check_locked':
+          out.push({ tone: 'sys', text: '〔擲骰〕這項檢定已經擲過了。' });
+          break;
         case 'check':
           out.push({
             tone: 'roll',

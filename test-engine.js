@@ -466,7 +466,7 @@ test('old save codes migrate and bad codes fail without throwing', function () {
   assert.strictEqual(upgraded.engine.playTimeKnown, false);
 
   var newer = engine.exportSave();
-  newer.v = 3;
+  newer.v = 4;
   var tooNew = T.loadGame(adventure, T.encodeSaveCode(newer));
   assert.strictEqual(tooNew.ok, false);
   assert.ok(/較新/.test(tooNew.error));
@@ -759,8 +759,8 @@ test('class flags, counters, text, checks, items, flee, and rest', function () {
           { text: '你聽見腳步。', when: { not: { all_flags: ['quiet'] } } }
         ],
         choices: [
-          { id: 'plus', label: '靠近', to: 'talk', inc: { aff_bandit: 1 } },
-          { id: 'minus', label: '後退', to: 'talk', dec: { aff_bandit: 1 }, when: { flag_min: { aff_bandit: 1 } } },
+          { id: 'plus', label: '靠近', to: 'talk', inc: { aff_bandit: 1 }, repeatable: true },
+          { id: 'minus', label: '後退', to: 'talk', dec: { aff_bandit: 1 }, repeatable: true, when: { flag_min: { aff_bandit: 1 } } },
           {
             id: 'open',
             label: '開門',
@@ -995,6 +995,286 @@ test('class flags, counters, text, checks, items, flee, and rest', function () {
   assert.ok(text.indexOf('branch: X (completed)') >= 0);
   assert.ok(text.indexOf('剩餘生命') >= 0);
   assert.ok(text.indexOf('戰鬥') >= 0);
+});
+
+test('once-only rewards, checks, prompts, and inventory conditions', function () {
+  var gate = new T.Engine(adventure, { seed: 30 });
+  gate.start(0);
+  choose(gate, 'search');
+  assert.strictEqual(gate.character.inventory.filter(function (id) { return id === 'iron_key'; }).length, 1);
+  assert.strictEqual(gate.done['choice:f1_gate/search'], true);
+  gate.perform({ type: 'flee' });
+  assert.strictEqual(gate.sceneId, 'f1_gate');
+  assert.ok(choiceIds(gate).indexOf('search') < 0);
+  assert.ok(choiceIds(gate).indexOf('rush') >= 0);
+  assert.strictEqual(gate.character.inventory.filter(function (id) { return id === 'iron_key'; }).length, 1);
+  var locked = narrator.Mechanics.format({ t: 'check_locked', skill: 'athletics' });
+  assert.ok(locked[0].text.indexOf('已經擲過') >= 0);
+
+  var saved = T.encodeSaveCode(gate.exportSave());
+  var back = T.loadGame(adventure, saved);
+  assert.strictEqual(back.ok, true, back.error);
+  assert.strictEqual(back.engine.done['choice:f1_gate/search'], true);
+  assert.ok(choiceIds(back.engine).indexOf('search') < 0);
+
+  var legacy = gate.exportSave();
+  legacy.v = 2;
+  delete legacy.done;
+  var migrated = T.loadGame(adventure, T.encodeSaveCode(legacy));
+  assert.strictEqual(migrated.ok, true, migrated.error);
+  assert.deepStrictEqual(migrated.engine.done, {});
+
+  var story = {
+    id: 'once',
+    title: '一次',
+    start: 'start',
+    items: [
+      { id: 'potion', name: '藥水', kind: 'consumable', heal: 4 },
+      { id: 'gem', name: '寶石', kind: 'gear' }
+    ],
+    pregens: [
+      pregen('壯', '戰士'),
+      pregen('中', '戰士'),
+      pregen('法', '法師')
+    ],
+    scenes: [
+      {
+        id: 'start',
+        type: 'beat',
+        facts: ['房間。'],
+        choices: [
+          { id: 'again', label: '再拿', to: 'start', give: ['gem'], repeatable: true },
+          { id: 'loose', label: '順手', to: 'start', give: ['gem'], once: false },
+          { id: 'pick', label: '撿起藥水', to: 'start', give: ['potion'] },
+          {
+            id: 'leave', label: '留下藥水', to: 'start', take: ['potion'], set_flag: ['potion_left'],
+            when: { item_min: { potion: 1 } }
+          },
+          { id: 'heavy', label: '推開', to: 'ask', when: { stat_min: { str: 18 } } },
+          { id: 'light', label: '離開', to: 'ask', when: { stat_max: { str: 17 } } }
+        ]
+      },
+      {
+        id: 'ask',
+        type: 'beat',
+        facts: ['兩件事。'],
+        prompts: [
+          { id: 'general', choices: [{ id: 'look', label: '張望', set_flag: ['looked'] }] },
+          {
+            id: 'warrior',
+            when: { 'class': '戰士' },
+            choices: [{ id: 'oath', label: '立誓', set_flag: ['sworn'] }]
+          },
+          {
+            id: 'mage',
+            when: { 'class': '法師' },
+            choices: [{ id: 'spell', label: '施法', set_flag: ['spelled'] }]
+          }
+        ],
+        next: 'check'
+      },
+      {
+        id: 'check',
+        type: 'check',
+        skill: 'athletics',
+        dc: 30,
+        success_to: 'after',
+        fail_to: 'after',
+        fail_hp_delta: -2
+      },
+      {
+        id: 'after',
+        type: 'beat',
+        facts: ['過了。'],
+        rest: { heal: 1 },
+        choices: [
+          { id: 'back', label: '回去', to: 'check' },
+          { id: 'onward', label: '向前', to: 'fin' }
+        ]
+      },
+      { id: 'fin', type: 'end', end: 'win', ending_type: 'main', name: '完', facts: ['完。'] }
+    ]
+  };
+  story.pregens[0].str = 18;
+  story.pregens[2].str = 8;
+  var report = T.validateAdventure(story);
+  assert.strictEqual(report.ok, true, report.errors.join('\n'));
+
+  var mid = new T.Engine(story, { seed: 1 });
+  mid.start(1);
+  assert.ok(choiceIds(mid).indexOf('leave') < 0);
+  assert.ok(choiceIds(mid).indexOf('heavy') < 0);
+  assert.ok(choiceIds(mid).indexOf('light') >= 0);
+  choose(mid, 'again');
+  choose(mid, 'again');
+  choose(mid, 'loose');
+  choose(mid, 'loose');
+  assert.strictEqual(mid.character.inventory.filter(function (id) { return id === 'gem'; }).length, 4);
+  choose(mid, 'pick');
+  assert.ok(choiceIds(mid).indexOf('pick') < 0);
+  assert.ok(choiceIds(mid).indexOf('leave') >= 0);
+  choose(mid, 'leave');
+  assert.strictEqual(mid.flags.potion_left, true);
+  assert.ok(mid.character.inventory.indexOf('potion') < 0);
+  assert.ok(choiceIds(mid).indexOf('leave') < 0);
+  choose(mid, 'light');
+  assert.deepStrictEqual(choiceIds(mid), ['look']);
+  choose(mid, 'look');
+  assert.strictEqual(mid.sceneId, 'ask');
+  assert.strictEqual(mid.flags.looked, true);
+  assert.deepStrictEqual(choiceIds(mid), ['oath']);
+  choose(mid, 'oath');
+  assert.strictEqual(mid.sceneId, 'check');
+  assert.strictEqual(mid.flags.sworn, true);
+  mid.rng = seqRng([1]);
+  var failed = mid.perform({ type: 'roll' });
+  assert.strictEqual(failed.ok, true);
+  var hpEv = failed.events.filter(function (e) { return e.t === 'hp'; })[0];
+  assert.strictEqual(hpEv.hp, 10);
+  var restEv = failed.events.filter(function (e) { return e.t === 'rest'; })[0];
+  assert.strictEqual(restEv.healed, 1);
+  assert.strictEqual(mid.character.hp, 11);
+  assert.strictEqual(mid.sceneId, 'after');
+  var returned = choose(mid, 'back');
+  assert.ok(returned.events.some(function (e) { return e.t === 'check_locked' && e.success === false; }));
+  assert.ok(!returned.events.some(function (e) { return e.t === 'hp'; }));
+  assert.ok(!returned.events.some(function (e) { return e.t === 'rest'; }));
+  assert.strictEqual(mid.character.hp, 11);
+  assert.strictEqual(mid.sceneId, 'after');
+  assert.ok(choiceIds(mid).indexOf('roll') < 0);
+  choose(mid, 'onward');
+  assert.strictEqual(mid.status, 'won');
+
+  var strong = new T.Engine(story, { seed: 2 });
+  strong.start(0);
+  assert.ok(choiceIds(strong).indexOf('heavy') >= 0);
+  assert.ok(choiceIds(strong).indexOf('light') < 0);
+
+  var mage = new T.Engine(story, { seed: 3 });
+  mage.start(2);
+  choose(mage, 'light');
+  choose(mage, 'look');
+  assert.deepStrictEqual(choiceIds(mage), ['spell']);
+  assert.ok(!mage.flags.sworn);
+});
+
+test('assertReachable matches class, variant, secret, and potion endings', function () {
+  var classes = [
+    ['戰士', 'end_warrior', 'cls_warrior'],
+    ['遊俠', 'end_ranger', 'cls_ranger'],
+    ['盜賊', 'end_rogue', 'cls_rogue'],
+    ['牧師', 'end_cleric', 'cls_cleric'],
+    ['法師', 'end_mage', 'cls_mage']
+  ];
+  var classFlags = {};
+  classes.forEach(function (row) { classFlags[row[0]] = row[2]; });
+  var story = {
+    id: 'combo',
+    title: '組合',
+    start: 'hub',
+    meta: { class_flags: classFlags },
+    class_branches: [{
+      id: 'warrior_branch',
+      label: 'X',
+      when: { all_flags: ['cls_warrior'] },
+      completed_when: { all_flags: ['branch_done'] },
+      miss_reason: '沒有完成分支。'
+    }],
+    items: [{ id: 'potion', name: '藥水', kind: 'consumable', heal: 4 }],
+    pregens: classes.map(function (row, i) {
+      var p = pregen('角色' + i, row[0]);
+      p.inventory = ['potion'];
+      return p;
+    }),
+    scenes: [
+      {
+        id: 'hub',
+        type: 'beat',
+        facts: ['起點。'],
+        choices: [
+          {
+            id: 'leave',
+            label: '留下藥水',
+            to: 'secret_end',
+            take: ['potion'],
+            set_flag: ['potion_left', 'secret_on', 'branch_done'],
+            when: { item_min: { potion: 1 } }
+          },
+          { id: 'variant', label: '變體', to: 'variant_end', set_flag: ['variant_on'] }
+        ].concat(classes.map(function (row) {
+          return {
+            id: 'go_' + row[1],
+            label: row[0] + '結局',
+            to: row[1],
+            when: { 'class': row[0] }
+          };
+        }))
+      },
+      {
+        id: 'secret_end',
+        type: 'end',
+        end: 'secret_win',
+        ending_type: 'secret',
+        name: '隱藏結局',
+        when: { all_flags: ['potion_left', 'secret_on'] },
+        facts: ['隱。']
+      },
+      {
+        id: 'variant_end',
+        type: 'end',
+        end: 'win',
+        ending_type: 'variant',
+        name: '變體',
+        when: { all_flags: ['variant_on'] },
+        facts: ['變。']
+      }
+    ].concat(classes.map(function (row) {
+      return {
+        id: row[1],
+        type: 'end',
+        end: 'win',
+        ending_type: 'class',
+        name: row[0] + '結局',
+        when: { 'class': row[0] },
+        facts: ['職。']
+      };
+    }))
+  };
+  classes.forEach(function (row) {
+    var hit = T.assertReachable(story, { 'class': row[0], endingId: row[1], endingType: 'class' });
+    assert.strictEqual(hit.ok, true, row[0] + ' ' + (hit.errors || []).join('\n'));
+  });
+  var variant = T.assertReachable(story, { endingType: 'variant', flags: { variant_on: true } });
+  assert.strictEqual(variant.ok, true, (variant.errors || []).join('\n'));
+  var secret = T.assertReachable(story, {
+    'class': '戰士',
+    endingType: 'secret',
+    allFlags: ['potion_left', 'secret_on'],
+    branchCompleted: 'warrior_branch',
+    branchLine: 'branch: X (completed)',
+    itemMin: { potion: 0 }
+  });
+  assert.strictEqual(secret.ok, true, (secret.errors || []).join('\n'));
+  secret.matches.forEach(function (m) {
+    var n = 0;
+    m.items.forEach(function (id) { if (id === 'potion') n++; });
+    assert.strictEqual(n, 0);
+  });
+  var missed = T.assertReachable(story, { endingType: 'secret', flags: { potion_left: false } });
+  assert.strictEqual(missed.ok, false);
+
+  var played = new T.Engine(story, { seed: 4 });
+  played.start(0);
+  assert.ok(choiceIds(played).indexOf('leave') >= 0);
+  played.character.inventory = played.character.inventory.filter(function (id) { return id !== 'potion'; });
+  assert.ok(choiceIds(played).indexOf('go_end_warrior') >= 0);
+  assert.ok(choiceIds(played).indexOf('leave') < 0);
+  played.character.inventory.push('potion');
+  choose(played, 'leave');
+  assert.strictEqual(played.status, 'secret_won');
+  assert.ok(played.character.inventory.indexOf('potion') < 0);
+  assert.ok(played.endingCard().branchLines.indexOf('branch: X (completed)') >= 0);
+  assert.strictEqual(played.endingCard().endingType, 'secret');
 });
 
 test('preview build matches the playable files', function () {

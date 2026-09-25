@@ -640,11 +640,15 @@
     var countedItems = {};
     var itemCap = {};
     var relevantDoneIds = [];
+    var doneOwner = {};
     var endings = [];
     var relevantCleared = {};
+    var currentBag = null;
+    var sceneBags = {};
     function noteFlag(id, mode, cap) {
       if (typeof id !== 'string' || !id) return;
       relevantFlags[id] = 1;
+      if (currentBag) currentBag.flags[id] = 1;
       if (mode === 'num') {
         flagMode[id] = 'num';
         if (typeof cap === 'number' && (flagCap[id] == null || cap > flagCap[id])) flagCap[id] = cap;
@@ -674,14 +678,24 @@
       if (when.flag_max) Object.keys(when.flag_max).forEach(function (k) {
         noteFlag(k, 'num', when.flag_max[k] + 1);
       });
-      (when.has_item || []).forEach(function (id) { relevantItems[id] = 1; });
-      (when.missing_item || []).forEach(function (id) { relevantItems[id] = 1; });
-      (when.cleared || []).forEach(function (id) { relevantCleared[id] = 1; });
+      (when.has_item || []).forEach(function (id) {
+        relevantItems[id] = 1;
+        if (currentBag) currentBag.items[id] = 1;
+      });
+      (when.missing_item || []).forEach(function (id) {
+        relevantItems[id] = 1;
+        if (currentBag) currentBag.items[id] = 1;
+      });
+      (when.cleared || []).forEach(function (id) {
+        relevantCleared[id] = 1;
+        if (currentBag) currentBag.cleared[id] = 1;
+      });
       function noteItemMap(map, extra) {
         if (!map || typeof map !== 'object') return;
         Object.keys(map).forEach(function (id) {
           relevantItems[id] = 1;
           countedItems[id] = 1;
+          if (currentBag) { currentBag.items[id] = 1; currentBag.counted[id] = 1; }
           var n = typeof map[id] === 'number' ? map[id] : 0;
           var need = n + extra;
           if (need < 0) need = 0;
@@ -706,6 +720,8 @@
     });
     (adventure.scenes || []).forEach(function (sc) {
       if (!sc) return;
+      currentBag = { flags: {}, items: {}, counted: {}, cleared: {} };
+      if (sc.id) sceneBags[sc.id] = currentBag;
       noteWhen(sc.when);
       (sc.facts || []).forEach(function (f) { if (f && typeof f === 'object') noteWhen(f.when); });
       if (sc.rest) noteWhen(sc.rest.when);
@@ -715,7 +731,10 @@
         if (!c) return;
         noteWhen(c.when);
         (c.require_flag || []).forEach(function (f) { noteFlag(f, 'bool'); });
-        (c.require_item || []).forEach(function (id) { relevantItems[id] = 1; });
+        (c.require_item || []).forEach(function (id) {
+          relevantItems[id] = 1;
+          if (currentBag) currentBag.items[id] = 1;
+        });
       }
       (sc.choices || []).forEach(noteChoice);
       (sc.prompts || []).forEach(function (pr) {
@@ -723,7 +742,92 @@
         noteWhen(pr.when);
         (pr.choices || []).forEach(noteChoice);
       });
+      currentBag = null;
     });
+    (adventure.scenes || []).forEach(function (sc) {
+      if (!sc || sc.type !== 'end' || !sceneBags[sc.id]) return;
+      currentBag = sceneBags[sc.id];
+      (adventure.class_branches || []).forEach(function (b) {
+        if (!b) return;
+        noteWhen(b.when);
+        noteWhen(b.completed_when);
+      });
+      currentBag = null;
+    });
+    var nextIds = {};
+    function linkScenes(from, to) {
+      if (!from || typeof to !== 'string' || !scenes[to]) return;
+      if (!nextIds[from]) nextIds[from] = {};
+      nextIds[from][to] = 1;
+    }
+    (adventure.scenes || []).forEach(function (sc) {
+      if (!sc || !sc.id) return;
+      (sc.choices || []).forEach(function (c) { if (c) linkScenes(sc.id, c.to); });
+      (sc.prompts || []).forEach(function (pr) {
+        if (!pr) return;
+        (pr.choices || []).forEach(function (c) { if (c) linkScenes(sc.id, c.to); });
+      });
+      linkScenes(sc.id, sc.next);
+      linkScenes(sc.id, sc.win_to);
+      if (sc.flee_to && sc.flee_to !== FLEE_CHECKPOINT) linkScenes(sc.id, sc.flee_to);
+      linkScenes(sc.id, sc.success_to);
+      linkScenes(sc.id, sc.fail_to);
+      linkScenes(sc.id, sc.continue_to);
+      linkScenes(sc.id, sc.choice_to);
+    });
+    if (trackCheckpoint) {
+      var checkpointIds = [];
+      Object.keys(scenes).forEach(function (id) {
+        if (scenes[id].type === 'checkpoint') checkpointIds.push(id);
+      });
+      Object.keys(scenes).forEach(function (id) {
+        if (scenes[id].flee_to === FLEE_CHECKPOINT) {
+          checkpointIds.forEach(function (cp) { linkScenes(id, cp); });
+        }
+      });
+    }
+    var futureOf = {};
+    function futureScenes(id) {
+      if (futureOf[id]) return futureOf[id];
+      var seen = {};
+      var stack = [id];
+      seen[id] = 1;
+      while (stack.length) {
+        var cur = stack.pop();
+        var nxt = nextIds[cur] || {};
+        Object.keys(nxt).forEach(function (to) {
+          if (!seen[to]) { seen[to] = 1; stack.push(to); }
+        });
+      }
+      futureOf[id] = seen;
+      return seen;
+    }
+    var readCache = {};
+    function readsFor(sceneId) {
+      if (readCache[sceneId]) return readCache[sceneId];
+      var flags = {};
+      var items = {};
+      var counted = {};
+      var cleared = {};
+      var fut = futureScenes(sceneId);
+      var readsSecret = false;
+      Object.keys(fut).forEach(function (id) {
+        var bag = sceneBags[id];
+        if (!bag) return;
+        Object.keys(bag.flags).forEach(function (f) { flags[f] = 1; });
+        Object.keys(bag.items).forEach(function (f) { items[f] = 1; });
+        Object.keys(bag.counted).forEach(function (f) { counted[f] = 1; });
+        Object.keys(bag.cleared).forEach(function (f) { cleared[f] = 1; });
+        if (bag.flags.secret_ready) readsSecret = true;
+      });
+      if (readsSecret) {
+        ((adventure.meta && adventure.meta.required_for_secret) || []).forEach(function (id) {
+          cleared[id] = 1;
+        });
+      }
+      readCache[sceneId] = { flags: flags, items: items, counted: counted, cleared: cleared, scenes: fut };
+      return readCache[sceneId];
+    }
     function rewardNeedsLock(node) {
       if (!node) return false;
       var i, id;
@@ -745,16 +849,28 @@
       if (!sc || !sc.id) return;
       (sc.prompts || []).forEach(function (pr) {
         if (!pr || !pr.id) return;
-        relevantDoneIds.push(promptDoneId(sc.id, pr.id));
+        var promptKey = promptDoneId(sc.id, pr.id);
+        relevantDoneIds.push(promptKey);
+        doneOwner[promptKey] = sc.id;
         (pr.choices || []).forEach(function (c) {
-          if (c && choiceIsOnce(c) && rewardNeedsLock(c)) relevantDoneIds.push(choiceDoneId(sc.id, c.id));
+          if (c && choiceIsOnce(c) && rewardNeedsLock(c)) {
+            var cid = choiceDoneId(sc.id, c.id);
+            relevantDoneIds.push(cid);
+            doneOwner[cid] = sc.id;
+          }
         });
       });
       (sc.choices || []).forEach(function (c) {
-        if (c && choiceIsOnce(c) && rewardNeedsLock(c)) relevantDoneIds.push(choiceDoneId(sc.id, c.id));
+        if (c && choiceIsOnce(c) && rewardNeedsLock(c)) {
+          var cid = choiceDoneId(sc.id, c.id);
+          relevantDoneIds.push(cid);
+          doneOwner[cid] = sc.id;
+        }
       });
       if (sc.on_enter && enterIsOnce(sc.on_enter) && rewardNeedsLock(sc.on_enter)) {
-        relevantDoneIds.push(enterDoneId(sc.id));
+        var eid = enterDoneId(sc.id);
+        relevantDoneIds.push(eid);
+        doneOwner[eid] = sc.id;
       }
     });
     function projectFlag(id, value) {
@@ -792,22 +908,26 @@
       return pass(c.when, st);
     }
     function stateKey(st) {
-      var flagPart = Object.keys(relevantFlags).sort().map(function (k) {
+      var live = readsFor(st.scene);
+      var flagPart = Object.keys(relevantFlags).filter(function (k) {
+        return live.flags[k];
+      }).sort().map(function (k) {
         return k + ':' + projectFlag(k, st.flags[k]);
       }).join('&');
       var counts = {};
       st.items.forEach(function (id) { counts[id] = (counts[id] || 0) + 1; });
       var itemPart = [];
       Object.keys(relevantItems).sort().forEach(function (id) {
+        if (!live.items[id]) return;
         var n = counts[id] || 0;
-        if (countedItems[id]) {
+        if (countedItems[id] && live.counted[id]) {
           var cap = itemCap[id] == null ? n : itemCap[id];
           if (n > cap) n = cap;
           itemPart.push(id + ':' + n);
         } else if (n > 0) itemPart.push(id);
       });
       var clearPart = Object.keys(st.cleared).filter(function (id) {
-        return relevantCleared[id];
+        return live.cleared[id];
       }).sort().join('&');
       var donePart = [];
       var here = scenes[st.scene];
@@ -816,7 +936,10 @@
         donePart.push('check:' + (lock && lock.success ? 's' : 'f'));
       }
       relevantDoneIds.forEach(function (id) {
-        if (st.done[id]) donePart.push(id);
+        if (!st.done[id]) return;
+        var owner = doneOwner[id];
+        if (owner && !live.scenes[owner]) return;
+        donePart.push(id);
       });
       var cpPart = trackCheckpoint ? ('|' + (st.lastCheckpoint || '')) : '';
       return st.pregen + '|' + st.scene + '|' + itemPart.join(',') + '|' + flagPart + '|' + clearPart + '|' + donePart.join(',') + cpPart;
@@ -870,8 +993,8 @@
         if (!b || !pass(b.when, st)) return;
         var completed = pass(b.completed_when, st);
         branches.push({ id: b.id, completed: !!completed, label: b.label });
-        if (completed) lines.push('branch: ' + b.label + ' (completed)');
-        else lines.push('branch: ' + b.label + ' (missed): ' + b.miss_reason);
+        if (completed) lines.push('支線：' + b.label + '（已完成）');
+        else lines.push('支線：' + b.label + '（錯過）：' + b.miss_reason);
       });
       return { branches: branches, branchLines: lines };
     }
@@ -2591,8 +2714,8 @@
     (this.adventure.class_branches || []).forEach(function (b) {
       if (!b || !self.conditionsPass(b.when)) return;
       var done = self.conditionsPass(b.completed_when);
-      if (done) lines.push('branch: ' + b.label + ' (completed)');
-      else lines.push('branch: ' + b.label + ' (missed): ' + b.miss_reason);
+      if (done) lines.push('支線：' + b.label + '（已完成）');
+      else lines.push('支線：' + b.label + '（錯過）：' + b.miss_reason);
     });
     return lines;
   };
@@ -2630,7 +2753,7 @@
       playMs: playMs,
       playTime: playMs == null ? '' : formatPlayTime(playMs),
       closing: best && best.closing ? best.closing : '',
-      playAgainLabel: '從頭再玩一次'
+      playAgainLabel: '試下第二個職業？'
     };
   };
 

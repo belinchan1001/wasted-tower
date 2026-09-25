@@ -1,19 +1,19 @@
 # 廢塔一夜
 
-瀏覽器裡的單人一場文字冒險。正式遊戲是靜態檔案：`index.html`、`data/wasted_tower.js`、`js/` 底下的引擎。沒有安裝、登入、伺服器或網絡請求。用瀏覽器直接打開，或發佈到 GitHub Pages 皆可；`file://` 也能玩。
+瀏覽器裡的單人一場文字冒險。倉庫根目錄的 `index.html` 是已經發佈的 GitHub Pages 頁面，這次不會改它。現在能玩的引擎、介面和第一期劇情都在 `preview/`：`preview/index.html`、`preview/data/wasted_tower.js`、`preview/js/`。沒有安裝、登入、伺服器或網絡請求。用瀏覽器直接打開 `preview/index.html`，或從倉庫根目錄開靜態伺服器後進入 `/preview/`。`file://` 也能玩。
 
 進度會自動寫進這台裝置的一個存檔欄，也會在每個行動之後更新。這不是一場打完就消失的進度。也可以把存檔碼複製出來再貼回去，免得瀏覽器（尤其是 iOS Safari）清掉本地記錄。
 
 
 ## 怎樣遊玩
 
-1. 雙擊 `index.html`，或開啟 GitHub Pages 網址。
+1. 打開 `preview/index.html`，或從倉庫根目錄開靜態伺服器後進入 `/preview/`。根目錄的 `index.html` 是現正公開的頁面，不要把它換成這份預覽。
 2. 選一個角色。若存檔欄已有進度，可以按「繼續上次的進度」。
 3. 按畫面下方的按鈕行動。程式處理擲骰、生命、物品、戰鬥和場景。
 4. 擲骰明細在紀錄裡。戰鬥時玩家先行動，仍然活著的敵人才還擊。
-5. 每層結束會出現歇腳：看一段短摘要，然後「繼續前進」或「先離開」。先離開不會丟掉進度。
+5. 每層結束會出現歇腳：看一段短摘要，然後「繼續」或「存檔休息」。存檔休息不會丟掉進度。
 6. 任何結局都會顯示結局卡（職業、關鍵選擇、結局名稱），可下載成 PNG。
-7. 生命歸零即失敗。可以「從頭再玩一次」，或回到標題畫面繼續上次自動存下的進度。
+7. 生命歸零即失敗。可以「試下第二個職業？」，或回到標題畫面繼續上次自動存下的進度。
 8. 「存檔碼」會顯示一整段文字。換裝置時，在標題畫面貼上並按「讀取存檔碼」。格式不對、版本太新、或對不上現在的腳本時，遊戲會說明原因，不會把畫面弄壞。
 
 一場大約 15–20 分鐘，中間可以在歇腳點把手機放下。
@@ -23,14 +23,14 @@
 
 把整個資料夾放到 GitHub Pages 的網站根目錄（不要只上傳 `index.html`）。沒有建置步驟、外部套件、CDN、字型或圖片。
 
-`preview/` 是同一套頁面的副本，路徑不是網站根目錄。改完引擎後執行 `node scripts/build-preview.js`。從倉庫根目錄開靜態伺服器時，預覽網址是 `/preview/`。正式站的根目錄仍是倉庫根上的 `index.html`。
+`preview/` 是這份引擎和第一期劇情的可玩版本，路徑不是網站根目錄。`node scripts/build-preview.js` 不會覆蓋它，也不會改根目錄的 `index.html`。從倉庫根目錄開靜態伺服器時，預覽網址是 `/preview/`。正式站的根目錄仍是倉庫根上的 `index.html`。
 
-`node test-engine.js` 會檢查腳本圖、舊內容、存檔與結局卡。它不是玩家需要的檔案。
+`node test-engine.js` 會檢查 `preview/` 裡的腳本圖、舊內容、存檔與結局卡。它不是玩家需要的檔案。
 
 
 ## 腳本資料格式
 
-寫故事的人只改 `data/wasted_tower.js` 裡的 `wasted_tower` 物件。不要改 `js/engine.js` 來加劇情。物件本體是 JSON：鍵要加引號，不要留行尾逗號。檔頭和檔尾的程式包裝要留著。
+寫故事的人只改 `preview/data/wasted_tower.js` 裡的 `wasted_tower` 物件。不要改 `preview/js/engine.js` 來加劇情。物件本體是 JSON：鍵要加引號，不要留行尾逗號。檔頭和檔尾的程式包裝要留著。
 
 啟動時檢查器會拒絕不完整的資料，並逐項列出問題。`node test-engine.js` 還會把整張腳本圖走一遍：每個結局都要走得到，每個場景都要有路可走，不能有死路。
 
@@ -188,7 +188,7 @@
 
 ### 逃走與歇息
 
-每場戰鬥的 `flee_to` 可以是場景 id。寫成 `"@checkpoint"` 時，逃走會回到這一輪最近踏進的歇腳點；還沒歇過腳就跟沒寫 `flee_to` 一樣，整場重來。現在塔裡的怨靈沒有改這欄，逃走仍然重開。
+每場戰鬥的 `flee_to` 可以是場景 id。寫成 `"@checkpoint"` 時，逃走會回到這一輪最近踏進的歇腳點；還沒歇過腳就跟沒寫 `flee_to` 一樣，整場重來。預覽腳本裡，塔影怨靈的 `flee_to` 是 `f3_shrine`：逃走回到祭壇走廊，不會再打邪徒，也不會回到祭壇再休息。
 
 場景可以帶 `rest`。條件成立時，進入該場回復 `heal` 點生命，不會超過上限。`rest` 預設只生效一次：
 
@@ -200,9 +200,9 @@
 
 結局場景可加 `ending_type`：`lose`、`main`、`variant`、`class`、`secret`。沒寫時，`win` 當 `main`，`secret_win` 當 `secret`，`lose` 當 `lose`。同一刻若有好幾個結局的條件都成立，卡片標題照這個順序挑：lose、secret、class、variant、main。
 
-`closing` 是這張卡最底下的一句，可省略。`class_branches` 描述職業分支。`when` 成立才跟這名角色有關；`completed_when` 成立時卡片多一行 `branch: X (completed)`，否則是 `branch: X (missed): ` 加上 `miss_reason`。隱藏結局同時完成分支時，標題仍是 secret，並加上那一行 completed。
+`closing` 是這張卡最底下的一句，可省略。`class_branches` 描述職業分支。`when` 成立才跟這名角色有關；`completed_when` 成立時卡片多一行 `支線：X（已完成）`，否則是 `支線：X（錯過）：` 加上 `miss_reason`。隱藏結局同時完成分支時，標題仍是 secret，並加上那一行「支線：〇〇（已完成）」。
 
-卡片還會列出角色與職業、關鍵選擇、戰鬥 `X/總數（含隱藏）`（`hidden: true` 的戰鬥算進總數；`omit_from_tally: true` 的戰鬥，例如對手對決，不計入）、剩餘生命、有記錄時的遊玩時間。結局畫面的「從頭再玩一次」會用同一個角色重開。
+卡片還會列出角色與職業、關鍵選擇、戰鬥 `X/總數（含隱藏）`（`hidden: true` 的戰鬥算進總數；`omit_from_tally: true` 的戰鬥，例如對手對決，不計入）、剩餘生命、有記錄時的遊玩時間。結局畫面的「試下第二個職業？」會用同一個角色重開。
 
 ```js
 "class_branches": [{
@@ -291,7 +291,7 @@ TOWER.assertReachable(adventure, {
   class: '戰士',
   endingType: 'secret',
   allFlags: ['potion_left'],
-  branchLine: 'branch: X (completed)'
+  branchLine: '支線：X（已完成）'
 });
 ```
 

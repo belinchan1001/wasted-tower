@@ -28,86 +28,70 @@
       "盜賊": "cls_rogue",
       "牧師": "cls_cleric",
       "法師": "cls_mage"
+    },
+    "lose_ending": {
+      "name": "倒在塔中",
+      "closing": "你倒在塔裡，這一夜沒有走完。"
     }
   },
+  "class_branches": [
+    {
+      "id": "branch_warrior",
+      "label": "歸隊",
+      "when": { "all_flags": ["cls_warrior"] },
+      "completed_when": { "all_flags": ["brun_buried_captain"] },
+      "miss_reason": "沒有收殮隊長"
+    },
+    {
+      "id": "branch_ranger",
+      "label": "林歸寂靜",
+      "when": { "all_flags": ["cls_ranger"] },
+      "completed_when": { "all_flags": ["sylvie_freed_deer"] },
+      "miss_reason": "整咗鹿角箭"
+    },
+    {
+      "id": "branch_rogue",
+      "label": "偷天換徽",
+      "when": { "all_flags": ["cls_rogue"] },
+      "completed_when": { "all_flags": ["finn_contract", "finn_brass_scrap", "finn_swapped"] },
+      "miss_reason": "將真銅徽交咗畀黑手"
+    },
+    {
+      "id": "branch_cleric",
+      "label": "迷途者歸",
+      "when": { "all_flags": ["cls_cleric"] },
+      "completed_when": { "all_flags": ["mira_redeemed"] },
+      "miss_reason": "沒有為艾文驅走塔影"
+    },
+    {
+      "id": "branch_mage",
+      "label": "師債徒還",
+      "when": { "all_flags": ["cls_mage"] },
+      "completed_when": { "all_flags": ["orr_burned"] },
+      "miss_reason": "收埋咗禁忌筆記"
+    }
+  ],
   "flag_defs": {
     "cls_warrior": { "label": "戰士" },
     "cls_ranger": { "label": "遊俠" },
     "cls_rogue": { "label": "盜賊" },
     "cls_cleric": { "label": "牧師" },
     "cls_mage": { "label": "法師" },
-    "gate_searched": {
-      "key": true,
-      "label": "搜查門廊"
-    },
-    "gate_rushed": {
-      "key": true,
-      "label": "直接進塔"
-    },
-    "hall_climb": {
-      "key": true,
-      "label": "攀爬過塌陷處"
-    },
-    "hall_creep": {
-      "key": true,
-      "label": "貼牆潛行繞過"
-    },
-    "hall_scan": {
-      "key": true,
-      "label": "細看地板找落腳點"
-    },
-    "opened_vault_door": {
-      "key": true,
-      "label": "用鏽鐵鑰匙開側門"
-    },
-    "skipped_vault": {
-      "key": true,
-      "label": "直上正路"
-    },
-    "vault_cleared": {
-      "key": true,
-      "label": "拿走鑰匙與藥水，回到正路"
-    },
-    "trap_forced": {
-      "key": true,
-      "label": "硬踩過去"
-    },
-    "trap_watched": {
-      "key": true,
-      "label": "觀察陷阱縫隙"
-    },
-    "door_unlocked": {
-      "key": true,
-      "label": "用銅鏽鑰匙開門"
-    },
-    "door_smashed": {
-      "key": true,
-      "label": "撞開鐵門"
-    },
-    "opened_crypt": {
-      "key": true,
-      "label": "打開密龕"
-    },
-    "skipped_crypt": {
-      "key": true,
-      "label": "直闖內室"
-    },
-    "took_holy_water": {
-      "key": true,
-      "label": "帶回祭壇走廊"
-    },
-    "left_with_badge": {
-      "key": true,
-      "label": "帶著銅徽離開"
-    },
-    "faced_rival": {
-      "key": true,
-      "label": "面對跟蹤的冒險者"
-    },
-    "rival": {
-      "key": true,
-      "label": "對手"
-    }
+    "aff_bandit": { "min": 0, "max": 2, "label": "盜墓者好感" },
+    "spared_bandit": { "key": true, "label": "盜墓者：放過" },
+    "bandit_persuaded": { "key": true, "label": "盜墓者：勸服" },
+    "looted_bandit": { "key": true, "label": "盜墓者：搜身" },
+    "respected_dead": { "key": true, "label": "骸骨：合眼" },
+    "took_from_dead": { "key": true, "label": "骸骨：摸屍" },
+    "took_cloth": { "key": true, "label": "布條：有" },
+    "left_potion": { "key": true, "label": "濕室藥水：留低" },
+    "spared_cultist": { "key": true, "label": "邪徒：放過" },
+    "killed_cultist": { "key": true, "label": "邪徒：了結" },
+    "mira_redeemed": { "key": true, "label": "邪徒：驅走塔影" },
+    "finn_sold": { "key": true, "label": "銅徽：賣咗" },
+    "finn_swapped": { "key": true, "label": "銅徽：掉包" },
+    "orr_kept": { "key": true, "label": "禁忌筆記" },
+    "rival": { "key": true, "label": "對手" }
   },
   "items": [
     {
@@ -160,6 +144,12 @@
       "name": "聖水",
       "kind": "consumable",
       "damage": 7
+    },
+    {
+      "id": "antler_arrow",
+      "name": "鹿角箭",
+      "kind": "consumable",
+      "damage": 8
     }
   ],
   "pregens": [
@@ -350,10 +340,31 @@
     {
       "id": "f1_gate",
       "type": "beat",
+      "place": "林緣廢塔",
       "facts": [
         "林緣有一座廢塔。",
         "木門半掩。",
-        "天色將晚。"
+        "天色將晚。",
+        {
+          "text": "門框刻住第七盾隊嘅隊徽。",
+          "when": {
+            "class": "戰士"
+          }
+        },
+        {
+          "text": "樹由塔腳開始枯，地上有白鹿蹄印行入塔。",
+          "when": {
+            "class": "遊俠"
+          }
+        },
+        {
+          "text": "封信寫住：銅徽帶出嚟，一百金。——黑手",
+          "when": {
+            "all_flags": [
+              "finn_contract"
+            ]
+          }
+        }
       ],
       "choices": [
         {
@@ -364,8 +375,36 @@
             "iron_key"
           ],
           "set_flag": [
-            "gate_searched"
-          ]
+            "gate_searched",
+            "searched_porch"
+          ],
+          "when": {
+            "not": {
+              "class": "盜賊"
+            },
+            "none_flags": [
+              "searched_porch"
+            ]
+          }
+        },
+        {
+          "id": "search_finn",
+          "label": "搜查門廊（門縫夾住封信）",
+          "to": "f1_rats",
+          "give": [
+            "iron_key"
+          ],
+          "set_flag": [
+            "gate_searched",
+            "searched_porch",
+            "finn_contract"
+          ],
+          "when": {
+            "class": "盜賊",
+            "none_flags": [
+              "searched_porch"
+            ]
+          }
         },
         {
           "id": "rush",
@@ -383,7 +422,15 @@
       "facts": [
         "門廳竄出腐鼠。",
         "地上有齧過的布條。",
-        "對面有走廊。"
+        "對面有走廊。",
+        {
+          "text": "封信寫住：銅徽帶出嚟，一百金。——黑手",
+          "when": {
+            "all_flags": [
+              "finn_contract"
+            ]
+          }
+        }
       ],
       "enemies": [
         {
@@ -411,8 +458,43 @@
           "damage": "1d4"
         }
       ],
-      "win_to": "f1_hall",
+      "win_to": "f1_rats_after",
       "flee_to": "f1_gate"
+    },
+    {
+      "id": "f1_rats_after",
+      "type": "beat",
+      "facts": [
+        "腐鼠散了。",
+        "地上還有那條齧過的布。"
+      ],
+      "choices": [
+        {
+          "id": "cloth",
+          "label": "執起齧過嘅布條",
+          "to": "f1_hall",
+          "set_flag": [
+            "took_cloth"
+          ]
+        },
+        {
+          "id": "ignore",
+          "label": "唔理",
+          "to": "f1_hall"
+        },
+        {
+          "id": "robe",
+          "label": "認出係聖堂修袍，收好佢",
+          "to": "f1_hall",
+          "set_flag": [
+            "took_cloth",
+            "mira_knew_robe"
+          ],
+          "when": {
+            "class": "牧師"
+          }
+        }
+      ]
     },
     {
       "id": "f1_hall",
@@ -420,7 +502,13 @@
       "facts": [
         "走廊地板塌了一角。",
         "塵土裡露出朽木梁。",
-        "盡頭有向下的石階。"
+        "盡頭有向下的石階。",
+        {
+          "text": "塌位下面有燒焦嘅法陣，係師父賽勒斯嘅筆跡。",
+          "when": {
+            "class": "法師"
+          }
+        }
       ],
       "choices": [
         {
@@ -503,26 +591,91 @@
           "damage": "1d6+1"
         }
       ],
-      "win_to": "cp_f1",
+      "win_to": "f1_bandit_after",
       "flee_to": "f1_hall"
+    },
+    {
+      "id": "f1_bandit_after",
+      "type": "beat",
+      "facts": [
+        "盜墓者跪低求饒。"
+      ],
+      "choices": [
+        {
+          "id": "spare",
+          "label": "放佢走",
+          "to": "cp_f1",
+          "set_flag": [
+            "spared_bandit"
+          ],
+          "inc": {
+            "aff_bandit": 1
+          }
+        },
+        {
+          "id": "persuade",
+          "label": "勸佢改過",
+          "to": "f1_persuade"
+        },
+        {
+          "id": "loot",
+          "label": "搜身趕走",
+          "to": "cp_f1",
+          "set_flag": [
+            "looted_bandit"
+          ],
+          "give": [
+            "alchemist_fire"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f1_persuade",
+      "type": "check",
+      "facts": [
+        "你勸盜墓者放下斧頭。"
+      ],
+      "skill": "persuasion",
+      "dc": 12,
+      "success_to": "cp_f1",
+      "fail_to": "cp_f1",
+      "on_success": {
+        "set_flag": [
+          "bandit_persuaded"
+        ],
+        "inc": {
+          "aff_bandit": 2
+        }
+      },
+      "on_failure": {
+        "set_flag": [
+          "bandit_persuaded"
+        ],
+        "inc": {
+          "aff_bandit": 1
+        }
+      }
     },
     {
       "id": "cp_f1",
       "type": "checkpoint",
       "floor": 1,
       "name": "一層歇腳",
+      "place": "石階口",
+      "continue_label": "繼續",
       "facts": [
-        "一層的路已經走完。",
-        "你可以在這裡歇息。"
+        "盜墓者嘅腳步聲遠咗。你坐喺石階口，塔入面靜到聽到自己心跳。——第一層完。"
       ],
       "continue_to": "f2_stairs"
     },
     {
       "id": "f2_stairs",
       "type": "beat",
+      "place": "第二層轉角",
       "facts": [
-        "你來到二層轉角。",
-        "正路通往上層通道。",
+        "你落到第二層轉角。",
+        "正路繼續向下。",
         "側牆有一扇上鎖小門。"
       ],
       "choices": [
@@ -535,17 +688,55 @@
           ],
           "set_flag": [
             "opened_vault_door"
-          ]
+          ],
+          "repeatable": true,
+          "when": { "none_flags": ["vault_cleared"] }
+        },
+        {
+          "id": "pick",
+          "label": "撬開側門",
+          "to": "f2_finn_lock",
+          "when": {
+            "class": "盜賊",
+            "none_flags": [
+              "finn_picked_lock",
+              "vault_cleared"
+            ]
+          }
         },
         {
           "id": "up",
-          "label": "直上正路",
+          "label": "沿正路向下",
           "to": "f2_bones",
           "set_flag": [
             "skipped_vault"
-          ]
+          ],
+          "repeatable": true
         }
       ]
+    },
+    {
+      "id": "f2_finn_lock",
+      "type": "check",
+      "facts": [
+        "側門的鎖很小。"
+      ],
+      "skill": "stealth",
+      "dc": 13,
+      "success_to": "hide_vault",
+      "fail_to": "hide_vault",
+      "on_success": {
+        "set_flag": [
+          "finn_picked_lock"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "finn_picked_lock"
+        ],
+        "hp_delta": -2,
+        "minHp": 1
+      }
     },
     {
       "id": "hide_vault",
@@ -612,8 +803,87 @@
           "damage": "1d4+1"
         }
       ],
-      "win_to": "f2_trap",
+      "win_to": "f2_bones_after",
       "flee_to": "f2_stairs"
+    },
+    {
+      "id": "f2_bones_after",
+      "type": "beat",
+      "next": "f2_trap",
+      "facts": [
+        "朽骨守衛倒下。",
+        {
+          "text": "你認出這具朽骨是隊長葛蘭。",
+          "when": {
+            "class": "戰士"
+          }
+        }
+      ],
+      "prompts": [
+        {
+          "id": "eyes",
+          "choices": [
+            {
+              "id": "close",
+              "label": "幫骸骨合眼",
+              "set_flag": [
+                "respected_dead"
+              ]
+            },
+            {
+              "id": "loot_bones",
+              "label": "摸走佢嘅藥水",
+              "set_flag": [
+                "took_from_dead"
+              ],
+              "give": [
+                "potion_heal"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "captain",
+          "when": {
+            "class": "戰士"
+          },
+          "choices": [
+            {
+              "id": "bury",
+              "label": "收殮隊長",
+              "set_flag": [
+                "brun_buried_captain"
+              ]
+            },
+            {
+              "id": "crest",
+              "label": "取走盾徽",
+              "set_flag": [
+                "brun_took_crest"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "brass",
+          "when": {
+            "class": "盜賊"
+          },
+          "choices": [
+            {
+              "id": "scrap",
+              "label": "執起銅片",
+              "set_flag": [
+                "finn_brass_scrap"
+              ]
+            },
+            {
+              "id": "skip_scrap",
+              "label": "唔理"
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "f2_trap",
@@ -639,6 +909,17 @@
           "set_flag": [
             "trap_watched"
           ]
+        },
+        {
+          "id": "rune",
+          "label": "解讀石板符文",
+          "to": "f2_orr_rune",
+          "when": {
+            "class": "法師",
+            "none_flags": [
+              "orr_notes"
+            ]
+          }
         }
       ]
     },
@@ -667,6 +948,29 @@
       "fail_hp_delta": -2
     },
     {
+      "id": "f2_orr_rune",
+      "type": "check",
+      "facts": [
+        "石板上的符文是師父的筆跡。"
+      ],
+      "skill": "perception",
+      "dc": 12,
+      "success_to": "f2_ooze",
+      "fail_to": "f2_ooze",
+      "on_success": {
+        "set_flag": [
+          "orr_notes"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "orr_notes"
+        ],
+        "hp_delta": -2,
+        "minHp": 1
+      }
+    },
+    {
       "id": "f2_ooze",
       "type": "combat",
       "facts": [
@@ -684,17 +988,97 @@
           "damage": "1d4+1"
         }
       ],
-      "win_to": "cp_f2",
+      "win_to": "f2_ooze_after",
       "flee_to": "f2_trap"
+    },
+    {
+      "id": "f2_ooze_after",
+      "type": "beat",
+      "next": "cp_f2",
+      "facts": [
+        "酸蝕軟泥化開了。",
+        {
+          "text": "軟泥入面溶剩半支鹿角。",
+          "when": {
+            "class": "遊俠"
+          }
+        }
+      ],
+      "prompts": [
+        {
+          "id": "share",
+          "choices": [
+            {
+              "id": "leave_a",
+              "label": "留低一瓶藥水",
+              "set_flag": [
+                "left_potion"
+              ],
+              "take": [
+                "potion_heal"
+              ],
+              "when": {
+                "item_min": {
+                  "potion_heal": 1
+                },
+                "none_flags": [
+                  "left_potion"
+                ]
+              }
+            },
+            {
+              "id": "leave_b",
+              "label": "留低一瓶藥水",
+              "set_flag": [
+                "left_potion"
+              ],
+              "take": [
+                "potion_heal_2"
+              ],
+              "when": {
+                "item_min": {
+                  "potion_heal_2": 1
+                },
+                "item_max": {
+                  "potion_heal": 0
+                },
+                "none_flags": [
+                  "left_potion"
+                ]
+              }
+            },
+            {
+              "id": "down",
+              "label": "直接落去"
+            }
+          ]
+        },
+        {
+          "id": "antler",
+          "when": {
+            "class": "遊俠"
+          },
+          "choices": [
+            {
+              "id": "take_antler",
+              "label": "執起鹿角",
+              "set_flag": [
+                "sylvie_antler"
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "cp_f2",
       "type": "checkpoint",
       "floor": 2,
       "name": "二層歇腳",
+      "place": "底層鐵門前",
+      "continue_label": "繼續",
       "facts": [
-        "二層的路已經走完。",
-        "你可以在這裡歇息。"
+        "酸味慢慢散去，再落就係底層鐵門。今晚最難嗰段就喺門後面。——第二層完。"
       ],
       "continue_to": "f3_door"
     },
@@ -704,30 +1088,144 @@
       "facts": [
         "底層鐵門擋住內室。",
         "門上有銅鏽鎖孔。",
-        "門後傳出冷風。"
+        "門後傳出冷風。",
+        {
+          "text": "盜墓者喺暗處出聲：門後有人。",
+          "when": {
+            "flag_min": {
+              "aff_bandit": 1
+            }
+          }
+        }
       ],
       "choices": [
         {
+          "id": "enter",
+          "label": "行入去",
+          "to": "f3_cult_talk",
+          "when": {
+            "all_flags": [
+              "f3_door_open"
+            ]
+          }
+        },
+        {
           "id": "unlock",
           "label": "用銅鏽鑰匙開門",
-          "to": "f3_cult",
+          "to": "f3_cult_talk",
           "require_item": [
             "rust_key"
           ],
           "set_flag": [
-            "door_unlocked"
-          ]
+            "door_unlocked",
+            "f3_door_open"
+          ],
+          "when": {
+            "none_flags": [
+              "f3_door_open"
+            ]
+          }
         },
         {
           "id": "smash",
           "label": "撞開鐵門",
-          "to": "f3_cult",
+          "to": "f3_cult_talk",
           "hp_delta": -3,
           "set_flag": [
-            "door_smashed"
-          ]
+            "door_smashed",
+            "f3_door_open"
+          ],
+          "when": {
+            "none_flags": [
+              "f3_door_open"
+            ]
+          }
+        },
+        {
+          "id": "bandit_help",
+          "label": "等盜墓者幫你撬門",
+          "to": "f3_cult_talk",
+          "set_flag": [
+            "bandit_helped",
+            "f3_door_open"
+          ],
+          "when": {
+            "flag_min": {
+              "aff_bandit": 2
+            },
+            "none_flags": [
+              "bandit_helped",
+              "f3_door_open"
+            ]
+          }
         }
       ]
+    },
+    {
+      "id": "f3_cult_talk",
+      "type": "beat",
+      "facts": [
+        "塔影邪徒還沒有動手。",
+        "他看了你一眼。"
+      ],
+      "choices": [
+        {
+          "id": "insight",
+          "label": "睇佢眼神",
+          "to": "f3_mira_insight",
+          "when": {
+            "class": "牧師",
+            "none_flags": [
+              "mira_checked"
+            ]
+          }
+        },
+        {
+          "id": "show_cloth",
+          "label": "攞布條出嚟問佢",
+          "to": "f3_cult",
+          "set_flag": [
+            "knows_wight_name"
+          ],
+          "when": {
+            "all_flags": [
+              "took_cloth"
+            ],
+            "none_flags": [
+              "knows_wight_name"
+            ]
+          }
+        },
+        {
+          "id": "fight",
+          "label": "動手",
+          "to": "f3_cult"
+        }
+      ]
+    },
+    {
+      "id": "f3_mira_insight",
+      "type": "check",
+      "facts": [
+        "你看進邪徒的眼睛。"
+      ],
+      "skill": "insight",
+      "dc": 12,
+      "success_to": "f3_cult",
+      "fail_to": "f3_cult",
+      "on_success": {
+        "set_flag": [
+          "mira_saw_truth",
+          "mira_checked"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "mira_checked"
+        ],
+        "hp_delta": -2,
+        "minHp": 1
+      }
     },
     {
       "id": "f3_cult",
@@ -747,12 +1245,252 @@
           "damage": "1d6+1"
         }
       ],
-      "win_to": "f3_shrine",
-      "flee_to": "f3_door"
+      "win_to": "f3_cult_after",
+      "flee_to": "f3_cult_talk"
+    },
+    {
+      "id": "f3_cult_after",
+      "type": "beat",
+      "facts": [
+        "邪徒倒地，仲有氣。"
+      ],
+      "choices": [
+        {
+          "id": "spare",
+          "label": "放過",
+          "to": "f3_altar",
+          "set_flag": [
+            "spared_cultist",
+            "cultist_dealt"
+          ],
+          "when": {
+            "none_flags": [
+              "cultist_dealt"
+            ]
+          }
+        },
+        {
+          "id": "kill",
+          "label": "了結",
+          "to": "f3_altar",
+          "set_flag": [
+            "killed_cultist",
+            "cultist_dealt"
+          ],
+          "when": {
+            "none_flags": [
+              "cultist_dealt"
+            ]
+          }
+        },
+        {
+          "id": "redeem",
+          "label": "為艾文驅走塔影",
+          "to": "f3_altar",
+          "set_flag": [
+            "mira_redeemed",
+            "cultist_dealt"
+          ],
+          "when": {
+            "all_flags": [
+              "cls_cleric"
+            ],
+            "any": [
+              {
+                "all_flags": [
+                  "mira_knew_robe"
+                ]
+              },
+              {
+                "all_flags": [
+                  "mira_saw_truth"
+                ]
+              }
+            ],
+            "none_flags": [
+              "cultist_dealt"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "f3_altar",
+      "type": "beat",
+      "place": "祭壇",
+      "facts": [
+        "祭壇前的石棺蓋著。",
+        {
+          "text": "白鹿魂畀鎖鏈鎖住。",
+          "when": {
+            "all_flags": [
+              "sylvie_antler"
+            ]
+          }
+        },
+        {
+          "text": "筆記最後一頁寫住，怨靈就係師父本人。",
+          "when": {
+            "all_flags": [
+              "orr_notes"
+            ]
+          }
+        }
+      ],
+      "choices": [
+        {
+          "id": "rest",
+          "label": "為骸骨祈禱後休息",
+          "to": "f3_altar",
+          "hp_delta": 3,
+          "set_flag": [
+            "rested"
+          ],
+          "when": {
+            "all_flags": [
+              "respected_dead"
+            ],
+            "none_flags": [
+              "rested"
+            ]
+          }
+        },
+        {
+          "id": "will",
+          "label": "推開石蓋讀遺言",
+          "to": "f3_brun_will",
+          "when": {
+            "class": "戰士",
+            "none_flags": [
+              "brun_read_will"
+            ]
+          }
+        },
+        {
+          "id": "cut",
+          "label": "斬斷鎖鏈",
+          "to": "f3_sylvie_chain",
+          "when": {
+            "all_flags": [
+              "sylvie_antler"
+            ],
+            "none_flags": [
+              "sylvie_freed_deer",
+              "sylvie_arrow"
+            ]
+          }
+        },
+        {
+          "id": "make_arrow",
+          "label": "整鹿角箭",
+          "to": "f3_shrine",
+          "give": [
+            "antler_arrow"
+          ],
+          "set_flag": [
+            "sylvie_arrow"
+          ],
+          "when": {
+            "all_flags": [
+              "sylvie_antler"
+            ],
+            "none_flags": [
+              "sylvie_freed_deer",
+              "sylvie_arrow"
+            ]
+          }
+        },
+        {
+          "id": "burn",
+          "label": "燒咗筆記",
+          "to": "f3_shrine",
+          "set_flag": [
+            "orr_burned"
+          ],
+          "when": {
+            "all_flags": [
+              "orr_notes"
+            ],
+            "none_flags": [
+              "orr_burned",
+              "orr_kept"
+            ]
+          }
+        },
+        {
+          "id": "keep",
+          "label": "收埋筆記",
+          "to": "f3_shrine",
+          "set_flag": [
+            "orr_kept"
+          ],
+          "when": {
+            "all_flags": [
+              "orr_notes"
+            ],
+            "none_flags": [
+              "orr_burned",
+              "orr_kept"
+            ]
+          }
+        },
+        {
+          "id": "onward",
+          "label": "去祭壇走廊",
+          "to": "f3_shrine"
+        }
+      ]
+    },
+    {
+      "id": "f3_brun_will",
+      "type": "check",
+      "facts": [
+        "石蓋很沉。"
+      ],
+      "skill": "athletics",
+      "dc": 12,
+      "success_to": "f3_shrine",
+      "fail_to": "f3_shrine",
+      "on_success": {
+        "set_flag": [
+          "brun_read_will"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "brun_read_will"
+        ],
+        "hp_delta": -2,
+        "minHp": 1
+      }
+    },
+    {
+      "id": "f3_sylvie_chain",
+      "type": "check",
+      "facts": [
+        "鎖鏈扣住白鹿魂。"
+      ],
+      "skill": "stealth",
+      "dc": 12,
+      "success_to": "f3_shrine",
+      "fail_to": "f3_shrine",
+      "on_success": {
+        "set_flag": [
+          "sylvie_freed_deer"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "sylvie_freed_deer"
+        ],
+        "hp_delta": -2,
+        "minHp": 1
+      }
     },
     {
       "id": "f3_shrine",
       "type": "beat",
+      "place": "祭壇走廊",
       "facts": [
         "祭壇前可以稍作喘息。",
         "牆邊有一個密龕。",
@@ -768,7 +1506,12 @@
           ],
           "set_flag": [
             "opened_crypt"
-          ]
+          ],
+          "when": {
+            "none_flags": [
+              "opened_crypt"
+            ]
+          }
         },
         {
           "id": "rush_boss",
@@ -776,7 +1519,23 @@
           "to": "f3_wight",
           "set_flag": [
             "skipped_crypt"
-          ]
+          ],
+          "repeatable": true,
+          "when": {
+            "none_flags": [
+              "opened_crypt"
+            ]
+          }
+        },
+        {
+          "id": "to_wight",
+          "label": "前往內室",
+          "to": "f3_wight",
+          "when": {
+            "all_flags": [
+              "opened_crypt"
+            ]
+          }
         }
       ]
     },
@@ -840,24 +1599,28 @@
           "damage": "1d6+1"
         }
       ],
-      "win_to": "cp_f3"
+      "win_to": "cp_f3",
+      "flee_to": "f3_shrine"
     },
     {
       "id": "cp_f3",
       "type": "checkpoint",
       "floor": 3,
       "name": "三層歇腳",
+      "place": "林緣",
+      "continue_label": "繼續",
       "facts": [
-        "塔裡的三層都走完了。",
-        "出塔之前，你可以在這裡歇息。"
+        "怨靈散成灰，林緣風好大。你今晚做過嘅事，就喺呢度計數。"
       ],
       "continue_to": "post_tower"
     },
     {
       "id": "post_tower",
       "type": "beat",
+      "place": "林緣",
       "facts": [
         "怨靈散成灰。",
+        "你喺內室牆上取下銅徽。",
         "你走出廢塔。",
         "林緣風很大。"
       ],
@@ -880,6 +1643,104 @@
           "set_flag": [
             "faced_rival"
           ]
+        },
+        {
+          "id": "friend",
+          "label": "同跟蹤者點頭道別",
+          "to": "end_friend",
+          "set_flag": [
+            "chose_friend"
+          ],
+          "when": {
+            "all_flags": [
+              "left_potion"
+            ]
+          }
+        },
+        {
+          "id": "monument",
+          "label": "喺塔門為第七盾隊立碑",
+          "to": "end_warrior",
+          "set_flag": [
+            "chose_warrior"
+          ],
+          "when": {
+            "all_flags": [
+              "cls_warrior",
+              "brun_buried_captain"
+            ]
+          }
+        },
+        {
+          "id": "follow_deer",
+          "label": "跟住白鹿行返入林",
+          "to": "end_ranger",
+          "set_flag": [
+            "chose_ranger"
+          ],
+          "when": {
+            "all_flags": [
+              "cls_ranger",
+              "sylvie_freed_deer"
+            ]
+          }
+        },
+        {
+          "id": "sell",
+          "label": "將真銅徽交畀黑手",
+          "to": "end_sold",
+          "set_flag": [
+            "finn_sold"
+          ],
+          "when": {
+            "all_flags": [
+              "cls_rogue",
+              "finn_contract"
+            ]
+          }
+        },
+        {
+          "id": "swap",
+          "label": "將銅片交畀黑手，真貨埋返喺塔門石縫",
+          "to": "end_rogue",
+          "set_flag": [
+            "finn_swapped"
+          ],
+          "when": {
+            "all_flags": [
+              "cls_rogue",
+              "finn_contract",
+              "finn_brass_scrap"
+            ]
+          }
+        },
+        {
+          "id": "escort",
+          "label": "扶住艾文一齊出塔",
+          "to": "end_cleric",
+          "set_flag": [
+            "chose_cleric"
+          ],
+          "when": {
+            "all_flags": [
+              "cls_cleric",
+              "mira_redeemed"
+            ]
+          }
+        },
+        {
+          "id": "burn_page",
+          "label": "喺塔門燒盡最後一頁",
+          "to": "end_mage",
+          "set_flag": [
+            "chose_mage"
+          ],
+          "when": {
+            "all_flags": [
+              "cls_mage",
+              "orr_burned"
+            ]
+          }
         }
       ]
     },
@@ -914,30 +1775,179 @@
       "type": "end",
       "end": "win",
       "ending_type": "main",
+      "name": "廢塔一夜",
+      "closing": "這一夜結束了。",
+      "when": {
+        "all_flags": [
+          "left_with_badge"
+        ]
+      },
       "facts": [
-        "你取下牆上的銅徽。",
+        "你握緊銅徽。",
         "廢塔恢復寂靜。",
+        "這一夜結束了。",
+        {
+          "text": "你叫出賽勒斯個名，佢終於散咗。",
+          "when": {
+            "all_flags": [
+              "knows_wight_name"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "end_friend",
+      "type": "end",
+      "end": "win",
+      "ending_type": "variant",
+      "name": "化敵為友",
+      "closing": "跟蹤者點頭，走進林裡。",
+      "when": {
+        "all_flags": [
+          "left_potion",
+          "chose_friend"
+        ]
+      },
+      "facts": [
+        "你同跟蹤者點頭道別。",
         "這一夜結束了。"
-      ],
-      "name": "通關"
+      ]
+    },
+    {
+      "id": "end_sold",
+      "type": "end",
+      "end": "win",
+      "ending_type": "variant",
+      "name": "收錢走人",
+      "closing": "黑手收了銅徽。",
+      "when": {
+        "all_flags": [
+          "finn_sold"
+        ]
+      },
+      "facts": [
+        "你將真銅徽交畀黑手。",
+        "這一夜結束了。"
+      ]
+    },
+    {
+      "id": "end_warrior",
+      "type": "end",
+      "end": "win",
+      "ending_type": "class",
+      "name": "歸隊",
+      "closing": "第七盾隊的名字留在塔門。",
+      "when": {
+        "all_flags": [
+          "cls_warrior",
+          "brun_buried_captain",
+          "chose_warrior"
+        ]
+      },
+      "facts": [
+        "你喺塔門為第七盾隊立碑。",
+        "這一夜結束了。"
+      ]
+    },
+    {
+      "id": "end_ranger",
+      "type": "end",
+      "end": "win",
+      "ending_type": "class",
+      "name": "林歸寂靜",
+      "closing": "白鹿走回林裡。",
+      "when": {
+        "all_flags": [
+          "cls_ranger",
+          "sylvie_freed_deer",
+          "chose_ranger"
+        ]
+      },
+      "facts": [
+        "你跟住白鹿行返入林。",
+        "這一夜結束了。"
+      ]
+    },
+    {
+      "id": "end_rogue",
+      "type": "end",
+      "end": "win",
+      "ending_type": "class",
+      "name": "偷天換徽",
+      "closing": "真銅徽還在塔門石縫。",
+      "when": {
+        "all_flags": [
+          "cls_rogue",
+          "finn_contract",
+          "finn_brass_scrap",
+          "finn_swapped"
+        ],
+        "none_flags": [
+          "finn_sold"
+        ]
+      },
+      "facts": [
+        "黑手拿走銅片。真銅徽埋在塔門石縫。",
+        "這一夜結束了。"
+      ]
+    },
+    {
+      "id": "end_cleric",
+      "type": "end",
+      "end": "win",
+      "ending_type": "class",
+      "name": "迷途者歸",
+      "closing": "艾文跟著你走出廢塔。",
+      "when": {
+        "all_flags": [
+          "cls_cleric",
+          "mira_redeemed",
+          "chose_cleric"
+        ]
+      },
+      "facts": [
+        "你扶住艾文一齊出塔。",
+        "這一夜結束了。"
+      ]
+    },
+    {
+      "id": "end_mage",
+      "type": "end",
+      "end": "win",
+      "ending_type": "class",
+      "name": "師債徒還",
+      "closing": "最後一頁燒成灰。",
+      "when": {
+        "all_flags": [
+          "cls_mage",
+          "orr_burned",
+          "chose_mage"
+        ]
+      },
+      "facts": [
+        "你喺塔門燒盡最後一頁。",
+        "這一夜結束了。"
+      ]
     },
     {
       "id": "secret_win",
       "type": "end",
       "end": "secret_win",
       "ending_type": "secret",
+      "name": "隱藏結局",
+      "closing": "隱藏結局。",
+      "when": {
+        "all_flags": [
+          "secret_ready"
+        ]
+      },
       "facts": [
         "跟蹤者倒下。",
         "你清掃了整座廢塔。",
         "銅徽在夜色中發亮。",
         "隱藏結局。"
-      ],
-      "name": "隱藏結局",
-      "when": {
-        "all_flags": [
-          "secret_ready"
-        ]
-      }
+      ]
     }
   ]
 }

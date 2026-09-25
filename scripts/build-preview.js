@@ -1,24 +1,18 @@
 'use strict';
 
-// Copy the playable static files into preview/. Does not touch the site root.
+// preview/ is the playable build. This script must not copy the live site root
+// over it, and must not rewrite index.html.
 //   node scripts/build-preview.js
 
 var fs = require('fs');
 var path = require('path');
-
 var root = path.join(__dirname, '..');
-var files = [
-  'index.html',
-  'data/wasted_tower.js',
-  'js/engine.js',
-  'js/narrator.js',
-  'js/ui.js'
-];
 
-files.forEach(function (rel) {
-  var dest = path.join(root, 'preview', rel);
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(path.join(root, rel), dest);
+['preview/index.html', 'preview/data/wasted_tower.js', 'preview/js/engine.js'].forEach(function (rel) {
+  if (!fs.existsSync(path.join(root, rel))) {
+    console.error('missing ' + rel);
+    process.exit(1);
+  }
 });
 
-console.log('preview updated (' + files.length + ' files)');
+console.log('preview/ is already the playable build. Nothing was copied. index.html was not touched.');

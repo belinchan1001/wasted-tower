@@ -45,6 +45,26 @@
 
   var adventure = ADVENTURES[DEFAULT_ADVENTURE_ID];
 
+  function resumeLine(save) {
+    var sc = null;
+    var i;
+    var scenes = (adventure && adventure.scenes) || [];
+    for (i = 0; i < scenes.length; i++) {
+      if (scenes[i].id === save.sceneId) sc = scenes[i];
+    }
+    var place = (sc && (sc.place || sc.name)) || '廢塔';
+    var n = 0;
+    var bag = (save.character && save.character.inventory) || [];
+    var items = (adventure && adventure.items) || [];
+    bag.forEach(function (id) {
+      var it = null;
+      var j;
+      for (j = 0; j < items.length; j++) if (items[j].id === id) it = items[j];
+      if (it && it.kind === 'consumable' && it.name && it.name.indexOf('藥水') >= 0) n++;
+    });
+    return '你喺〔' + place + '〕醒返，身上仲有〔' + n + ' 瓶藥水〕。繼續？';
+  }
+
   function browserStorage() {
     try {
       var ls = window.localStorage;
@@ -136,6 +156,7 @@
         preview = decoded.save;
         var who = (preview.character && preview.character.name) ? (preview.character.name + '　·　' + (preview.character.cls || '')) : '已儲存的進度';
         saveCard.appendChild(el('p', 'kv', who));
+        saveCard.appendChild(el('p', 'save-note', resumeLine(preview)));
         var saveRow = el('div', 'row');
         saveRow.appendChild(button('繼續上次的進度', '從停下的地方接著玩', 'primary', function () {
           var loaded = T.loadGame(adventure, stored);
@@ -511,7 +532,7 @@
       }
     });
     if (st.sceneType === 'checkpoint') {
-      main.appendChild(button('先離開', '進度已自動儲存，之後可從標題畫面繼續', 'ghost', function () {
+      main.appendChild(button('存檔休息', '進度已自動儲存，之後可從標題畫面繼續', 'ghost', function () {
         autosave();
         renderSelect();
       }));

@@ -7,9 +7,9 @@ var assert = require('assert');
 var fs = require('fs');
 var path = require('path');
 
-var data = require('./data/wasted_tower.js');
-var T = require('./js/engine.js');
-var narrator = require('./js/narrator.js');
+var data = require('./preview/data/wasted_tower.js');
+var T = require('./preview/js/engine.js');
+var narrator = require('./preview/js/narrator.js');
 
 var adventure = data.ADVENTURES.wasted_tower;
 var passed = 0;
@@ -90,6 +90,79 @@ function choiceIds(engine) {
   return engine.legalActions().filter(function (a) { return a.type === 'choice'; }).map(function (a) { return a.id; });
 }
 
+function failCheck(engine) {
+  engine.rng = seqRng([1]);
+  var res = engine.perform({ type: 'roll' });
+  if (!res.ok) throw new Error(res.error);
+  return res;
+}
+
+function drinkPotions(engine) {
+  var guard = 0;
+  while (guard++ < 8) {
+    var slot = -1;
+    engine.character.inventory.forEach(function (id, i) {
+      if (id === 'potion_heal' || id === 'potion_heal_2') slot = i;
+    });
+    if (slot < 0) return;
+    var res = engine.perform({ type: 'use_item', slot: slot });
+    if (!res.ok) throw new Error(res.error);
+  }
+}
+
+// Shared beats inserted by the outline. opts picks the consequential options.
+function answerInserted(engine, opts) {
+  opts = opts || {};
+  var guard = 0;
+  while (engine.status === 'playing' && engine.scene && engine.scene.type === 'beat' && guard++ < 12) {
+    var id = engine.sceneId;
+    var ids = choiceIds(engine);
+    if (id === 'f1_rats_after') {
+      if (opts.robe) choose(engine, 'robe');
+      else if (opts.cloth) choose(engine, 'cloth');
+      else choose(engine, 'ignore');
+    } else if (id === 'f1_bandit_after') {
+      if (opts.spare) choose(engine, 'spare');
+      else if (opts.persuade) choose(engine, 'persuade');
+      else choose(engine, 'loot');
+    } else if (id === 'f2_bones_after') {
+      if (ids.indexOf('close') >= 0 || ids.indexOf('loot_bones') >= 0) {
+        choose(engine, opts.robBones ? 'loot_bones' : 'close');
+      } else if (ids.indexOf('bury') >= 0) {
+        choose(engine, opts.bury ? 'bury' : 'crest');
+      } else if (ids.indexOf('scrap') >= 0) {
+        choose(engine, opts.scrap ? 'scrap' : 'skip_scrap');
+      } else break;
+    } else if (id === 'f2_ooze_after') {
+      if (ids.indexOf('leave_a') >= 0 || ids.indexOf('leave_b') >= 0 || ids.indexOf('down') >= 0) {
+        if (opts.leavePotion) {
+          if (ids.indexOf('leave_a') >= 0) choose(engine, 'leave_a');
+          else choose(engine, 'leave_b');
+        } else choose(engine, 'down');
+      } else if (ids.indexOf('take_antler') >= 0) {
+        choose(engine, 'take_antler');
+      } else break;
+    } else if (id === 'f3_cult_talk') {
+      if (opts.insight) choose(engine, 'insight');
+      else if (opts.showCloth) choose(engine, 'show_cloth');
+      else choose(engine, 'fight');
+    } else if (id === 'f3_cult_after') {
+      if (opts.redeem) choose(engine, 'redeem');
+      else if (opts.spareCult) choose(engine, 'spare');
+      else choose(engine, 'kill');
+    } else if (id === 'f3_altar') {
+      if (opts.rest && ids.indexOf('rest') >= 0) choose(engine, 'rest');
+      else if (opts.will && ids.indexOf('will') >= 0) choose(engine, 'will');
+      else if (opts.cut && ids.indexOf('cut') >= 0) choose(engine, 'cut');
+      else if (opts.arrow && ids.indexOf('make_arrow') >= 0) choose(engine, 'make_arrow');
+      else if (opts.burn && ids.indexOf('burn') >= 0) choose(engine, 'burn');
+      else if (opts.keep && ids.indexOf('keep') >= 0) choose(engine, 'keep');
+      else choose(engine, 'onward');
+    } else break;
+    if (engine.scene && engine.scene.type === 'check') return;
+  }
+}
+
 function playMain(index) {
   var engine = new T.Engine(adventure, { seed: 1 });
   var started = engine.start(index);
@@ -97,21 +170,27 @@ function playMain(index) {
   assert.strictEqual(engine.sceneId, 'f1_gate');
   choose(engine, 'rush');
   winCombat(engine);
+  answerInserted(engine);
   choose(engine, 'climb');
   succeedCheck(engine);
   winCombat(engine);
+  answerInserted(engine);
   assert.strictEqual(engine.sceneId, 'cp_f1');
   cont(engine);
   assert.strictEqual(engine.sceneId, 'f2_stairs');
   choose(engine, 'up');
   winCombat(engine);
+  answerInserted(engine);
   choose(engine, 'watch');
   succeedCheck(engine);
   winCombat(engine);
+  answerInserted(engine);
   assert.strictEqual(engine.sceneId, 'cp_f2');
   cont(engine);
   choose(engine, 'smash');
+  answerInserted(engine);
   winCombat(engine);
+  answerInserted(engine);
   choose(engine, 'rush_boss');
   winCombat(engine);
   assert.strictEqual(engine.sceneId, 'cp_f3');
@@ -123,15 +202,20 @@ function playMain(index) {
   return engine;
 }
 
-function playSecret(index) {
+function playSecret(index, opts) {
+  opts = opts || {};
   var engine = new T.Engine(adventure, { seed: 2 });
   engine.start(index);
-  choose(engine, 'search');
+  var gateIds = choiceIds(engine);
+  if (gateIds.indexOf('search_finn') >= 0) choose(engine, 'search_finn');
+  else choose(engine, 'search');
   assert.ok(engine.character.inventory.indexOf('iron_key') >= 0);
   winCombat(engine);
+  answerInserted(engine, opts);
   choose(engine, 'creep');
   succeedCheck(engine);
   winCombat(engine);
+  answerInserted(engine, opts);
   cont(engine);
   assert.ok(choiceIds(engine).indexOf('side') >= 0);
   choose(engine, 'side');
@@ -141,12 +225,17 @@ function playSecret(index) {
   assert.ok(engine.character.inventory.indexOf('rust_key') >= 0);
   assert.ok(engine.character.inventory.indexOf('iron_key') < 0);
   winCombat(engine);
+  answerInserted(engine, opts);
   choose(engine, 'force');
   succeedCheck(engine);
   winCombat(engine);
+  answerInserted(engine, opts);
   cont(engine);
   choose(engine, 'unlock');
+  answerInserted(engine, opts);
   winCombat(engine);
+  answerInserted(engine, opts);
+  assert.strictEqual(engine.sceneId, 'f3_shrine');
   assert.ok(choiceIds(engine).indexOf('niche') >= 0);
   choose(engine, 'niche');
   winCombat(engine);
@@ -204,30 +293,76 @@ test('shipped script validates and every class reaches both endings', function (
 test('existing prose, items, classes, and enemy numbers are unchanged', function () {
   var snap = JSON.parse(fs.readFileSync(path.join(__dirname, 'test', 'story-snapshot.json'), 'utf8'));
   assert.strictEqual(adventure.title, snap.title);
-  assert.deepStrictEqual(adventure.items, snap.items);
   assert.deepStrictEqual(adventure.pregens, snap.pregens);
+  assert.deepStrictEqual(adventure.items.slice(0, snap.items.length), snap.items);
+  assert.deepStrictEqual(adventure.items[adventure.items.length - 1], {
+    id: 'antler_arrow', name: '鹿角箭', kind: 'consumable', damage: 8
+  });
   var byId = {};
   adventure.scenes.forEach(function (s) { byId[s.id] = s; });
-  var redirect = { f1_bandit: 'cp_f1', f2_ooze: 'cp_f2', f3_wight: 'cp_f3' };
+  var winTo = {
+    f1_rats: 'f1_rats_after',
+    f1_bandit: 'f1_bandit_after',
+    f2_bones: 'f2_bones_after',
+    f2_ooze: 'f2_ooze_after',
+    f3_cult: 'f3_cult_after',
+    f3_wight: 'cp_f3'
+  };
+  var fleeTo = { f3_cult: 'f3_cult_talk', f3_wight: 'f3_shrine' };
+  var factReplace = {
+    f2_stairs: {
+      '你來到二層轉角。': '你落到第二層轉角。',
+      '正路通往上層通道。': '正路繼續向下。'
+    },
+    win: { '你取下牆上的銅徽。': '你握緊銅徽。' }
+  };
+  var factExact = {
+    cp_f1: ['盜墓者嘅腳步聲遠咗。你坐喺石階口，塔入面靜到聽到自己心跳。——第一層完。'],
+    cp_f2: ['酸味慢慢散去，再落就係底層鐵門。今晚最難嗰段就喺門後面。——第二層完。'],
+    cp_f3: ['怨靈散成灰，林緣風好大。你今晚做過嘅事，就喺呢度計數。'],
+    post_tower: ['怨靈散成灰。', '你喺內室牆上取下銅徽。', '你走出廢塔。', '林緣風很大。']
+  };
+  var labelChange = { 'f2_stairs/up': '沿正路向下' };
+  var toChange = { 'f3_door/unlock': 'f3_cult_talk', 'f3_door/smash': 'f3_cult_talk' };
+  function textsOf(facts) {
+    return (facts || []).map(function (f) { return typeof f === 'string' ? f : f.text; });
+  }
   Object.keys(snap.scenes).forEach(function (id) {
     var orig = snap.scenes[id];
     var now = byId[id];
     assert.ok(now, 'missing scene ' + id);
-    assert.deepStrictEqual(now.facts, orig.facts, id + ' facts');
+    if (factExact[id]) {
+      assert.deepStrictEqual(textsOf(now.facts).filter(function (t) { return typeof t === 'string'; }), factExact[id], id);
+    } else {
+      var replaced = (orig.facts || []).map(function (f) {
+        var text = typeof f === 'string' ? f : f.text;
+        var map = factReplace[id] || {};
+        return Object.prototype.hasOwnProperty.call(map, text) ? map[text] : text;
+      });
+      var nowTexts = textsOf(now.facts);
+      var at = 0;
+      replaced.forEach(function (text) {
+        if (text == null) return;
+        var found = nowTexts.indexOf(text, at);
+        assert.ok(found >= 0, id + ' missing 「' + text + '」');
+        at = found + 1;
+      });
+    }
     if (orig.choices) {
-      assert.strictEqual(now.choices.length, orig.choices.length, id);
-      orig.choices.forEach(function (c, i) {
-        var n = now.choices[i];
-        assert.strictEqual(n.id, c.id);
-        assert.strictEqual(n.label, c.label);
-        assert.strictEqual(n.to, c.to);
-        assert.deepStrictEqual(n.require_item || null, c.require_item || null);
-        assert.deepStrictEqual(n.require_flag || null, c.require_flag || null);
-        assert.deepStrictEqual(n.give || null, c.give || null);
-        assert.deepStrictEqual(n.take || null, c.take || null);
-        assert.strictEqual(n.hp_delta, c.hp_delta);
+      var byChoice = {};
+      (now.choices || []).forEach(function (c) { byChoice[c.id] = c; });
+      orig.choices.forEach(function (c) {
+        var n = byChoice[c.id];
+        assert.ok(n, id + ' ' + c.id);
+        assert.strictEqual(n.label, labelChange[id + '/' + c.id] || c.label, id + ' ' + c.id);
+        assert.strictEqual(n.to, toChange[id + '/' + c.id] || c.to, id + ' ' + c.id);
+        assert.deepStrictEqual(n.require_item || null, c.require_item || null, id + ' ' + c.id);
+        assert.deepStrictEqual(n.require_flag || null, c.require_flag || null, id + ' ' + c.id);
+        assert.deepStrictEqual(n.give || null, c.give || null, id + ' ' + c.id);
+        assert.deepStrictEqual(n.take || null, c.take || null, id + ' ' + c.id);
+        assert.strictEqual(n.hp_delta, c.hp_delta, id + ' ' + c.id);
         (c.set_flag || []).forEach(function (f) {
-          assert.ok(n.set_flag.indexOf(f) >= 0, id + ' ' + f);
+          assert.ok(n.set_flag && n.set_flag.indexOf(f) >= 0, id + ' ' + f);
         });
       });
     }
@@ -235,16 +370,19 @@ test('existing prose, items, classes, and enemy numbers are unchanged', function
     if (orig.choice_to) assert.strictEqual(now.choice_to, orig.choice_to);
     if (orig.type === 'combat') {
       assert.deepStrictEqual(now.enemies, orig.enemies, id);
-      assert.strictEqual(now.win_to, redirect[id] || orig.win_to, id);
-      assert.strictEqual(now.flee_to, orig.flee_to);
+      assert.strictEqual(now.win_to, winTo[id] || orig.win_to, id);
+      assert.strictEqual(now.flee_to, Object.prototype.hasOwnProperty.call(fleeTo, id) ? fleeTo[id] : orig.flee_to, id);
     }
     if (orig.type === 'check') {
       ['skill', 'dc', 'success_to', 'fail_to', 'fail_hp_delta'].forEach(function (k) {
         assert.strictEqual(now[k], orig[k], id + ' ' + k);
       });
+      assert.ok(now.minHp === undefined && now.min_hp === undefined, id + ' minHp');
     }
     if (orig.type === 'end') assert.strictEqual(now.end, orig.end);
   });
+  assert.strictEqual(byId.win.name, '廢塔一夜');
+  assert.strictEqual(byId.f3_wight.flee_to, 'f3_shrine');
 });
 
 test('floor checkpoints sit between floors and can be continued', function () {
@@ -253,12 +391,14 @@ test('floor checkpoints sit between floors and can be continued', function () {
   engine.start(0);
   choose(engine, 'rush');
   winCombat(engine);
+  answerInserted(engine);
   choose(engine, 'scan');
   succeedCheck(engine);
   winCombat(engine);
+  answerInserted(engine);
   assert.strictEqual(engine.scene.floor, 1);
   assert.strictEqual(engine.scene.name, '一層歇腳');
-  assert.deepStrictEqual(engine.scene.facts, ['一層的路已經走完。', '你可以在這裡歇息。']);
+  assert.deepStrictEqual(engine.scene.facts, ['盜墓者嘅腳步聲遠咗。你坐喺石階口，塔入面靜到聽到自己心跳。——第一層完。']);
   var acts = engine.legalActions().map(function (a) { return a.type; });
   assert.ok(acts.indexOf('continue') >= 0);
   assert.ok(acts.indexOf('attack') < 0);
@@ -273,7 +413,7 @@ test('each class can clear the tower and the hidden ending', function () {
     assert.strictEqual(main.status, 'won', p.name);
     assert.strictEqual(main.character.hp, p.hp_max - 3, p.name + ' hp');
     var card = main.endingCard();
-    assert.strictEqual(card.endingName, '通關');
+    assert.strictEqual(card.endingName, '廢塔一夜');
     assert.strictEqual(card.endingType, 'main');
     assert.strictEqual(card.className, p['class']);
     assert.strictEqual(card.characterName, p.name);
@@ -282,11 +422,12 @@ test('each class can clear the tower and the hidden ending', function () {
     assert.strictEqual(card.battlesCleared, 6);
     assert.ok(/戰鬥 6\/8（含隱藏）/.test(card.battlesLabel));
     assert.strictEqual(card.hp, p.hp_max - 3);
-    assert.strictEqual(card.playAgainLabel, '從頭再玩一次');
+    assert.strictEqual(card.playAgainLabel, '試下第二個職業？');
     assert.ok(card.playTime);
     var labels = card.keyChoices.map(function (k) { return k.label; });
-    assert.ok(labels.indexOf('直接進塔') >= 0, p.name);
-    assert.ok(labels.indexOf('帶著銅徽離開') >= 0, p.name);
+    assert.ok(labels.indexOf('盜墓者：搜身') >= 0, p.name);
+    assert.ok(labels.indexOf('骸骨：合眼') >= 0, p.name);
+    assert.ok(labels.indexOf('邪徒：了結') >= 0, p.name);
     assert.ok(labels.indexOf('面對跟蹤的冒險者') < 0, p.name);
 
     var secret = playSecret(i);
@@ -305,9 +446,11 @@ test('side door and crypt stay gated by the key and the vault flag', function ()
   choose(engine, 'rush');
   assert.ok(engine.character.inventory.indexOf('iron_key') < 0);
   winCombat(engine);
+  answerInserted(engine);
   choose(engine, 'climb');
   succeedCheck(engine);
   winCombat(engine);
+  answerInserted(engine);
   cont(engine);
   assert.ok(choiceIds(engine).indexOf('side') < 0);
   assert.strictEqual(engine.perform({ type: 'choice', id: 'side' }).ok, false);
@@ -318,6 +461,7 @@ test('skill check succeeds on the DC and failure costs the stated HP', function 
   exact.start(0);
   choose(exact, 'rush');
   winCombat(exact);
+  answerInserted(exact);
   choose(exact, 'climb');
   assert.strictEqual(exact.sceneId, 'f1_ath');
   exact.rng = seqRng([7]);
@@ -334,6 +478,7 @@ test('skill check succeeds on the DC and failure costs the stated HP', function 
   fail.start(0);
   choose(fail, 'rush');
   winCombat(fail);
+  answerInserted(fail);
   choose(fail, 'climb');
   fail.rng = seqRng([1]);
   var bad = fail.perform({ type: 'roll' });
@@ -948,7 +1093,7 @@ test('class flags, counters, text, checks, items, flee, and rest', function () {
   assert.strictEqual(secret.status, 'secret_won');
   assert.strictEqual(secretCard.endingType, 'secret');
   assert.strictEqual(secretCard.endingName, '隱藏結局');
-  assert.ok(secretCard.branchLines.indexOf('branch: X (missed): 沒有完成分支。') >= 0);
+  assert.ok(secretCard.branchLines.indexOf('支線：X（錯過）：沒有完成分支。') >= 0);
 
   var both = new T.Engine(story, { seed: 7 });
   both.start(0);
@@ -960,7 +1105,7 @@ test('class flags, counters, text, checks, items, flee, and rest', function () {
   finish(both, 'klass');
   assert.strictEqual(both.endingCard().endingType, 'class');
   assert.strictEqual(both.endingCard().endingName, '職業結局');
-  assert.ok(both.endingCard().branchLines.indexOf('branch: X (completed)') >= 0);
+  assert.ok(both.endingCard().branchLines.indexOf('支線：X（已完成）') >= 0);
   assert.strictEqual(both.endingCard().closing, '');
 
   both.flags.secret_on = true;
@@ -968,7 +1113,7 @@ test('class flags, counters, text, checks, items, flee, and rest', function () {
   var overlaid = both.endingCard();
   assert.strictEqual(overlaid.endingType, 'secret');
   assert.strictEqual(overlaid.endingName, '隱藏結局');
-  assert.ok(overlaid.branchLines.indexOf('branch: X (completed)') >= 0);
+  assert.ok(overlaid.branchLines.indexOf('支線：X（已完成）') >= 0);
 
   var plain = new T.Engine(story, { seed: 8 });
   plain.start(1);
@@ -992,7 +1137,7 @@ test('class flags, counters, text, checks, items, flee, and rest', function () {
   }, 720, overlaid);
   var text = painted.blocks.map(function (b) { return b.text; }).join('\n');
   assert.ok(text.indexOf('類型　secret') >= 0);
-  assert.ok(text.indexOf('branch: X (completed)') >= 0);
+  assert.ok(text.indexOf('支線：X（已完成）') >= 0);
   assert.ok(text.indexOf('剩餘生命') >= 0);
   assert.ok(text.indexOf('戰鬥') >= 0);
 });
@@ -1251,7 +1396,7 @@ test('assertReachable matches class, variant, secret, and potion endings', funct
     endingType: 'secret',
     allFlags: ['potion_left', 'secret_on'],
     branchCompleted: 'warrior_branch',
-    branchLine: 'branch: X (completed)',
+    branchLine: '支線：X（已完成）',
     itemMin: { potion: 0 }
   });
   assert.strictEqual(secret.ok, true, (secret.errors || []).join('\n'));
@@ -1273,22 +1418,288 @@ test('assertReachable matches class, variant, secret, and potion endings', funct
   choose(played, 'leave');
   assert.strictEqual(played.status, 'secret_won');
   assert.ok(played.character.inventory.indexOf('potion') < 0);
-  assert.ok(played.endingCard().branchLines.indexOf('branch: X (completed)') >= 0);
+  assert.ok(played.endingCard().branchLines.indexOf('支線：X（已完成）') >= 0);
   assert.strictEqual(played.endingCard().endingType, 'secret');
 });
 
-test('preview build matches the playable files', function () {
-  ['index.html', 'data/wasted_tower.js', 'js/engine.js', 'js/narrator.js', 'js/ui.js'].forEach(function (rel) {
-    var live = fs.readFileSync(path.join(__dirname, rel), 'utf8');
-    var copy = fs.readFileSync(path.join(__dirname, 'preview', rel), 'utf8');
-    assert.strictEqual(copy, live, rel);
+function reachPost(index, opts) {
+  opts = opts || {};
+  var engine = new T.Engine(adventure, { seed: opts.seed || 40 });
+  engine.start(index);
+  var gates = choiceIds(engine);
+  if (opts.search) {
+    if (gates.indexOf('search_finn') >= 0) choose(engine, 'search_finn');
+    else choose(engine, 'search');
+  } else choose(engine, 'rush');
+  winCombat(engine);
+  answerInserted(engine, opts);
+  choose(engine, opts.hall || 'climb');
+  if (opts.hallFail) failCheck(engine);
+  else succeedCheck(engine);
+  winCombat(engine);
+  answerInserted(engine, opts);
+  if (engine.scene && engine.scene.type === 'check') {
+    if (opts.persuadeFail) failCheck(engine);
+    else succeedCheck(engine);
+  }
+  assert.strictEqual(engine.sceneId, 'cp_f1');
+  cont(engine);
+  if (opts.lock) {
+    choose(engine, 'pick');
+    if (opts.lockFail) failCheck(engine);
+    else succeedCheck(engine);
+    winCombat(engine);
+    choose(engine, 'take_loot');
+  } else if (opts.side) {
+    choose(engine, 'side');
+    winCombat(engine);
+    choose(engine, 'take_loot');
+  } else choose(engine, 'up');
+  winCombat(engine);
+  answerInserted(engine, opts);
+  if (opts.drinkBeforeOoze) drinkPotions(engine);
+  if (opts.rune) {
+    choose(engine, 'rune');
+    if (opts.runeFail) failCheck(engine);
+    else succeedCheck(engine);
+  } else {
+    choose(engine, 'watch');
+    succeedCheck(engine);
+  }
+  winCombat(engine);
+  answerInserted(engine, opts);
+  cont(engine);
+  if (opts.help) choose(engine, 'bandit_help');
+  else if (opts.unlock) choose(engine, 'unlock');
+  else choose(engine, 'smash');
+  answerInserted(engine, opts);
+  if (engine.scene && engine.scene.type === 'check') {
+    if (opts.insightFail) failCheck(engine);
+    else succeedCheck(engine);
+  }
+  if (opts.fleeCult) {
+    assert.strictEqual(engine.sceneId, 'f3_cult');
+    engine.perform({ type: 'flee' });
+    return engine;
+  }
+  winCombat(engine);
+  answerInserted(engine, opts);
+  if (engine.scene && engine.scene.type === 'check') {
+    if (opts.checkFail) failCheck(engine);
+    else succeedCheck(engine);
+  }
+  if (engine.sceneId === 'f3_altar') answerInserted(engine, opts);
+  if (opts.stopAt === 'shrine') return engine;
+  if (opts.crypt) {
+    choose(engine, 'niche');
+    if (opts.fleeCrypt) {
+      engine.perform({ type: 'flee' });
+      return engine;
+    }
+    winCombat(engine);
+    choose(engine, 'take_holy');
+  } else choose(engine, 'rush_boss');
+  if (opts.fleeWight) {
+    assert.strictEqual(engine.sceneId, 'f3_wight');
+    engine.perform({ type: 'flee' });
+    return engine;
+  }
+  winCombat(engine);
+  cont(engine);
+  assert.strictEqual(engine.sceneId, 'post_tower');
+  return engine;
+}
+
+function finishEnding(engine, choiceId) {
+  choose(engine, choiceId);
+  if (engine.sceneId === 'pick_rival') {
+    var rivals = choiceIds(engine);
+    choose(engine, rivals[0]);
+    winCombat(engine);
+  }
+  return engine.endingCard();
+}
+
+test('outline routes reach every class, variant, and secret ending', function () {
+  var classes = ['戰士', '遊俠', '盜賊', '牧師', '法師'];
+  var walk = T.walkScript(adventure);
+  assert.strictEqual(walk.ok, true, walk.errors.join('\n'));
+  [
+    ['戰士', 'end_warrior', 'class'],
+    ['遊俠', 'end_ranger', 'class'],
+    ['盜賊', 'end_rogue', 'class'],
+    ['牧師', 'end_cleric', 'class'],
+    ['法師', 'end_mage', 'class']
+  ].forEach(function (row) {
+    assert.strictEqual(walk.reached[row[1]][row[0]], true, row[1]);
+    var hit = T.assertReachable(adventure, { class: row[0], endingId: row[1], endingType: row[2] });
+    assert.strictEqual(hit.ok, true, row[0] + ' ' + hit.errors.join('\n'));
   });
+  assert.ok(T.assertReachable(adventure, { endingId: 'end_friend', endingType: 'variant', flags: { left_potion: true } }).ok);
+  assert.ok(T.assertReachable(adventure, {
+    class: '戰士', endingId: 'secret_win', endingType: 'secret', branchLine: '支線：歸隊（已完成）'
+  }).ok);
+  assert.ok(T.assertReachable(adventure, {
+    endingId: 'secret_win', endingType: 'secret', flags: { left_potion: true }
+  }).ok);
+  assert.ok(T.assertReachable(adventure, {
+    class: '盜賊', endingId: 'end_sold', endingType: 'variant', flags: { finn_sold: true }
+  }).ok);
+  classes.forEach(function (cls) {
+    assert.strictEqual(walk.reached.win[cls], true, cls);
+    assert.strictEqual(walk.reached.secret_win[cls], true, cls);
+  });
+
+  var brun = reachPost(0, { bury: true });
+  var brunCard = finishEnding(brun, 'monument');
+  assert.strictEqual(brunCard.endingName, '歸隊');
+  assert.strictEqual(brunCard.endingType, 'class');
+  assert.ok(brunCard.branchLines.indexOf('支線：歸隊（已完成）') >= 0);
+
+  var sylvie = reachPost(1, { cut: true, checkFail: true });
+  assert.strictEqual(sylvie.flags.sylvie_freed_deer, true);
+  assert.ok(sylvie.character.hp >= 1);
+  var sylvieCard = finishEnding(sylvie, 'follow_deer');
+  assert.strictEqual(sylvieCard.endingName, '林歸寂靜');
+  assert.strictEqual(sylvieCard.endingType, 'class');
+
+  var finn = reachPost(2, { search: true, scrap: true });
+  assert.strictEqual(finn.flags.finn_contract, true);
+  assert.strictEqual(finn.flags.finn_brass_scrap, true);
+  var swap = finishEnding(finn, 'swap');
+  assert.strictEqual(swap.endingName, '偷天換徽');
+  assert.strictEqual(swap.endingType, 'class');
+  assert.ok(!finn.flags.finn_sold);
+  assert.ok(swap.keyChoices.every(function (k) { return k.id !== 'finn_sold'; }));
+
+  var sold = reachPost(2, { search: true, scrap: true, seed: 41 });
+  var soldCard = finishEnding(sold, 'sell');
+  assert.strictEqual(soldCard.endingName, '收錢走人');
+  assert.strictEqual(soldCard.endingType, 'variant');
+  assert.ok(soldCard.keyChoices.some(function (k) { return k.label === '銅徽：賣咗'; }));
+
+  var mira = reachPost(3, { robe: true, insight: true, insightFail: true, redeem: true });
+  assert.strictEqual(mira.flags.mira_checked, true);
+  assert.ok(!mira.flags.mira_saw_truth);
+  assert.strictEqual(mira.flags.mira_redeemed, true);
+  assert.ok(mira.character.hp >= 1);
+  var miraCard = finishEnding(mira, 'escort');
+  assert.strictEqual(miraCard.endingName, '迷途者歸');
+  assert.strictEqual(miraCard.endingType, 'class');
+
+  var orr = reachPost(4, { rune: true, burn: true });
+  assert.strictEqual(orr.flags.orr_notes, true);
+  assert.strictEqual(orr.flags.orr_burned, true);
+  var orrCard = finishEnding(orr, 'burn_page');
+  assert.strictEqual(orrCard.endingName, '師債徒還');
+  assert.strictEqual(orrCard.endingType, 'class');
+
+  var friend = reachPost(0, { leavePotion: true, seed: 42 });
+  assert.ok(choiceIds(friend).indexOf('friend') >= 0);
+  assert.ok(choiceIds(friend).indexOf('leave') >= 0);
+  var friendCard = finishEnding(friend, 'friend');
+  assert.strictEqual(friendCard.endingName, '化敵為友');
+  assert.strictEqual(friendCard.endingType, 'variant');
+  assert.ok(friendCard.keyChoices.some(function (k) { return k.label === '濕室藥水：留低'; }));
+
+  var secret = reachPost(0, { search: true, side: true, bury: true, crypt: true, seed: 43 });
+  assert.ok(choiceIds(secret).indexOf('face_rival') >= 0);
+  var secretCard = finishEnding(secret, 'face_rival');
+  assert.strictEqual(secretCard.endingName, '隱藏結局');
+  assert.strictEqual(secretCard.endingType, 'secret');
+  assert.ok(secretCard.branchLines.indexOf('支線：歸隊（已完成）') >= 0);
+
+  var both = reachPost(1, { search: true, side: true, leavePotion: true, crypt: true, seed: 44 });
+  assert.ok(choiceIds(both).indexOf('friend') >= 0);
+  assert.ok(choiceIds(both).indexOf('face_rival') >= 0);
+  var bothCard = finishEnding(both, 'face_rival');
+  assert.strictEqual(bothCard.endingType, 'secret');
+  assert.ok(bothCard.keyChoices.some(function (k) { return k.label === '濕室藥水：留低'; }));
+
+  var dry = reachPost(0, { drinkBeforeOoze: true, seed: 45 });
+  assert.ok(dry.sceneId === 'post_tower' || dry.status === 'won' || dry.status === 'playing');
+  var hidden = reachPost(0, { drinkBeforeOoze: true, seed: 46, stopAt: 'shrine' });
+  assert.ok(hidden, 'dry route built');
+});
+
+test('potion offer, Mira reroll, and wight flee do not trap the player', function () {
+  var dry = new T.Engine(adventure, { seed: 47 });
+  dry.start(0);
+  choose(dry, 'rush');
+  winCombat(dry);
+  answerInserted(dry);
+  choose(dry, 'climb');
+  succeedCheck(dry);
+  winCombat(dry);
+  answerInserted(dry);
+  cont(dry);
+  choose(dry, 'up');
+  winCombat(dry);
+  answerInserted(dry);
+  drinkPotions(dry);
+  choose(dry, 'watch');
+  succeedCheck(dry);
+  winCombat(dry);
+  assert.strictEqual(dry.sceneId, 'f2_ooze_after');
+  assert.ok(choiceIds(dry).indexOf('leave_a') < 0);
+  assert.ok(choiceIds(dry).indexOf('leave_b') < 0);
+  assert.ok(choiceIds(dry).indexOf('down') >= 0);
+
+  var mira = reachPost(3, { insight: true, insightFail: true, fleeCult: true, seed: 48 });
+  assert.strictEqual(mira.sceneId, 'f3_cult_talk');
+  assert.ok(choiceIds(mira).indexOf('insight') < 0);
+  assert.ok(choiceIds(mira).indexOf('fight') >= 0);
+  assert.ok(mira.character.hp >= 1);
+
+  var fled = reachPost(0, { fleeWight: true, seed: 49 });
+  assert.strictEqual(fled.sceneId, 'f3_shrine');
+  assert.ok(fled.clearedCombats.f3_cult);
+  assert.ok(!fled.clearedCombats.f3_wight);
+  assert.ok(!fled.flags.rested);
+  assert.ok(choiceIds(fled).indexOf('rush_boss') >= 0);
+  var fleeAt = -1;
+  fled.events.forEach(function (e, i) { if (e.t === 'flee') fleeAt = i; });
+  var afterFlee = fled.events.slice(fleeAt + 1).filter(function (e) { return e.t === 'scene'; });
+  assert.strictEqual(afterFlee.length, 1);
+  assert.ok(afterFlee[0].facts.indexOf('祭壇前可以稍作喘息。') >= 0);
+  assert.ok(afterFlee[0].facts.indexOf('邪徒倒地，仲有氣。') < 0);
+
+  var crypt = reachPost(0, { search: true, side: true, crypt: true, fleeWight: true, seed: 50 });
+  assert.strictEqual(crypt.sceneId, 'f3_shrine');
+  assert.ok(crypt.clearedCombats.hide_crypt);
+  assert.ok(choiceIds(crypt).indexOf('niche') < 0);
+  assert.ok(choiceIds(crypt).indexOf('to_wight') >= 0);
+  choose(crypt, 'to_wight');
+  assert.strictEqual(crypt.sceneId, 'f3_wight');
+  assert.ok(!crypt.scene.hidden);
+
+  var lost = new T.Engine(adventure, { seed: 51 });
+  lost.start(0);
+  choose(lost, 'rush');
+  winCombat(lost);
+  answerInserted(lost);
+  choose(lost, 'climb');
+  lost.character.hp = 2;
+  failCheck(lost);
+  assert.strictEqual(lost.status, 'lost');
+  assert.strictEqual(lost.endingCard().endingName, '倒在塔中');
+  assert.strictEqual(lost.endingCard().endingType, 'lose');
+});
+
+test('root index.html matches main and the engine lives under preview', function () {
+  var mainHtml = require('child_process').execSync('git show main:index.html', { encoding: 'utf8' });
+  var rootHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.strictEqual(rootHtml, mainHtml);
+  assert.ok(fs.existsSync(path.join(__dirname, 'preview', 'js', 'engine.js')));
+  assert.ok(fs.existsSync(path.join(__dirname, 'preview', 'data', 'wasted_tower.js')));
+  assert.ok(!fs.existsSync(path.join(__dirname, 'js', 'engine.js')));
+  assert.ok(!fs.existsSync(path.join(__dirname, 'data', 'wasted_tower.js')));
 });
 
 test('player-facing sources do not name a tabletop trademark', function () {
   var mark = 'D' + '&' + 'D';
   var phrase = ('Dungeons' + ' & ' + 'Dragons').toLowerCase();
-  ['index.html', 'README.md', 'data/wasted_tower.js', 'js/engine.js', 'js/narrator.js', 'js/ui.js'].forEach(function (file) {
+  ['index.html', 'README.md', 'preview/index.html', 'preview/data/wasted_tower.js', 'preview/js/engine.js', 'preview/js/narrator.js', 'preview/js/ui.js'].forEach(function (file) {
     var text = fs.readFileSync(path.join(__dirname, file), 'utf8');
     assert.ok(text.indexOf(mark) < 0, file);
     assert.ok(text.toLowerCase().indexOf(phrase) < 0, file);

@@ -150,6 +150,16 @@
     return typeof base === 'string' ? base : '';
   }
 
+  // Optional prose for the choice that opens a fight. Absent fields stay empty
+  // so a combat without them keeps the old win and flee log.
+  function combatTransitionNarr(source) {
+    if (!source || typeof source !== 'object') return null;
+    var winText = typeof source.winText === 'string' ? source.winText : '';
+    var fleeText = typeof source.fleeText === 'string' ? source.fleeText : '';
+    if (!winText && !fleeText) return null;
+    return { winText: winText, fleeText: fleeText };
+  }
+
   // A flag-only bundle still shares the hall's one destination. HP or items do not.
   function effectIsFlagOnly(effect) {
     if (!effect) return true;
@@ -1756,6 +1766,18 @@
         if (c.when !== undefined) validateWhen(c.when, cw);
         if (c.narr !== undefined && typeof c.narr !== 'string') err(cw + ' 的 narr 必須是字串。');
         if (c.narr_variants !== undefined) validateNarrVariants(c.narr_variants, cw + ' 的 narr_variants');
+        if (c.winText !== undefined && (typeof c.winText !== 'string' || !c.winText)) {
+          err(cw + ' 的 winText 必須是非空字串。');
+        }
+        if (c.fleeText !== undefined && (typeof c.fleeText !== 'string' || !c.fleeText)) {
+          err(cw + ' 的 fleeText 必須是非空字串。');
+        }
+        if (c.winText !== undefined || c.fleeText !== undefined) {
+          var fight = typeof c.to === 'string' ? scenes[c.to] : null;
+          if (!fight || fight.type !== 'combat') {
+            err(cw + ' 的 winText 與 fleeText 只能寫在進入戰鬥的選項上。');
+          }
+        }
         if (c.set !== undefined) {
           if (!c.set || typeof c.set !== 'object' || Array.isArray(c.set)) err(cw + ' 的 set 必須是物件。');
           else Object.keys(c.set).forEach(function (k) {
@@ -2121,6 +2143,7 @@
     this.party = [];
     this.checkpointSnap = null;
     this.retryCount = 0;
+    this._combatEntry = null;
   }
 
   function buildCharacter(p) {
@@ -2510,6 +2533,7 @@
     this.rivalPregenIndex = null;
     this.encounter = null;
     this.round = 0;
+    this._combatEntry = null;
     this.lastCheckpoint = null;
     this.startedAt = Date.now();
     this.playMs = 0;
@@ -2546,6 +2570,8 @@
   };
 
   Engine.prototype.enterScene = function (id) {
+    var combatEntry = this._combatEntry || null;
+    this._combatEntry = null;
     if (!Number.isInteger(this._autoHops)) this._autoHops = 0;
     var sc = this.scenes[id];
     if (!sc) throw new Error('unknown scene: ' + id); // validator makes this unreachable
@@ -2572,6 +2598,7 @@
         ambush: null,
         heroReady: false
       };
+      if (combatEntry) this.encounter.outcomeNarr = combatEntry;
       this.rollInitiative();
     }
     if (sc.type === 'end' && sc.when && !this.conditionsPass(sc.when)) {
@@ -2931,6 +2958,9 @@
     if (!this.applyEffectBundle(choice, 'choice')) return this.ok();
     if (choice.rest && this.conditionsPass(choice.rest.when)) this.applyRest(choice.rest);
     if (typeof choice.to === 'string' && choice.to) {
+      if (this.scenes[choice.to] && this.scenes[choice.to].type === 'combat') {
+        this._combatEntry = combatTransitionNarr(choice);
+      }
       this.enterScene(choice.to);
       return this.ok();
     }
@@ -3147,9 +3177,19 @@
     return yielded ? 'yield' : 'defeat';
   };
 
+  Engine.prototype.combatOutcomeLine = function (kind) {
+    var narr = this.encounter && this.encounter.outcomeNarr;
+    if (!narr) return '';
+    var text = kind === 'flee' ? narr.fleeText : narr.winText;
+    return typeof text === 'string' ? text : '';
+  };
+
   Engine.prototype.winCombat = function (reason) {
     var why = reason || 'defeat';
-    this.emit({ t: 'combat_win', reason: why });
+    var ev = { t: 'combat_win', reason: why };
+    var line = this.combatOutcomeLine('win');
+    if (line) ev.narr = line;
+    this.emit(ev);
     var dest = this.scene.win_to;
     this.markCombatCleared(this.sceneId);
     this.enterScene(dest);
@@ -3758,7 +3798,10 @@
     var dest = sc.flee_to;
     if (dest === FLEE_CHECKPOINT) dest = this.lastCheckpoint;
     if (dest && this.scenes[dest]) {
-      this.emit({ t: 'flee', escaped: true });
+      var ev = { t: 'flee', escaped: true };
+      var line = this.combatOutcomeLine('flee');
+      if (line) ev.narr = line;
+      this.emit(ev);
       this.enterScene(dest);
       return this.ok();
     }
@@ -4071,6 +4114,16 @@
         if (!Array.isArray(e.statuses)) e.statuses = [];
         if (e.yielded === undefined) e.yielded = false;
       });
+      var rawNarr = this.encounter.outcomeNarr;
+      if (rawNarr && typeof rawNarr === 'object' && !Array.isArray(rawNarr)) {
+        var kept = {};
+        if (typeof rawNarr.winText === 'string' && rawNarr.winText) kept.winText = rawNarr.winText;
+        if (typeof rawNarr.fleeText === 'string' && rawNarr.fleeText) kept.fleeText = rawNarr.fleeText;
+        if (kept.winText || kept.fleeText) this.encounter.outcomeNarr = kept;
+        else delete this.encounter.outcomeNarr;
+      } else if (rawNarr) {
+        delete this.encounter.outcomeNarr;
+      }
     }
     this.round = sc.type === 'combat' && Number.isInteger(save.round) && save.round > 0 ? save.round : (sc.type === 'combat' ? 1 : 0);
     this.party = [this.character];

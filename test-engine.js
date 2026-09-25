@@ -40,15 +40,15 @@ function seqRng(values) {
 
 function arm(engine, targetHp) {
   var parsed = T.parseDice(engine.character.attack.damage);
-  var max = parsed.count * parsed.sides + parsed.mod;
-  var living = engine.livingEnemies().length;
-  var kills = max >= targetHp;
-  var vals = [20];
-  var d;
-  for (d = 0; d < parsed.count; d++) vals.push(99);
-  var enemiesLeft = kills ? Math.max(0, living - 1) : living;
-  var e;
-  for (e = 0; e < enemiesLeft; e++) vals.push(1);
+  var critDice = parsed.count * 2;
+  var before = engine.enemyAttacksBeforeHero ? engine.enemyAttacksBeforeHero() : 0;
+  var after = engine.enemyAttacksAfterHero ? engine.enemyAttacksAfterHero() : 0;
+  var vals = [];
+  var i;
+  for (i = 0; i < before; i++) vals.push(1);
+  vals.push(20);
+  for (i = 0; i < critDice; i++) vals.push(99);
+  for (i = 0; i < after; i++) vals.push(1);
   engine.rng = seqRng(vals);
 }
 
@@ -294,7 +294,14 @@ test('shipped script validates and every class reaches both endings', function (
 test('existing prose, items, classes, and enemy numbers are unchanged', function () {
   var snap = JSON.parse(fs.readFileSync(path.join(__dirname, 'test', 'story-snapshot.json'), 'utf8'));
   assert.strictEqual(adventure.title, snap.title);
-  assert.deepStrictEqual(adventure.pregens, snap.pregens);
+  function stablePregen(p) {
+    return {
+      name: p.name, 'class': p['class'], race: p.race,
+      str: p.str, dex: p.dex, con: p.con, int: p.int, wis: p.wis, cha: p.cha,
+      ac: p.ac, hp_max: p.hp_max, skills: p.skills, attack: p.attack, inventory: p.inventory
+    };
+  }
+  assert.deepStrictEqual(adventure.pregens.map(stablePregen), snap.pregens.map(stablePregen));
   assert.deepStrictEqual(adventure.items.slice(0, snap.items.length), snap.items);
   assert.deepStrictEqual(adventure.items[adventure.items.length - 1], {
     id: 'antler_arrow', name: '鹿角箭', kind: 'consumable', damage: 8
@@ -372,7 +379,14 @@ test('existing prose, items, classes, and enemy numbers are unchanged', function
     if (orig.choices_from) assert.strictEqual(now.choices_from, orig.choices_from);
     if (orig.choice_to) assert.strictEqual(now.choice_to, orig.choice_to);
     if (orig.type === 'combat') {
-      assert.deepStrictEqual(now.enemies, orig.enemies, id);
+      function coreEnemy(e) {
+        if (!e) return e;
+        var copy = JSON.parse(JSON.stringify(e));
+        delete copy.per_extra;
+        delete copy.yield;
+        return copy;
+      }
+      assert.deepStrictEqual((now.enemies || []).map(coreEnemy), (orig.enemies || []).map(coreEnemy), id);
       assert.strictEqual(now.win_to, winTo[id] || orig.win_to, id);
       assert.strictEqual(now.flee_to, Object.prototype.hasOwnProperty.call(fleeTo, id) ? fleeTo[id] : orig.flee_to, id);
     }
@@ -515,14 +529,15 @@ test('flee returns without clearing the fight', function () {
 test('features and consumables keep their old limits', function () {
   var cleric = new T.Engine(adventure, { seed: 8 });
   cleric.start(3);
-  var full = cleric.perform({ type: 'use_feature', featureId: 'lay_on_hands' });
+  var full = cleric.perform({ actor: 0, action: 'move', moveId: 'cure_wounds' });
   assert.strictEqual(full.ok, false);
-  assert.strictEqual(cleric.character.features[0].uses, 3);
+  assert.strictEqual(cleric.character.pools.channel.uses, 3);
   cleric.character.hp = 4;
-  var healed = cleric.perform({ type: 'use_feature', featureId: 'lay_on_hands' });
-  assert.strictEqual(healed.ok, true);
+  cleric.rng = seqRng([8]);
+  var healed = cleric.perform({ type: 'use_feature', featureId: 'cure_wounds' });
+  assert.strictEqual(healed.ok, true, healed.error);
   assert.strictEqual(cleric.character.hp, 10);
-  assert.strictEqual(cleric.character.features[0].uses, 2);
+  assert.strictEqual(cleric.character.pools.channel.uses, 2);
   assert.strictEqual(cleric.sceneId, 'f1_gate');
   cleric.character.hp = 9;
   var slot = cleric.character.inventory.indexOf('potion_heal');
@@ -532,31 +547,39 @@ test('features and consumables keep their old limits', function () {
 
   var mage = new T.Engine(adventure, { seed: 9 });
   mage.start(4);
+  assert.strictEqual(mage.effectiveAc(), 15);
   var scroll = mage.character.inventory.indexOf('burning_hands');
   var rejected = mage.perform({ type: 'use_item', slot: scroll });
   assert.strictEqual(rejected.ok, false);
   assert.ok(mage.character.inventory.indexOf('burning_hands') >= 0);
   choose(mage, 'rush');
+  mage.encounter.order = [{ kind: 'hero', index: 0, roll: 20, bonus: 0, total: 20 }].concat(
+    mage.encounter.enemies.map(function (e, i) { return { kind: 'enemy', index: i, roll: 1, bonus: 0, total: 1 }; })
+  );
+  mage.encounter.acted = {};
+  mage.encounter.round = 1;
   mage.rng = seqRng([1, 1, 1]);
-  var buff = mage.perform({ type: 'use_feature', featureId: 'mage_armor' });
-  assert.strictEqual(buff.ok, true);
-  assert.strictEqual(mage.effectiveAc(), 15);
-  assert.strictEqual(mage.character.features[0].uses, 2);
-  var again = mage.perform({ type: 'use_feature', featureId: 'mage_armor' });
-  assert.strictEqual(again.ok, false);
-  assert.strictEqual(mage.character.features[0].uses, 2);
+  var buff = mage.perform({ type: 'use_feature', featureId: 'shield' });
+  assert.strictEqual(buff.ok, true, buff.error);
+  assert.strictEqual(mage.effectiveAc(), 20);
+  assert.strictEqual(mage.character.pools.slots.uses, 2);
   mage.perform({ type: 'flee' });
   assert.strictEqual(mage.character.acBonus, 0);
-  assert.strictEqual(mage.effectiveAc(), 12);
+  assert.strictEqual(mage.effectiveAc(), 15);
 
   var fighter = new T.Engine(adventure, { seed: 10 });
   fighter.start(0);
   choose(fighter, 'rush');
-  fighter.rng = seqRng([1, 1]);
-  var strike = fighter.perform({ type: 'use_feature', featureId: 'power_strike', target: 0 });
-  assert.strictEqual(strike.ok, true);
+  fighter.encounter.order = [{ kind: 'hero', index: 0, roll: 20, bonus: 0, total: 20 }].concat(
+    fighter.encounter.enemies.map(function (e, i) { return { kind: 'enemy', index: i, roll: 1, bonus: 0, total: 1 }; })
+  );
+  fighter.encounter.acted = {};
+  fighter.encounter.round = 1;
+  fighter.rng = seqRng([20, 8, 8, 8, 8, 1, 1]);
+  var strike = fighter.perform({ actor: 0, action: 'move', moveId: 'power_strike', target: 0 });
+  assert.strictEqual(strike.ok, true, strike.error);
   assert.strictEqual(fighter.encounter.enemies[0].hp, 0);
-  assert.strictEqual(fighter.character.features[0].uses, 2);
+  assert.strictEqual(fighter.character.features[0].uses, 1);
   assert.strictEqual(fighter.status, 'playing');
 });
 
@@ -623,7 +646,7 @@ test('old save codes migrate and bad codes fail without throwing', function () {
   assert.strictEqual(upgraded.engine.playTimeKnown, false);
 
   var newer = engine.exportSave();
-  newer.v = 4;
+  newer.v = 5;
   var tooNew = T.loadGame(adventure, T.encodeSaveCode(newer));
   assert.strictEqual(tooNew.ok, false);
   assert.ok(/較新/.test(tooNew.error));
@@ -729,6 +752,112 @@ test('preview localStorage keys all start with wasted-tower-preview-', function 
   var ui = fs.readFileSync(path.join(__dirname, 'preview/js/ui.js'), 'utf8');
   assert.ok(ui.indexOf('PREVIEW_STORAGE_KEYS.probe') >= 0);
   assert.ok(ui.indexOf('PREVIEW_STORAGE_KEYS.save') >= 0);
+});
+
+test('WT4 saves use the preview key, and WT3 or corrupt codes do not crash', function () {
+  var bag = {};
+  var storage = {
+    getItem: function (k) { return Object.prototype.hasOwnProperty.call(bag, k) ? bag[k] : null; },
+    setItem: function (k, v) { bag[k] = String(v); },
+    removeItem: function (k) { delete bag[k]; }
+  };
+  var engine = new T.Engine(adventure, { seed: 90 });
+  engine.start(0);
+  var code = T.encodeSaveCode(engine.exportSave());
+  assert.strictEqual(code.indexOf('WT4.'), 0);
+  assert.deepStrictEqual(engine.exportSave().character.statuses, []);
+  assert.strictEqual(engine.exportSave().character.hpMaxReduction, 0);
+  var slot = new T.SaveSlot(storage);
+  assert.strictEqual(slot.key, 'wasted-tower-preview-save');
+  assert.strictEqual(slot.write(code).ok, true);
+  assert.deepStrictEqual(Object.keys(bag), ['wasted-tower-preview-save']);
+  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT4.'), 0);
+  var back;
+  assert.doesNotThrow(function () { back = T.loadGame(adventure, slot.read()); });
+  assert.strictEqual(back.ok, true, back.error);
+  assert.deepStrictEqual(back.engine.character.statuses, []);
+
+  var wt3 = {
+    v: 3,
+    adventureId: 'wasted_tower',
+    scriptVersion: 1,
+    pregenIndex: 0,
+    character: {
+      name: '布倫', cls: '戰士', race: '人類',
+      str: 16, dex: 12, con: 15, int: 8, wis: 10, cha: 10,
+      ac: 16, hp: 9, hp_max: 12, acBonus: 0,
+      skills: ['athletics'],
+      inventory: ['potion_heal', 'lantern'],
+      attack: { name: '長劍', bonus: 5, damage: '1d8+3' },
+      features: [{ id: 'power_strike', name: '破甲重擊', uses: 2, usesMax: 3, effect: { type: 'damage', amount: 4 } }]
+    },
+    sceneId: 'f1_rats',
+    flags: { cls_warrior: true, gate_rushed: true },
+    done: {},
+    clearedCombats: {},
+    keyChoices: [],
+    rivalPregenIndex: null,
+    encounter: {
+      enemies: [
+        { name: '腐鼠', ac: 11, hp: 4, hp_max: 4, atk: 2, damage: '1d4' },
+        { name: '腐鼠', ac: 11, hp: 2, hp_max: 4, atk: 2, damage: '1d4' },
+        { name: '腐鼠', ac: 11, hp: 3, hp_max: 3, atk: 2, damage: '1d4' }
+      ]
+    },
+    round: 1,
+    status: 'playing',
+    lastCheckpoint: null,
+    playMs: 10,
+    rng: { kind: 'seeded', seed: 7, s: 7, count: 3 }
+  };
+  var migrated;
+  assert.doesNotThrow(function () {
+    migrated = T.loadGame(adventure, T.encodeSaveCode(wt3));
+  });
+  assert.strictEqual(migrated.ok, true, migrated && migrated.error);
+  assert.deepStrictEqual(migrated.engine.character.statuses, []);
+  assert.strictEqual(migrated.engine.character.hpMaxReduction, 0);
+  assert.strictEqual(migrated.engine.character.features.length, 2);
+  var resumed;
+  assert.doesNotThrow(function () { resumed = migrated.engine.resumeView(); });
+  assert.strictEqual(resumed.ok, true, resumed && resumed.error);
+  assert.strictEqual(migrated.engine.sceneId, 'f1_rats');
+
+  var junk = Buffer.from('{"v":4}', 'utf8').toString('base64');
+  var newer = Buffer.from('{"v":9,"scriptVersion":1}', 'utf8').toString('base64');
+  [null, undefined, '', '   ', 'hello', 'WT4.', 'WT4.@@@', 'WT3.not-base64', 'WT4.' + junk, 'WT9.' + newer].forEach(function (bad) {
+    var res;
+    assert.doesNotThrow(function () { res = T.loadGame(adventure, bad); }, 'crash on ' + String(bad));
+    assert.strictEqual(res.ok, false, String(bad));
+    assert.strictEqual(typeof res.error, 'string');
+    assert.ok(res.error.length > 0);
+  });
+});
+
+test('step 1 keeps statuses empty and simulator rates out of the player text', function () {
+  var snap = JSON.parse(fs.readFileSync(path.join(__dirname, 'test', 'story-snapshot.json'), 'utf8'));
+  assert.strictEqual(adventure.items.length, snap.items.length + 1);
+  assert.strictEqual(adventure.items[adventure.items.length - 1].id, 'antler_arrow');
+  var engine = new T.Engine(adventure, { seed: 91 });
+  engine.start(0);
+  choose(engine, 'rush');
+  heroFirst(engine);
+  engine.rng = seqRng([15, 1, 1, 1]);
+  var hit = engine.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(hit.ok, true, hit.error);
+  assert.deepStrictEqual(engine.character.statuses, []);
+  engine.encounter.enemies.forEach(function (e) {
+    assert.deepStrictEqual(e.statuses || [], []);
+  });
+  var phrases = ['通關率', '平均回合', '內部參考'];
+  ['README.md', 'preview/index.html', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/js/engine.js'].forEach(function (rel) {
+    var text = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+    phrases.forEach(function (phrase) {
+      assert.ok(text.indexOf(phrase) < 0, rel + ' shows ' + phrase);
+    });
+  });
+  var play = fs.readFileSync(path.join(__dirname, 'README.md'), 'utf8').split('## 腳本資料格式')[0];
+  assert.ok(play.indexOf('模擬') < 0);
 });
 
 test('class lines, counters, and flag-gated endings', function () {
@@ -1715,6 +1844,7 @@ test('altar rest heals half of max HP once and keeps clear_status unused', funct
   assert.ok(altar.flags.respected_dead);
   assert.ok(choiceIds(altar).indexOf('rest') >= 0);
   altar.character.hp = 1;
+  altar.character.statuses = [{ id: 'poisoned', name: '中毒' }];
   var max = altar.character.hp_max;
   var half = Math.floor(max / 2);
   var res = choose(altar, 'rest');
@@ -1725,9 +1855,10 @@ test('altar rest heals half of max HP once and keeps clear_status unused', funct
   assert.strictEqual(restEv.healed, half);
   assert.strictEqual(altar.flags.rested, true);
   assert.ok(choiceIds(altar).indexOf('rest') < 0);
+  assert.deepStrictEqual(altar.character.statuses, []);
+  assert.ok(res.events.some(function (e) { return e.t === 'clear_status'; }));
   altar.character.hp = 1;
   assert.strictEqual(altar.character.hp, 1);
-  assert.ok(!altar.character.statuses);
 
   var capped = reachPost(3, { stopAt: 'altar', seed: 82 });
   capped.character.hp = capped.character.hp_max - 1;
@@ -1917,6 +2048,9 @@ test('preview player-facing text has no Cantonese colloquial spellings', functio
         break;
       }
     });
+    if (text.indexOf(' 同 ') >= 0 || /擲出[^。\n]*同/.test(text)) {
+      problems.push('「同」 joins a roll line in 「' + text + '」');
+    }
   });
   assert.deepStrictEqual(problems, []);
 });
@@ -1924,15 +2058,776 @@ test('preview player-facing text has no Cantonese colloquial spellings', functio
 test('player-facing sources do not name a tabletop trademark', function () {
   var mark = 'D' + '&' + 'D';
   var phrase = ('Dungeons' + ' & ' + 'Dragons').toLowerCase();
-  ['index.html', 'README.md', 'preview/index.html', 'preview/data/wasted_tower.js', 'preview/js/engine.js', 'preview/js/narrator.js', 'preview/js/ui.js'].forEach(function (file) {
+  var publisher = 'Wizards of the Coast';
+  var files = ['index.html', 'README.md', 'preview/index.html', 'preview/data/wasted_tower.js', 'preview/js/engine.js', 'preview/js/narrator.js', 'preview/js/ui.js'];
+  var allowed = { 'README.md': 1, 'preview/index.html': 1, 'preview/data/wasted_tower.js': 1 };
+  files.forEach(function (file) {
     var text = fs.readFileSync(path.join(__dirname, file), 'utf8');
     assert.ok(text.indexOf(mark) < 0, file);
     assert.ok(text.toLowerCase().indexOf(phrase) < 0, file);
+    if (allowed[file]) assert.ok(text.indexOf(publisher) >= 0, file + ' should carry the attribution');
+    else assert.ok(text.indexOf(publisher) < 0, file);
+  });
+  var sentence = 'This work includes material taken from the System Reference Document 5.1 (\u201cSRD 5.1\u201d) by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode.';
+  ['README.md', 'preview/index.html', 'preview/data/wasted_tower.js'].forEach(function (file) {
+    assert.ok(fs.readFileSync(path.join(__dirname, file), 'utf8').indexOf(sentence) >= 0, file);
   });
 });
+
+function heroFirst(engine) {
+  engine.encounter.order = [{ kind: 'hero', index: 0, roll: 20, bonus: 0, total: 99 }].concat(
+    engine.encounter.enemies.map(function (e, i) {
+      return { kind: 'enemy', index: i, roll: 1, bonus: 0, total: 1 };
+    })
+  );
+  engine.encounter.acted = {};
+  engine.encounter.round = 1;
+  engine.encounter.heroReady = false;
+  engine.round = 1;
+}
+
+test('each class has exactly the two step-1 moves', function () {
+  var expect = {
+    '戰士': ['power_strike', 'second_wind'],
+    '遊俠': ['aimed_shot', 'hunters_mark'],
+    '盜賊': ['shadow_attack', 'uncanny_dodge'],
+    '牧師': ['cure_wounds', 'guiding_bolt'],
+    '法師': ['magic_missile', 'shield']
+  };
+  adventure.pregens.forEach(function (p) {
+    var ids = p.features.map(function (f) { return f.id; });
+    assert.deepStrictEqual(ids, expect[p['class']], p['class']);
+    assert.strictEqual(p.features.length, 2);
+    p.features.forEach(function (f) {
+      assert.ok(f.roll, f.id);
+      assert.ok(f.target, f.id);
+      assert.strictEqual(typeof f.costs_turn, 'boolean', f.id);
+      assert.ok(Number.isInteger(f.uses) || (f.pool && Number.isInteger(f.cost)), f.id);
+    });
+  });
+  var legacy = {
+    id: 'legacy_ok', title: '舊招', start: 'a', items: [],
+    pregens: [pregen('甲', '戰士')],
+    scenes: [
+      { id: 'a', type: 'beat', facts: ['到了。'], choices: [{ id: 'go', label: '走', to: 'z' }] },
+      { id: 'z', type: 'end', end: 'win', name: '完', facts: ['完。'] }
+    ]
+  };
+  var report = T.validateAdventure(legacy);
+  assert.strictEqual(report.ok, true, report.errors.join('\n'));
+});
+
+test('advantage keeps the high die and disadvantage keeps the low die', function () {
+  var ranger = new T.Engine(adventure, { seed: 41 });
+  ranger.start(1);
+  ranger.enterScene('f1_rats');
+  heroFirst(ranger);
+  ranger.rng = seqRng([7, 16, 4, 3, 1, 1]);
+  var shot = ranger.perform({ actor: 0, action: 'move', moveId: 'aimed_shot', target: 0 });
+  assert.strictEqual(shot.ok, true, shot.error);
+  var atk = shot.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(atk.mode, 'advantage');
+  assert.deepStrictEqual(atk.dice, [7, 16]);
+  assert.strictEqual(atk.d20, 16);
+  assert.strictEqual(atk.hit, true);
+  var mech = narrator.Mechanics.format(atk).map(function (l) { return l.text; }).join('\n');
+  assert.ok(mech.indexOf('優勢：擲出 7 和 16，取 16') >= 0);
+  assert.ok(mech.indexOf('d20 擲出 16') >= 0);
+  assert.ok(mech.indexOf('難度 ' + atk.ac) >= 0);
+
+  var guard = new T.Engine(adventure, { seed: 42 });
+  guard.start(0);
+  guard.enterScene('f1_rats');
+  heroFirst(guard);
+  guard.rng = seqRng([2, 18, 3, 17, 4, 16]);
+  var held = guard.perform({ actor: 0, action: 'defend' });
+  assert.strictEqual(held.ok, true, held.error);
+  var swings = held.events.filter(function (e) { return e.t === 'enemy_attack'; });
+  assert.strictEqual(swings.length, 3);
+  assert.strictEqual(swings[0].mode, 'disadvantage');
+  assert.strictEqual(swings[0].d20, 2);
+  assert.strictEqual(swings[0].hit, false);
+  var low = narrator.Mechanics.rollLines(swings[0]).join('\n');
+  assert.ok(low.indexOf('劣勢：擲出 2 和 18，取 2') >= 0);
+  assert.ok(low.indexOf('d20 擲出 2') >= 0);
+  assert.ok(low.indexOf('難度 ' + swings[0].ac) >= 0);
+  assert.deepStrictEqual(swings[1].dice, [3, 17]);
+  assert.strictEqual(swings[1].d20, 3);
+});
+
+test('natural 20 crits, natural 1 misses, and a 19 crits only when it hits', function () {
+  var fighter = new T.Engine(adventure, { seed: 43 });
+  fighter.start(0);
+  fighter.enterScene('f1_bandit');
+  heroFirst(fighter);
+  fighter.encounter.enemies[0].ac = 40;
+  fighter.rng = seqRng([19, 1]);
+  var miss = fighter.perform({ actor: 0, action: 'attack', target: 0 });
+  var missed = miss.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(missed.d20, 19);
+  assert.strictEqual(missed.hit, false);
+  assert.strictEqual(missed.crit, false);
+  assert.strictEqual(fighter.encounter.enemies[0].hp, 11);
+
+  heroFirst(fighter);
+  fighter.encounter.enemies[0].ac = 40;
+  fighter.rng = seqRng([20, 8, 8, 1]);
+  var crit = fighter.perform({ actor: 0, action: 'attack', target: 0 });
+  var hit = crit.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(hit.nat, 20);
+  assert.strictEqual(hit.hit, true);
+  assert.strictEqual(hit.crit, true);
+  assert.strictEqual(hit.damage.rolls.length, 2);
+  assert.strictEqual(hit.damage.total, 19);
+  var lines = narrator.Mechanics.format(hit).map(function (l) { return l.text; }).join('\n');
+  assert.ok(lines.indexOf('難度 40') >= 0);
+  assert.ok(lines.indexOf('自然 20') >= 0);
+  var view = fighter.narrationView(narrator.diceOf(hit));
+  var prose = narrator.OfflineNarrator.narrate('attack', view).map(function (l) { return l.text; }).join('\n');
+  assert.ok(prose.indexOf('難度 40') >= 0);
+  assert.ok(prose.indexOf('天時地利，這一擊正中要害。暴擊。傷害骰再擲一次。') >= 0);
+
+  var slip = new T.Engine(adventure, { seed: 44 });
+  slip.start(0);
+  slip.enterScene('f1_bandit');
+  heroFirst(slip);
+  slip.encounter.enemies[0].ac = 1;
+  slip.rng = seqRng([1, 1]);
+  var whiff = slip.perform({ actor: 0, action: 'attack', target: 0 });
+  var nat1 = whiff.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(nat1.nat, 1);
+  assert.strictEqual(nat1.hit, false);
+  assert.strictEqual(slip.encounter.enemies[0].hp, 11);
+  var missLines = narrator.Mechanics.format(nat1).map(function (l) { return l.text; }).join('\n');
+  assert.ok(missLines.indexOf('自然 1') >= 0);
+  var missView = slip.narrationView(narrator.diceOf(nat1));
+  var missProse = narrator.OfflineNarrator.narrate('attack', missView).map(function (l) { return l.text; }).join('\n');
+  assert.ok(missProse.indexOf('腳下一滑，武器擦過石壁。這一擊沒有打中。') >= 0);
+});
+
+test('massive damage stops at 1 only from full HP, and is separate from enemy yield', function () {
+  var hero = new T.Engine(adventure, { seed: 45 });
+  hero.start(0);
+  hero.enterScene('f1_bandit');
+  hero.encounter.enemies[0].damage = '1d6+20';
+  hero.rng = seqRng([15, 1]);
+  hero.runEnemyTurn(0);
+  assert.strictEqual(hero.character.hp, 1);
+  assert.strictEqual(hero.status, 'playing');
+  var massive = hero.events.filter(function (e) { return e.t === 'enemy_attack'; })[0];
+  assert.strictEqual(massive.massive, true);
+  assert.strictEqual(hero.encounter.enemies[0].hp, 11);
+  assert.ok(!hero.encounter.enemies[0].yielded);
+
+  hero.character.hp = 6;
+  hero.rng = seqRng([15, 1]);
+  hero.runEnemyTurn(0);
+  assert.strictEqual(hero.character.hp, 0);
+  assert.strictEqual(hero.status, 'lost');
+});
+
+test('rats flee when one remains, and a killing blow on the last one stops at 1', function () {
+  var rats = new T.Engine(adventure, { seed: 46 });
+  rats.start(0);
+  rats.enterScene('f1_rats');
+  assert.strictEqual(rats.encounter.enemies.length, 3);
+  heroFirst(rats);
+  rats.rng = seqRng([15, 1, 1, 1, 15, 1]);
+  var first = rats.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(first.ok, true, first.error);
+  assert.strictEqual(rats.sceneId, 'f1_rats');
+  assert.strictEqual(rats.encounter.enemies[0].hp, 0);
+  var second = rats.perform({ actor: 0, action: 'attack', target: 1 });
+  assert.strictEqual(second.ok, true, second.error);
+  assert.strictEqual(rats.sceneId, 'f1_rats_after');
+  assert.strictEqual(rats.status, 'playing');
+  assert.strictEqual(rats.clearedCombats.f1_rats, true);
+  assert.strictEqual(rats.battleCounts().cleared, 1);
+  var win = second.events.filter(function (e) { return e.t === 'combat_win'; })[0];
+  assert.strictEqual(win.reason, 'yield');
+
+  var last = new T.Engine(adventure, { seed: 47 });
+  last.start(0);
+  last.enterScene('f1_rats');
+  last.encounter.enemies[0].hp = 0;
+  last.encounter.enemies[1].hp = 0;
+  last.encounter.enemies[2].hp = 3;
+  last.hurtEnemy(last.encounter.enemies[2], 10);
+  assert.strictEqual(last.encounter.enemies[2].hp, 0);
+  assert.strictEqual(last.checkGroupYield(), true);
+  assert.strictEqual(last.encounter.enemies[2].hp, 1);
+  assert.strictEqual(last.encounter.enemies[2].yielded, true);
+  assert.strictEqual(last.combatResult(), 'yield');
+});
+
+test('bandit and cultist yield at a fraction of scaled max HP', function () {
+  var bandit = new T.Engine(adventure, { seed: 48 });
+  bandit.start(0);
+  bandit.enterScene('f1_bandit');
+  assert.strictEqual(bandit.encounter.enemies[0].hp_max, 11);
+  assert.strictEqual(bandit.encounter.enemies[0].per_extra.hp, 6);
+  heroFirst(bandit);
+  bandit.rng = seqRng([10, 1, 1, 20, 8, 8]);
+  var nick = bandit.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(nick.ok, true, nick.error);
+  assert.strictEqual(bandit.encounter.enemies[0].hp, 7);
+  assert.ok(!bandit.encounter.enemies[0].yielded);
+  var down = bandit.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(down.ok, true, down.error);
+  var dropped = down.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(dropped.targetHp, 3);
+  assert.strictEqual(dropped.yielded, true);
+  assert.strictEqual(bandit.sceneId, 'f1_bandit_after');
+  assert.strictEqual(bandit.clearedCombats.f1_bandit, true);
+  assert.strictEqual(bandit.battleCounts().cleared, 1);
+
+  var duo = new T.Engine(adventure, { seed: 49, partySize: 2 });
+  duo.start(0);
+  assert.strictEqual(duo.party.length, 2);
+  duo.enterScene('f1_bandit');
+  assert.strictEqual(duo.encounter.enemies[0].hp_max, 17);
+  heroFirst(duo);
+  duo.rng = seqRng([20, 8, 8]);
+  var scaled = duo.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(scaled.ok, true, scaled.error);
+  assert.strictEqual(scaled.events.filter(function (e) { return e.t === 'attack'; })[0].targetHp, 5);
+  assert.strictEqual(duo.sceneId, 'f1_bandit_after');
+
+  var rats = new T.Engine(adventure, { seed: 50, partySize: 2 });
+  rats.start(0);
+  rats.enterScene('f1_rats');
+  assert.strictEqual(rats.encounter.enemies.length, 4);
+  assert.strictEqual(rats.encounter.enemies[0].hp_max, 4);
+
+  var cult = new T.Engine(adventure, { seed: 51 });
+  cult.start(0);
+  cult.enterScene('f3_cult');
+  assert.strictEqual(cult.encounter.enemies[0].hp_max, 12);
+  heroFirst(cult);
+  cult.rng = seqRng([20, 8, 8]);
+  var broke = cult.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(broke.ok, true, broke.error);
+  var cultHit = broke.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(cultHit.targetHp, 3);
+  assert.strictEqual(cultHit.yielded, true);
+  assert.strictEqual(cult.sceneId, 'f3_cult_after');
+  assert.strictEqual(cult.clearedCombats.f3_cult, true);
+});
+
+test('yield wins count toward the secret ending and a player flee does not', function () {
+  var secret = playSecret(0);
+  assert.strictEqual(secret.flags.secret_ready, true);
+  assert.strictEqual(secret.clearedCombats.f1_rats, true);
+  assert.strictEqual(secret.clearedCombats.f1_bandit, true);
+  assert.strictEqual(secret.clearedCombats.f3_cult, true);
+
+  var fled = new T.Engine(adventure, { seed: 52 });
+  fled.start(0);
+  ['f1_rats', 'f1_bandit', 'f2_bones', 'f2_ooze', 'f3_wight', 'hide_vault', 'hide_crypt'].forEach(function (id) {
+    fled.markCombatCleared(id);
+  });
+  assert.strictEqual(fled.flags.secret_ready, undefined);
+  fled.enterScene('f3_cult');
+  var left = fled.perform({ actor: 0, action: 'flee' });
+  assert.strictEqual(left.ok, true, left.error);
+  assert.ok(!fled.clearedCombats.f3_cult);
+  assert.ok(!fled.flags.secret_ready);
+});
+
+test('initiative is rolled, saved, and ambush overrides the first round', function () {
+  var a = new T.Engine(adventure, { seed: 77 });
+  a.start(0);
+  a.enterScene('f1_rats');
+  var b = new T.Engine(adventure, { seed: 77 });
+  b.start(0);
+  b.enterScene('f1_rats');
+  assert.deepStrictEqual(a.encounter.order, b.encounter.order);
+  assert.ok(a.encounter.order.length >= 4);
+  assert.ok(a.events.some(function (e) { return e.t === 'initiative'; }));
+  var code = T.encodeSaveCode(a.exportSave());
+  var face = a.rng.die(20);
+  var loaded = T.loadGame(adventure, code);
+  assert.strictEqual(loaded.ok, true, loaded.error);
+  assert.deepStrictEqual(loaded.engine.encounter.order, a.encounter.order);
+  assert.strictEqual(loaded.engine.rng.die(20), face);
+
+  var quiet = new T.Engine(adventure, { seed: 78 });
+  quiet.start(0);
+  quiet.enterScene('f1_rats');
+  heroFirst(quiet);
+  var armed = quiet.perform({ actor: 0, action: 'ambush', outcome: 'success' });
+  assert.strictEqual(armed.ok, true, armed.error);
+  quiet.rng = seqRng([15, 1]);
+  var poke = quiet.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(poke.ok, true, poke.error);
+  assert.ok(!poke.events.some(function (e) { return e.t === 'enemy_attack'; }));
+  assert.strictEqual(quiet.sceneId, 'f1_rats');
+
+  var caught = new T.Engine(adventure, { seed: 79 });
+  caught.start(0);
+  caught.enterScene('f1_rats');
+  heroFirst(caught);
+  caught.perform({ actor: 0, action: 'ambush', outcome: 'failure' });
+  caught.rng = seqRng([1, 1, 1, 15, 1, 1, 1]);
+  var answer = caught.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(answer.ok, true, answer.error);
+  var before = 0;
+  var seenPlayer = false;
+  answer.events.forEach(function (e) {
+    if (e.t === 'attack') seenPlayer = true;
+    if (!seenPlayer && e.t === 'enemy_attack') before++;
+  });
+  var player = answer.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(before, 3);
+  assert.strictEqual(player.d20, 15);
+});
+
+test('WT3 migrates, checkpoints restore uses only, and retry takes a new seed', function () {
+  var fighter = new T.Engine(adventure, { seed: 80 });
+  fighter.start(0);
+  var old = fighter.exportSave();
+  old.v = 3;
+  old.character.features = [{ id: 'old', name: '舊招', uses: 3, usesMax: 3, effect: { type: 'damage', amount: 4 } }];
+  delete old.character.statuses;
+  delete old.character.pools;
+  delete old.character.passives;
+  delete old.character.hpMaxReduction;
+  delete old.allies;
+  var migrated = T.loadGame(adventure, T.encodeSaveCode(old));
+  assert.strictEqual(migrated.ok, true, migrated.error);
+  var ids = migrated.engine.character.features.map(function (f) { return f.id; });
+  assert.deepStrictEqual(ids, ['power_strike', 'second_wind']);
+  assert.deepStrictEqual(migrated.engine.character.statuses, []);
+  assert.strictEqual(migrated.engine.character.hpMaxReduction, 0);
+  var code = T.decodeSaveCode(T.encodeSaveCode(fighter.exportSave()));
+  assert.strictEqual(code.save.v, 4);
+  assert.strictEqual(code.save.rng.kind, 'seeded');
+  assert.ok(Number.isInteger(code.save.rng.count));
+
+  var rest = new T.Engine(adventure, { seed: 81 });
+  rest.start(0);
+  rest.character.hp = 6;
+  rest.character.features[0].uses = 0;
+  rest.enterScene('cp_f1');
+  assert.strictEqual(rest.character.hp, 6);
+  assert.strictEqual(rest.character.features[0].uses, 2);
+  assert.ok(rest.events.some(function (e) { return e.t === 'move_refresh' && e.healed === 0; }));
+  assert.ok(rest.checkpointSnap);
+  var seedAtRest = rest.rng.seed;
+
+  rest.enterScene('f1_bandit');
+  rest.encounter.order = [
+    { kind: 'enemy', index: 0, roll: 20, bonus: 0, total: 20 },
+    { kind: 'hero', index: 0, roll: 1, bonus: 0, total: 1 }
+  ];
+  rest.encounter.acted = {};
+  rest.encounter.round = 1;
+  rest.encounter.heroReady = false;
+  rest.encounter.enemies[0].damage = '1d6+20';
+  rest.character.hp = 4;
+  rest.rng = seqRng([15, 6]);
+  var dead = rest.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(dead.ok, true, dead.error);
+  assert.strictEqual(rest.status, 'lost');
+  var diedSeed = rest.rng.seed;
+  var again = rest.perform({ actor: 0, action: 'retry' });
+  assert.strictEqual(again.ok, true, again.error);
+  assert.strictEqual(rest.sceneId, 'cp_f1');
+  assert.strictEqual(rest.status, 'playing');
+  assert.strictEqual(rest.character.hp, 6);
+  assert.strictEqual(rest.character.features[0].uses, 2);
+  assert.ok(Number.isInteger(rest.rng.seed) && rest.rng.seed > 0);
+  assert.notStrictEqual(rest.rng.seed, seedAtRest);
+  assert.notStrictEqual(rest.rng.seed, diedSeed || 0);
+  assert.ok(again.events.some(function (e) { return e.t === 'retry'; }));
+});
+
+test('visible combat rolls match the RNG and survive a reload', function () {
+  var mark = 'D' + '&' + 'D';
+  var phrase = ('Dungeons' + ' & ' + 'Dragons').toLowerCase();
+  var check = new T.Engine(adventure, { seed: 92 });
+  check.start(0);
+  choose(check, 'rush');
+  winCombat(check);
+  answerInserted(check);
+  choose(check, 'climb');
+  check.rng = seqRng([12]);
+  var rolled = check.perform({ type: 'roll' });
+  assert.strictEqual(rolled.ok, true, rolled.error);
+  var chk = rolled.events.filter(function (e) { return e.t === 'check'; })[0];
+  assert.strictEqual(chk.d20, 12);
+  assert.strictEqual(chk.total, 17);
+  var checkText = narrator.Mechanics.rollLines(chk).join('\n');
+  assert.ok(checkText.indexOf('d20 擲出 12，力量 +3，熟練 +2，總數 17，難度 12，成功') >= 0);
+  var storedCheck = check.rollLog.filter(function (row) { return row.t === 'check'; }).pop();
+  assert.deepStrictEqual(storedCheck.lines, narrator.Mechanics.rollLines(chk));
+
+  var fighter = new T.Engine(adventure, { seed: 93 });
+  fighter.start(0);
+  fighter.enterScene('f1_bandit');
+  heroFirst(fighter);
+  fighter.rng = seqRng([12, 4, 1]);
+  var swing = fighter.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(swing.ok, true, swing.error);
+  var atk = swing.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(atk.d20, 12);
+  var attackText = narrator.Mechanics.rollLines(atk).join('\n');
+  assert.ok(attackText.indexOf('d20 擲出 12') >= 0);
+  assert.ok(attackText.indexOf('總數 ' + atk.total) >= 0);
+  assert.ok(attackText.indexOf('難度 ' + atk.ac) >= 0);
+  assert.strictEqual(atk.ac, fighter.encounter ? 13 : atk.ac);
+  assert.ok(attackText.indexOf('難度 13') >= 0);
+  var stored = fighter.rollLog.filter(function (row) { return row.t === 'attack'; }).pop();
+  assert.deepStrictEqual(stored.lines, narrator.Mechanics.rollLines(atk));
+  assert.ok(attackText.indexOf(mark) < 0);
+  assert.ok(attackText.toLowerCase().indexOf(phrase) < 0);
+
+  heroFirst(fighter);
+  fighter.encounter.enemies[0].ac = 11;
+  fighter.encounter.enemies[0].hp = 11;
+  fighter.encounter.enemies[0].yielded = false;
+  fighter.rng = seqRng([20, 8, 8, 1]);
+  var crit = fighter.perform({ actor: 0, action: 'attack', target: 0 });
+  var critEv = crit.events.filter(function (e) { return e.t === 'attack'; })[0];
+  var critText = narrator.Mechanics.rollLines(critEv).join('\n');
+  assert.ok(critText.indexOf('自然 20，暴擊') >= 0);
+  assert.ok(critText.indexOf('d20 擲出 20') >= 0);
+
+  var live = new T.Engine(adventure, { seed: 94 });
+  live.start(0);
+  live.enterScene('f1_bandit');
+  heroFirst(live);
+  var before = live.rng.rolled();
+  var hit = live.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(hit.ok, true, hit.error);
+  var seen = live.rollLog.map(function (row) { return row.lines.join('\n'); }).join('\n');
+  var count = live.rng.rolled();
+  assert.ok(count > before);
+  var code = T.encodeSaveCode(live.exportSave());
+  var nextFace = live.rng.die(20);
+  var loaded = T.loadGame(adventure, code);
+  assert.strictEqual(loaded.ok, true, loaded.error);
+  assert.strictEqual(loaded.engine.rng.rolled(), count);
+  assert.strictEqual(loaded.engine.rollLog.map(function (row) { return row.lines.join('\n'); }).join('\n'), seen);
+  var resumed = loaded.engine.resumeView();
+  assert.strictEqual(resumed.ok, true, resumed.error);
+  assert.strictEqual(loaded.engine.rng.rolled(), count);
+  assert.strictEqual(loaded.engine.rng.die(20), nextFace);
+});
+
+test('visible roll text does not name a tabletop trademark', function () {
+  var mark = 'D' + '&' + 'D';
+  var phrase = ('Dungeons' + ' & ' + 'Dragons').toLowerCase();
+  var sample = narrator.Mechanics.rollLines({
+    t: 'attack', d20: 20, dice: [7, 20], mode: 'advantage', bonus: 5, total: 25,
+    ac: 13, dc: 13, hit: true, crit: true, nat: 20
+  }).concat(narrator.Mechanics.rollLines({
+    t: 'check', d20: 1, mod: 3, prof: 2, total: 6, dc: 12, success: false, ability: 'str', nat: 1
+  })).concat(narrator.Mechanics.rollLines({
+    t: 'enemy_attack', d20: 7, dice: [7, 16], mode: 'disadvantage', bonus: 2, total: 9,
+    ac: 16, dc: 16, hit: false, nat: 7
+  })).join('\n');
+  assert.ok(sample.indexOf('優勢：擲出 7 和 20，取 20') >= 0);
+  assert.ok(sample.indexOf('劣勢：擲出 7 和 16，取 7') >= 0);
+  assert.ok(sample.indexOf(' 同 ') < 0);
+  assert.ok(sample.indexOf('d20') >= 0);
+  assert.ok(sample.indexOf('難度') >= 0);
+  assert.ok(sample.indexOf('暴擊') >= 0);
+  assert.ok(sample.indexOf(mark) < 0);
+  assert.ok(sample.toLowerCase().indexOf(phrase) < 0);
+  ['preview/index.html', 'preview/js/ui.js', 'preview/js/narrator.js', 'preview/js/engine.js', 'preview/data/wasted_tower.js', 'index.html'].forEach(function (rel) {
+    var text = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+    assert.ok(text.indexOf(mark) < 0, rel);
+    assert.ok(text.toLowerCase().indexOf(phrase) < 0, rel);
+  });
+});
+
+test('the same command shape resolves whether it comes from the menu or a later client', function () {
+  function strike(cmd) {
+    var engine = new T.Engine(adventure, { seed: 82 });
+    engine.start(0);
+    engine.enterScene('f1_bandit');
+    heroFirst(engine);
+    engine.rng = seqRng([12, 4, 1]);
+    var res = engine.perform(cmd);
+    assert.strictEqual(res.ok, true, res.error);
+    return engine.encounter.enemies[0].hp;
+  }
+  var fromMenu = strike({ type: 'attack', target: 0 });
+  var fromNet = strike({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(fromMenu, fromNet);
+  assert.ok(fromMenu < 11);
+  var rejected = new T.Engine(adventure, { seed: 83 });
+  rejected.start(0);
+  rejected.enterScene('f1_bandit');
+  var other = rejected.perform({ actor: 1, action: 'attack', target: 0 });
+  assert.strictEqual(other.ok, false);
+});
+
+test('fleeing the floor-1 bandit does not reroll resolved hall checks', function () {
+  var engine = new T.Engine(adventure, { seed: 95 });
+  engine.start(0);
+  choose(engine, 'rush');
+  var storyRng = engine.rng;
+  winCombat(engine);
+  engine.rng = storyRng;
+  answerInserted(engine);
+  choose(engine, 'climb');
+  assert.strictEqual(engine.sceneId, 'f1_ath');
+  var before = engine.rng.rolled();
+  var rolled = engine.perform({ type: 'roll' });
+  assert.strictEqual(rolled.ok, true, rolled.error);
+  assert.strictEqual(engine.sceneId, 'f1_bandit');
+  assert.ok(engine.done['check:f1_ath'] && typeof engine.done['check:f1_ath'] === 'object');
+  assert.strictEqual(engine.rng.rolled(), before + 1);
+  var atFight = engine.rng.exportState();
+  var fled = engine.perform({ type: 'flee' });
+  assert.strictEqual(fled.ok, true, fled.error);
+  assert.strictEqual(engine.sceneId, 'f1_hall');
+  assert.deepStrictEqual(engine.rng.exportState(), atFight);
+  var choices = choiceIds(engine);
+  assert.ok(choices.length >= 1);
+  assert.ok(choices.indexOf('climb') < 0);
+  assert.ok(choices.indexOf('creep') < 0);
+  assert.ok(choices.indexOf('scan') < 0);
+  assert.ok(!engine.legalActions().some(function (a) { return a.type === 'roll'; }));
+
+  var saved = engine.exportSave();
+  assert.strictEqual(saved.rng.count, atFight.count);
+  assert.strictEqual(saved.rng.s, atFight.s);
+  assert.ok(saved.done['check:f1_ath']);
+  var code = T.encodeSaveCode(saved);
+  var loaded = T.loadGame(adventure, code);
+  assert.strictEqual(loaded.ok, true, loaded.error);
+  assert.strictEqual(loaded.engine.sceneId, 'f1_hall');
+  assert.strictEqual(loaded.engine.rng.rolled(), atFight.count);
+  assert.strictEqual(loaded.engine.rng.exportState().s, atFight.s);
+  assert.deepStrictEqual(choiceIds(loaded.engine), choices);
+  assert.ok(loaded.engine.done['check:f1_ath']);
+  assert.ok(choiceIds(loaded.engine).indexOf('climb') < 0);
+  assert.strictEqual(engine.rng.die(20), loaded.engine.rng.die(20));
+
+  var forward = T.loadGame(adventure, code);
+  var pos = forward.engine.rng.exportState();
+  var go = forward.engine.perform({ type: 'choice', id: choiceIds(forward.engine)[0] });
+  assert.strictEqual(go.ok, true, go.error);
+  assert.strictEqual(forward.engine.sceneId, 'f1_bandit');
+  assert.deepStrictEqual(forward.engine.rng.exportState(), pos);
+  assert.ok(!go.events.some(function (e) { return e.t === 'check'; }));
+
+  function shell(sceneId, flags, done, encounter) {
+    return {
+      v: 3,
+      adventureId: 'wasted_tower',
+      scriptVersion: 1,
+      pregenIndex: 0,
+      character: {
+        name: '布倫', cls: '戰士', race: '人類',
+        str: 16, dex: 12, con: 15, int: 8, wis: 10, cha: 10,
+        ac: 16, hp: 12, hp_max: 12, acBonus: 0,
+        skills: ['athletics'],
+        inventory: ['potion_heal', 'lantern'],
+        attack: { name: '長劍', bonus: 5, damage: '1d8+3' },
+        features: []
+      },
+      sceneId: sceneId,
+      flags: flags,
+      done: done || {},
+      clearedCombats: {},
+      keyChoices: [],
+      rivalPregenIndex: null,
+      encounter: encounter || null,
+      round: encounter ? 1 : 0,
+      status: 'playing',
+      lastCheckpoint: null,
+      playMs: 1,
+      rng: { kind: 'seeded', seed: 95, s: 95, count: 4 }
+    };
+  }
+  var hall = T.loadGame(adventure, T.encodeSaveCode(shell('f1_hall', { cls_warrior: true, hall_climb: true })));
+  assert.strictEqual(hall.ok, true, hall.error);
+  assert.ok(hall.engine.done['check:f1_ath']);
+  assert.ok(hall.engine.done['choice:f1_hall/climb']);
+  assert.ok(!hall.engine.done['check:f1_stl']);
+  assert.ok(choiceIds(hall.engine).indexOf('climb') < 0);
+  assert.ok(choiceIds(hall.engine).indexOf('creep') < 0);
+  assert.ok(choiceIds(hall.engine).indexOf('scan') < 0);
+  assert.ok(choiceIds(hall.engine).length >= 1);
+  assert.strictEqual(hall.engine.rng.rolled(), 4);
+
+  var waiting = T.loadGame(adventure, T.encodeSaveCode(shell('f1_ath', { cls_warrior: true, hall_climb: true })));
+  assert.strictEqual(waiting.ok, true, waiting.error);
+  assert.ok(!waiting.engine.done['check:f1_ath']);
+  assert.ok(waiting.engine.legalActions().some(function (a) { return a.type === 'roll'; }));
+
+  var early = T.loadGame(adventure, T.encodeSaveCode(shell('f1_gate', { cls_warrior: true, gate_rushed: true })));
+  assert.strictEqual(early.ok, true, early.error);
+  assert.ok(!early.engine.done['check:f1_ath']);
+  assert.ok(!early.engine.done['check:f1_stl']);
+  assert.ok(!early.engine.done['check:f1_per']);
+
+  var bandit = T.loadGame(adventure, T.encodeSaveCode(shell('f1_bandit', { cls_warrior: true }, {}, {
+    enemies: [{ name: '盜墓者', ac: 13, hp: 11, hp_max: 11, atk: 3, damage: '1d6+1' }],
+    order: [],
+    acted: {},
+    round: 1
+  })));
+  assert.strictEqual(bandit.ok, true, bandit.error);
+  assert.ok(bandit.engine.done['check:f1_ath']);
+  assert.ok(bandit.engine.done['check:f1_stl']);
+  assert.ok(bandit.engine.done['check:f1_per']);
+  var back = bandit.engine.perform({ type: 'flee' });
+  assert.strictEqual(back.ok, true, back.error);
+  assert.strictEqual(bandit.engine.sceneId, 'f1_hall');
+  assert.strictEqual(bandit.engine.rng.rolled(), 4);
+  assert.ok(choiceIds(bandit.engine).length >= 1);
+  assert.ok(choiceIds(bandit.engine).indexOf('climb') < 0);
+});
+
+function simulateClass(index, runs) {
+  var wins = 0;
+  var roundSum = 0;
+  var finished = 0;
+  var r, engine, guard, rounds;
+  function forceCheck(eng) {
+    var saved = eng.rng;
+    eng.rng = seqRng([20]);
+    var res = eng.perform({ type: 'roll' });
+    eng.rng = saved;
+    return res;
+  }
+  function lowest(eng) {
+    var living = eng.livingEnemies();
+    var best = living[0];
+    living.forEach(function (e) { if (e.hp < best.hp) best = e; });
+    return best;
+  }
+  function usesOf(eng, id) {
+    var found = null;
+    (eng.character.features || []).forEach(function (f) { if (f.id === id) found = f; });
+    if (!found) return 0;
+    return eng.moveUsesLeft(eng.character, found);
+  }
+  function policy(eng) {
+    var c = eng.character;
+    var foe = lowest(eng);
+    if (c.hp * 2 <= c.hp_max && usesOf(eng, 'second_wind') > 0) {
+      return { actor: 0, action: 'move', moveId: 'second_wind' };
+    }
+    if (c.hp <= 4) {
+      var slot = -1;
+      c.inventory.forEach(function (id, i) {
+        if (slot < 0 && (id === 'potion_heal' || id === 'potion_heal_2' || id === 'cure_wounds')) slot = i;
+      });
+      if (slot >= 0) return { actor: 0, action: 'item', slot: slot };
+      if (usesOf(eng, 'cure_wounds') > 0) return { actor: 0, action: 'move', moveId: 'cure_wounds' };
+    }
+    if (c.hp <= 4 && usesOf(eng, 'shield') > 0 && !(c.acBonus > 0)) {
+      return { actor: 0, action: 'move', moveId: 'shield' };
+    }
+    var moves = ['power_strike', 'aimed_shot', 'hunters_mark', 'shadow_attack', 'guiding_bolt', 'magic_missile'];
+    var m;
+    for (m = 0; m < moves.length; m++) {
+      if (usesOf(eng, moves[m]) > 0) return { actor: 0, action: 'move', moveId: moves[m], target: foe.index };
+    }
+    return { actor: 0, action: 'attack', target: foe.index };
+  }
+  function fight(eng) {
+    var seen = 0;
+    var steps = 0;
+    while (eng.status === 'playing' && eng.scene && eng.scene.type === 'combat') {
+      if (eng.round > seen) seen = eng.round;
+      if (eng.round > 30 || steps++ > 80) {
+        eng.lose('stall');
+        break;
+      }
+      var living = eng.livingEnemies();
+      if (!living.length) break;
+      var res = eng.perform(policy(eng));
+      if (!res.ok) {
+        res = eng.perform({ actor: 0, action: 'attack', target: living[0].index });
+        if (!res.ok) { eng.lose('policy'); break; }
+      }
+    }
+    return seen;
+  }
+  for (r = 0; r < runs; r++) {
+    engine = new T.Engine(adventure, { seed: 1000 + index * 100000 + r });
+    engine.start(index);
+    rounds = 0;
+    guard = 0;
+    try {
+      choose(engine, 'rush');
+      rounds += fight(engine);
+      if (engine.status !== 'playing') throw new Error('lost');
+      answerInserted(engine);
+      choose(engine, 'climb');
+      forceCheck(engine);
+      rounds += fight(engine);
+      if (engine.status !== 'playing') throw new Error('lost');
+      answerInserted(engine);
+      cont(engine);
+      choose(engine, 'up');
+      rounds += fight(engine);
+      if (engine.status !== 'playing') throw new Error('lost');
+      answerInserted(engine);
+      choose(engine, 'watch');
+      forceCheck(engine);
+      rounds += fight(engine);
+      if (engine.status !== 'playing') throw new Error('lost');
+      answerInserted(engine);
+      cont(engine);
+      choose(engine, 'smash');
+      answerInserted(engine);
+      rounds += fight(engine);
+      if (engine.status !== 'playing') throw new Error('lost');
+      answerInserted(engine);
+      choose(engine, 'rush_boss');
+      rounds += fight(engine);
+      if (engine.status !== 'playing') throw new Error('lost');
+      cont(engine);
+      choose(engine, 'leave');
+      if (engine.status === 'won') {
+        wins++;
+        roundSum += rounds;
+        finished++;
+      }
+    } catch (e) {
+      guard++;
+    }
+  }
+  return { wins: wins, runs: runs, avg: finished ? (roundSum / finished) : 0 };
+}
+
+function printSimulator() {
+  var runs = 2000;
+  var names = adventure.pregens.map(function (p) { return p['class']; });
+  var rows = [];
+  var flags = [];
+  names.forEach(function (name, i) {
+    var row = simulateClass(i, runs);
+    var rate = row.wins / row.runs;
+    var flag = '';
+    if (rate < 0.30) { flag = '低於 30%'; flags.push(name + ' ' + flag); }
+    else if (rate > 0.90) { flag = '高於 90%'; flags.push(name + ' ' + flag); }
+    rows.push({ name: name, rate: rate, avg: row.avg, flag: flag });
+  });
+  console.log('');
+  console.log('模擬（每職業 ' + runs + ' 場，內部參考）');
+  console.log('職業    通關率     平均回合    標記');
+  rows.forEach(function (row) {
+    var pct = (row.rate * 100).toFixed(1) + '%';
+    while (pct.length < 8) pct = pct + ' ';
+    var avg = row.avg.toFixed(1);
+    console.log(row.name + '    ' + pct + '   ' + avg + (row.flag ? '       ' + row.flag : ''));
+  });
+  if (flags.length) console.log('標記：' + flags.join('；'));
+  else console.log('標記：沒有職業低於 30% 或高於 90%。');
+}
 
 if (failed) {
   console.error(failed + ' failed, ' + passed + ' passed');
   process.exit(1);
 }
+printSimulator();
 console.log(passed + ' passed');

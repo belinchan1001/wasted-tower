@@ -12,6 +12,58 @@
     return s;
   }
 
+  // Frozen combat-log sentences. The words are the rolls already stored on the
+  // event; this does not draw dice.
+  function modeLine(ev) {
+    if (ev.mode !== 'advantage' && ev.mode !== 'disadvantage') return null;
+    var label = ev.mode === 'advantage' ? '優勢' : '劣勢';
+    return label + '：擲出 ' + (ev.dice || []).join(' 和 ') + '，取 ' + ev.d20;
+  }
+  function checkRollLines(ev) {
+    if (ev.d20 == null) return [];
+    var lines = [];
+    var mode = modeLine(ev);
+    if (mode) lines.push(mode);
+    var result = ev.success ? '成功' : '失敗';
+    if (ev.nat === 20 || ev.d20 === 20) result = '自然 20，' + result;
+    else if (ev.nat === 1 || ev.d20 === 1) result = '自然 1，' + result;
+    var ability = (T.ABILITY_LABEL && T.ABILITY_LABEL[ev.ability]) || '屬性';
+    var text = 'd20 擲出 ' + ev.d20 + '，' + ability + ' ' + sign(ev.mod || 0);
+    if (ev.prof) text += '，熟練 ' + sign(ev.prof);
+    text += '，總數 ' + ev.total + '，難度 ' + ev.dc + '，' + result;
+    lines.push(text);
+    return lines;
+  }
+  function attackRollLines(ev) {
+    if (ev.d20 == null) return [];
+    var lines = [];
+    var mode = modeLine(ev);
+    if (mode) lines.push(mode);
+    var result;
+    if (ev.nat === 20 || ev.d20 === 20) result = '自然 20，暴擊';
+    else if (ev.nat === 1 || ev.d20 === 1) result = '自然 1，失手';
+    else if (ev.crit) result = '暴擊';
+    else result = ev.hit ? '命中' : '落空';
+    var dc = ev.dc != null ? ev.dc : ev.ac;
+    lines.push('d20 擲出 ' + ev.d20 + '，攻擊 ' + sign(ev.bonus || 0) + '，總數 ' + ev.total + '，難度 ' + dc + '，' + result);
+    return lines;
+  }
+  function initiativeRollLines(ev) {
+    return (ev.order || []).map(function (row) {
+      return '先攻。d20 擲出 ' + row.roll + '，加值 ' + sign(row.bonus || 0) + '，總數 ' + row.total;
+    });
+  }
+  function rollLines(ev) {
+    if (!ev) return [];
+    if (ev.t === 'check') return checkRollLines(ev);
+    if (ev.t === 'attack' || ev.t === 'enemy_attack') return attackRollLines(ev);
+    if (ev.t === 'initiative') return initiativeRollLines(ev);
+    return [];
+  }
+  function pushRolls(out, ev) {
+    rollLines(ev).forEach(function (text) { out.push({ tone: 'roll', text: text }); });
+  }
+
   // ------------------------------------------------------------- Mechanics
   // Turns a settled engine event into the mechanical log lines.
   var Mechanics = {
@@ -40,21 +92,13 @@
           out.push({ tone: 'sys', text: '〔擲骰〕這項檢定已經擲過了。' });
           break;
         case 'check':
-          out.push({
-            tone: 'roll',
-            text: '〔擲骰〕' + (T.SKILL_LABEL[ev.skill] || ev.skill) + '檢定：d20(' + ev.d20 + ') ' +
-                  sign(ev.mod) + '（' + (T.ABILITY_LABEL[ev.ability] || ev.ability) + '）' +
-                  (ev.prof ? ' ' + sign(ev.prof) + '（熟練）' : '') +
-                  ' ＝ ' + ev.total + '　／　DC ' + ev.dc + ' → ' + (ev.success ? '成功' : '失敗')
-          });
+          pushRolls(out, ev);
           break;
         case 'attack':
-          out.push({
-            tone: 'roll',
-            text: '〔擲骰〕' + ev.attackName + '：d20(' + ev.d20 + ') ' + sign(ev.bonus) +
-                  ' ＝ ' + ev.total + '　／　' + ev.targetName + ' AC ' + ev.ac +
-                  ' → ' + (ev.hit ? '命中' : '落空')
-          });
+          pushRolls(out, ev);
+          if (ev.d20 == null) {
+            out.push({ tone: 'roll', text: ev.attackName + '：自動命中。' });
+          }
           if (ev.hit) {
             out.push({
               tone: 'roll',
@@ -107,11 +151,7 @@
           out.push({ tone: 'sys', text: '〔第 ' + ev.round + ' 回合〕敵方行動' });
           break;
         case 'enemy_attack':
-          out.push({
-            tone: 'roll',
-            text: '〔擲骰〕' + ev.enemyName + '攻擊：d20(' + ev.d20 + ') ' + sign(ev.bonus) +
-                  ' ＝ ' + ev.total + '　／　你的 AC ' + ev.ac + ' → ' + (ev.hit ? '命中' : '落空')
-          });
+          pushRolls(out, ev);
           if (ev.hit) {
             out.push({
               tone: 'bad',
@@ -121,7 +161,37 @@
           }
           break;
         case 'combat_win':
-          out.push({ tone: 'good', text: '〔戰鬥〕敵人全部倒下。' });
+          out.push({ tone: 'good', text: ev.reason === 'yield' ? '〔戰鬥〕敵人棄戰，這一場算贏。' : '〔戰鬥〕敵人全部倒下。' });
+          break;
+        case 'defend':
+          out.push({ tone: 'act', text: '〔行動〕防守。到下次行動前，敵方攻擊有劣勢。' });
+          break;
+        case 'initiative':
+          pushRolls(out, ev);
+          break;
+        case 'reaction':
+          out.push({
+            tone: 'good',
+            text: '〔反應〕' + ev.featureName + '：傷害 ' + ev.original + ' 減為 ' + ev.amount +
+                  '（剩餘 ' + ev.uses + '/' + ev.usesMax + '）'
+          });
+          break;
+        case 'move_refresh':
+          out.push({ tone: 'sys', text: '〔歇腳〕招式次數恢復。生命沒有回復。' });
+          break;
+        case 'retry':
+          out.push({ tone: 'sys', text: '〔重試〕從上一處歇腳再走，骰子換過一組。' });
+          break;
+        case 'clear_status':
+          out.push({ tone: 'good', text: '〔狀態〕異常狀態解除。' });
+          break;
+        case 'ambush':
+          out.push({
+            tone: 'sys',
+            text: ev.outcome === 'success'
+              ? '〔埋伏〕成功。敵方第一回合無法行動。'
+              : '〔埋伏〕失敗。你第一回合無法行動。'
+          });
           break;
         case 'flee':
           out.push({ tone: 'act', text: ev.escaped ? '〔行動〕逃走' : '〔行動〕逃走　—　這裡沒有退路' });
@@ -217,33 +287,31 @@
           break;
 
         case 'check':
-          if (d && d.outcome === 'success') {
-            out.push({ tone: 'narr', text: pick([
-              '骰面 ' + d.d20 + '，' + view.name + '辦到了。',
-              '骰面 ' + d.d20 + '，動作剛好夠穩，過去了。',
-              '骰面 ' + d.d20 + '，' + view.name + '一次過關。'
-            ], n) });
-          } else if (d) {
-            out.push({ tone: 'narr', text: pick([
-              '骰面 ' + d.d20 + '，差了一點。',
-              '骰面 ' + d.d20 + '，' + view.name + '沒有抓穩。',
-              '骰面 ' + d.d20 + '，這一下沒能成事。'
-            ], n) });
+          if (d) {
+            out.push({ tone: 'narr', text: '難度 ' + d.dc + '。' });
+            var eq = d.d20 + ' ＋ ' + (d.mod || 0) + (d.prof ? ' ＋ ' + d.prof : '') + ' ＝ ' + d.total;
+            if (d.d20 === 20) out.push({ tone: 'narr', text: '天時地利。' + eq + '。' });
+            else if (d.d20 === 1) out.push({ tone: 'narr', text: '腳下一滑，這一手沒有抓好。' + eq + '。' });
+            else out.push({ tone: 'narr', text: eq + (d.outcome === 'success' ? '，成功。' : '，沒有達到難度。') });
           }
           break;
 
         case 'attack':
-          if (d && d.outcome === 'hit') {
-            out.push({ tone: 'narr', text: pick([
-              view.name + '的一擊實打實地落在敵人身上。',
-              view.name + '看準空隙出手，打中了。'
-            ], n) });
-            if (view.enemies.some(function (e) { return e.hp <= 0; })) out.push({ tone: 'good', text: '一個敵人垮了下去，不再動。' });
-          } else {
-            out.push({ tone: 'narr', text: pick([
-              view.name + '揮空了，敵人閃開半步。',
-              '這一下擦邊而過，敵人沒有受影響。'
-            ], n) });
+          if (d) {
+            if (d.dc != null) out.push({ tone: 'narr', text: '難度 ' + d.dc + '。' });
+            if (d.mode === 'advantage' || d.mode === 'disadvantage') {
+              out.push({ tone: 'narr', text: (d.mode === 'advantage' ? '優勢' : '劣勢') + '：擲出 ' +
+                (d.dice || []).join(' 和 ') + '，取 ' + d.d20 + '。' });
+            }
+            if (d.nat === 20) out.push({ tone: 'narr', text: '天時地利，這一擊正中要害。暴擊。傷害骰再擲一次。' });
+            else if (d.nat === 1) out.push({ tone: 'narr', text: '腳下一滑，武器擦過石壁。這一擊沒有打中。' });
+            else if (d.d20 != null) {
+              out.push({ tone: 'narr', text: d.d20 + ' ＋ ' + (d.bonus || 0) + ' ＝ ' + d.total +
+                (d.outcome === 'hit' ? '，打中了。' : '，沒有打中。') });
+            }
+          }
+          if (d && d.outcome === 'hit' && view.enemies.some(function (e) { return e.hp <= 0; })) {
+            out.push({ tone: 'good', text: '一個敵人垮了下去，不再動。' });
           }
           break;
         case 'item_damage':
@@ -264,14 +332,39 @@
           out.push({ tone: 'narr', text: view.name + '運起職業能力，防禦暫時堅固起來。' });
           break;
         case 'enemy_attack':
-          if (d && d.outcome === 'hit') {
-            out.push({ tone: 'narr', text: '敵人打中了' + view.name + '。（' + view.hp + '/' + view.hp_max + '）' });
-          } else {
-            out.push({ tone: 'narr', text: pick([
-              '敵人撲了個空。',
-              view.name + '側身避開了敵人。'
-            ], n) });
+          if (d && d.dc != null) out.push({ tone: 'narr', text: '難度 ' + d.dc + '。' });
+          if (d && (d.mode === 'advantage' || d.mode === 'disadvantage')) {
+            out.push({ tone: 'narr', text: (d.mode === 'advantage' ? '優勢' : '劣勢') + '：擲出 ' +
+              (d.dice || []).join(' 和 ') + '，取 ' + d.d20 + '。' });
           }
+          if (d && d.nat === 20) out.push({ tone: 'narr', text: '敵人這一擊勢不可擋。暴擊。' });
+          else if (d && d.nat === 1) out.push({ tone: 'narr', text: '敵人腳下一滑，這一擊沒有打中。' });
+          else if (d && d.outcome === 'hit') {
+            out.push({ tone: 'narr', text: d.d20 + ' ＋ ' + (d.bonus || 0) + ' ＝ ' + d.total + '，打中了' + view.name + '。' });
+          } else if (d) {
+            out.push({ tone: 'narr', text: d.d20 + ' ＋ ' + (d.bonus || 0) + ' ＝ ' + d.total + '，沒有打中。' });
+          }
+          break;
+        case 'defend':
+          out.push({ tone: 'narr', text: view.name + '守住架勢，等對方先出手。' });
+          break;
+        case 'initiative':
+          out.push({ tone: 'narr', text: '雙方同時拔出武器，看誰先動手。' });
+          break;
+        case 'reaction':
+          out.push({ tone: 'narr', text: view.name + '側身讓過一半力道。' });
+          break;
+        case 'move_refresh':
+          out.push({ tone: 'narr', text: view.name + '歇了一歇，招式又能用了。傷口還在。' });
+          break;
+        case 'retry':
+          out.push({ tone: 'narr', text: view.name + '從歇腳的地方重新站起來。' });
+          break;
+        case 'clear_status':
+          out.push({ tone: 'narr', text: '身上的異常散去。' });
+          break;
+        case 'ambush':
+          out.push({ tone: 'narr', text: '有人想搶先一步。' });
           break;
         case 'flee':
           out.push({ tone: 'narr', text: view.name + '退回原路，心跳還沒平。' });
@@ -316,13 +409,16 @@
   function diceOf(event) {
     switch (event.t) {
       case 'check':
-        return { kind: 'check', d20: event.d20, total: event.total, outcome: event.success ? 'success' : 'fail' };
+        return { kind: 'check', d20: event.d20, total: event.total, dc: event.dc, mod: event.mod, prof: event.prof,
+                 nat: event.d20, outcome: event.success ? 'success' : 'fail' };
       case 'attack':
-        return { kind: 'attack', d20: event.d20, total: event.total, outcome: event.hit ? 'hit' : 'miss',
-                 amount: event.hit ? event.damage.total : 0 };
+        return { kind: 'attack', d20: event.d20, total: event.total, dc: event.dc, bonus: event.bonus,
+                 dice: event.dice || null, mode: event.mode || 'normal', nat: event.nat, crit: !!event.crit,
+                 outcome: event.hit ? 'hit' : 'miss', amount: event.hit && event.damage ? event.damage.total : 0 };
       case 'enemy_attack':
-        return { kind: 'enemy_attack', d20: event.d20, total: event.total, outcome: event.hit ? 'hit' : 'miss',
-                 amount: event.hit ? event.damage.total : 0 };
+        return { kind: 'enemy_attack', d20: event.d20, total: event.total, dc: event.dc, bonus: event.bonus,
+                 dice: event.dice || null, mode: event.mode || 'normal', nat: event.nat,
+                 outcome: event.hit ? 'hit' : 'miss', amount: event.hit && event.damage ? event.damage.total : 0 };
       case 'item_damage':
         return { kind: 'item_damage', d20: 0, total: event.amount, outcome: 'hit', amount: event.amount };
       case 'item_heal':
@@ -339,6 +435,7 @@
   }
 
   global.TOWER = global.TOWER || {};
+  Mechanics.rollLines = rollLines;
   global.TOWER.Mechanics = Mechanics;
   global.TOWER.OfflineNarrator = OfflineNarrator;
   global.TOWER.narrator = OfflineNarrator; // the shipped narrator

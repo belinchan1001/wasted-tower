@@ -10,14 +10,24 @@
   var SKILL_ABILITY = {
     athletics: 'str',
     stealth: 'dex',
+    sleight_of_hand: 'dex',
     perception: 'wis',
     insight: 'wis',
-    persuasion: 'cha'
+    survival: 'wis',
+    history: 'int',
+    arcana: 'int',
+    investigation: 'int',
+    religion: 'int',
+    persuasion: 'cha',
+    intimidation: 'cha',
+    deception: 'cha'
   };
 
   var SKILL_LABEL = {
-    athletics: '運動', stealth: '隱匿', perception: '察覺',
-    insight: '洞察', persuasion: '說服'
+    athletics: '運動', stealth: '隱匿', sleight_of_hand: '巧手',
+    perception: '察覺', insight: '洞察', survival: '求生',
+    history: '歷史', arcana: '奧秘', investigation: '調查', religion: '宗教',
+    persuasion: '說服', intimidation: '威嚇', deception: '欺瞞'
   };
 
   var ABILITY_LABEL = {
@@ -118,6 +128,38 @@
     var b = rng.die(20);
     var face = mode === 'advantage' ? Math.max(a, b) : Math.min(a, b);
     return { dice: [a, b], face: face, mode: mode };
+  }
+
+  // Advantage and disadvantage together cancel. The DC is never changed.
+  function checkMode(sc, pass) {
+    var adv = !!(sc && sc.advantage && pass(sc.advantage));
+    var dis = !!(sc && sc.disadvantage && pass(sc.disadvantage));
+    if (adv && !dis) return 'advantage';
+    if (dis && !adv) return 'disadvantage';
+    return 'normal';
+  }
+
+  function resolveNarration(base, variants, state) {
+    if (Array.isArray(variants)) {
+      for (var i = 0; i < variants.length; i++) {
+        var v = variants[i];
+        if (!v || typeof v.text !== 'string' || !v.text) continue;
+        if (conditionsPass(v.when, state)) return v.text;
+      }
+    }
+    return typeof base === 'string' ? base : '';
+  }
+
+  // A flag-only bundle still shares the hall's one destination. HP or items do not.
+  function effectIsFlagOnly(effect) {
+    if (!effect) return true;
+    var keys = Object.keys(effect);
+    var i;
+    for (i = 0; i < keys.length; i++) if (keys[i] !== 'set_flag') return false;
+    return true;
+  }
+  function checkBreaksSharedGate(check) {
+    return !effectIsFlagOnly(check.on_success) || !effectIsFlagOnly(check.on_failure);
   }
 
   // Crits roll the damage dice twice and add the modifier once.
@@ -401,12 +443,21 @@
   function restDoneId(sceneId) { return 'rest:' + sceneId; }
   function promptDoneId(sceneId, promptId) { return 'prompt:' + sceneId + '/' + promptId; }
 
+  function copyCheckRecord(v) {
+    var out = { success: !!v.success };
+    ['d20', 'mod', 'prof', 'total', 'dc', 'mode', 'skill', 'ability', 'narr'].forEach(function (key) {
+      if (v[key] !== undefined) out[key] = v[key];
+    });
+    if (Array.isArray(v.dice)) out.dice = v.dice.slice();
+    return out;
+  }
+
   function copyDone(done) {
     var out = {};
     if (!done) return out;
     Object.keys(done).forEach(function (k) {
       var v = done[k];
-      if (v && typeof v === 'object') out[k] = { success: !!v.success };
+      if (v && typeof v === 'object') out[k] = copyCheckRecord(v);
       else if (v) out[k] = true;
     });
     return out;
@@ -531,7 +582,7 @@
         if (!choice || typeof choice.to !== 'string') continue;
         var check = scenes[choice.to];
         if (!check || check.type !== 'check' || !checkIsOnce(check)) continue;
-        if (check.on_success || check.on_failure) return;
+        if (checkBreaksSharedGate(check)) return;
         if (typeof check.success_to !== 'string' || check.success_to !== check.fail_to) return;
         if (shared == null) shared = check.success_to;
         else if (shared !== check.success_to) return;
@@ -552,7 +603,11 @@
         if (!save.done[kid]) save.done[kid] = { success: true };
       });
       var cleared = save.clearedCombats && save.clearedCombats[shared];
-      var past = save.sceneId === shared || save.sceneId === (shared + '_after') || !!cleared;
+      // Standing on the beat that offers the checks is not "already past" them.
+      var past = (save.sceneId === shared && save.sceneId !== id) || save.sceneId === (shared + '_after') || !!cleared;
+      // Older saves crossed the hall straight into the bandit fight.
+      if (shared === 'f1_bandit_front' && (save.sceneId === 'f1_bandit' || save.sceneId === 'f1_bandit_after' ||
+          (save.clearedCombats && save.clearedCombats.f1_bandit))) past = true;
       if (anyFlag || !past) return;
       rows.forEach(function (row) {
         if (save.sceneId === row.check.id) return;
@@ -898,6 +953,10 @@
       if (sc.rest) noteWhen(sc.rest.when);
       noteWhen(sc.on_success && sc.on_success.when);
       noteWhen(sc.on_failure && sc.on_failure.when);
+      noteWhen(sc.advantage);
+      noteWhen(sc.disadvantage);
+      (sc.success_narr_variants || []).forEach(function (v) { if (v) noteWhen(v.when); });
+      (sc.fail_narr_variants || []).forEach(function (v) { if (v) noteWhen(v.when); });
       function noteChoice(c) {
         if (!c) return;
         noteWhen(c.when);
@@ -1661,6 +1720,17 @@
       checkFacts(sc.facts, where);
       if (sc.when !== undefined) validateWhen(sc.when, where);
 
+      function validateNarrVariants(list, label) {
+        if (!Array.isArray(list)) { err(label + ' 必須是陣列。'); return; }
+        list.forEach(function (v, i) {
+          if (!v || typeof v !== 'object' || typeof v.text !== 'string' || !v.text) {
+            err(label + ' #' + i + ' 必須有文字。');
+            return;
+          }
+          if (v.when !== undefined) validateWhen(v.when, label + ' #' + i);
+        });
+      }
+
       function validateChoice(c, cw, allowMissingTo) {
         if (!c || typeof c.id !== 'string' || !c.id) err(cw + ' 缺少 id。');
         else cw = cw.replace(/選項 #\d+$/, '選項「' + c.id + '」');
@@ -1684,6 +1754,8 @@
           });
         });
         if (c.when !== undefined) validateWhen(c.when, cw);
+        if (c.narr !== undefined && typeof c.narr !== 'string') err(cw + ' 的 narr 必須是字串。');
+        if (c.narr_variants !== undefined) validateNarrVariants(c.narr_variants, cw + ' 的 narr_variants');
         if (c.set !== undefined) {
           if (!c.set || typeof c.set !== 'object' || Array.isArray(c.set)) err(cw + ' 的 set 必須是物件。');
           else Object.keys(c.set).forEach(function (k) {
@@ -1751,7 +1823,7 @@
         }
       } else if (sc.type === 'check') {
         if (!SKILL_ABILITY[sc.skill]) {
-          err(where + ' 的 skill「' + sc.skill + '」不在允許的五項技能內（athletics / stealth / perception / insight / persuasion）。');
+          err(where + ' 的 skill「' + sc.skill + '」不在允許的技能內。');
         }
         if (!Number.isInteger(sc.dc)) err(where + ' 的 dc 必須是整數。');
         checkScene(sc.success_to, where + ' 的 success_to');
@@ -1761,6 +1833,18 @@
         if (sc.minHp !== undefined && !Number.isInteger(sc.minHp)) err(where + ' 的 minHp 必須是整數。');
         if (sc.on_success !== undefined) validateEffect(sc.on_success, where + ' 的 on_success');
         if (sc.on_failure !== undefined) validateEffect(sc.on_failure, where + ' 的 on_failure');
+        ['advantage', 'disadvantage'].forEach(function (key) {
+          if (sc[key] === undefined) return;
+          if (typeof sc[key] === 'number' || !sc[key] || typeof sc[key] !== 'object' || Array.isArray(sc[key])) {
+            err(where + ' 的優勢或劣勢不能寫成數字。禁止用降低難度代替重擲。');
+            return;
+          }
+          validateWhen(sc[key], where + ' 的 ' + key);
+        });
+        if (sc.success_narr !== undefined && typeof sc.success_narr !== 'string') err(where + ' 的 success_narr 必須是字串。');
+        if (sc.fail_narr !== undefined && typeof sc.fail_narr !== 'string') err(where + ' 的 fail_narr 必須是字串。');
+        if (sc.success_narr_variants !== undefined) validateNarrVariants(sc.success_narr_variants, where + ' 的 success_narr_variants');
+        if (sc.fail_narr_variants !== undefined) validateNarrVariants(sc.fail_narr_variants, where + ' 的 fail_narr_variants');
         validateOnceFlags(sc, where);
       } else if (sc.type === 'combat') {
         if (!Array.isArray(sc.enemies) || sc.enemies.length === 0) err(where + ' 沒有 enemies。');
@@ -1917,7 +2001,7 @@
         });
         if (!Array.isArray(p.skills)) err(pw + ' 的 skills 必須是陣列。');
         else p.skills.forEach(function (s) {
-          if (!SKILL_ABILITY[s]) err(pw + ' 的技能「' + s + '」不在允許的五項技能內。');
+          if (!SKILL_ABILITY[s]) err(pw + ' 的技能「' + s + '」不在允許的技能內。');
         });
         if (!p.attack || typeof p.attack !== 'object') err(pw + ' 缺少 attack。');
         else {
@@ -2627,7 +2711,7 @@
     for (i = 0; i < choices.length; i++) {
       var check = this.choiceLeadsToOnceCheck(choices[i]);
       if (!check) continue;
-      if (check.on_success || check.on_failure) return null;
+      if (checkBreaksSharedGate(check)) return null;
       if (typeof check.success_to !== 'string' || check.success_to !== check.fail_to) return null;
       if (shared == null) shared = check.success_to;
       else if (shared !== check.success_to) return null;
@@ -2766,7 +2850,10 @@
       // No roll happens on entry: the player presses this.
       // A once-only check that already has a result is skipped on re-entry.
       if (!(checkIsOnce(sc) && this.done[checkDoneId(sc.id)])) {
-        acts.push({ type: 'roll', skill: sc.skill, dc: sc.dc });
+        acts.push({
+          type: 'roll', skill: sc.skill, dc: sc.dc,
+          mode: checkMode(sc, function (when) { return self.conditionsPass(when); })
+        });
       }
     } else if (sc.type === 'combat') {
       this.livingEnemies().forEach(function (e) {
@@ -2824,7 +2911,8 @@
     if (!choice) return this.reject('沒有這個選項。');
     if (!this.choiceVisible(choice)) return this.reject('現在還做不到這件事。');
 
-    this.emit({ t: 'choice', label: choice.label });
+    var choiceNarr = resolveNarration(choice.narr, choice.narr_variants, this.conditionState());
+    this.emit({ t: 'choice', label: choice.label, narr: choiceNarr || '' });
     if (choice._prompt) {
       var prompts = sc.prompts || [];
       var pr = null;
@@ -2862,20 +2950,32 @@
   };
 
   Engine.prototype.doRoll = function () {
-    var sc = this.scene, c = this.character;
+    var sc = this.scene, c = this.character, self = this;
     if (sc.type !== 'check') return this.reject('現在不需要擲骰。');
     if (checkIsOnce(sc) && this.done[checkDoneId(sc.id)]) return this.reject('這個檢定已經擲過了。');
     var ability = SKILL_ABILITY[sc.skill];
     var mod = abilityMod(c[ability]);
     var prof = c.skills.indexOf(sc.skill) >= 0 ? PROFICIENCY_BONUS : 0;
-    var d20 = this.rng.die(20);
+    var mode = checkMode(sc, function (when) { return self.conditionsPass(when); });
+    var rolled = rollD20(this.rng, mode);
+    var d20 = rolled.face;
     var total = d20 + mod + prof;
     var success = total >= sc.dc; // landing exactly on the DC succeeds
+    var narr = resolveNarration(
+      success ? sc.success_narr : sc.fail_narr,
+      success ? sc.success_narr_variants : sc.fail_narr_variants,
+      this.conditionState()
+    );
+    var record = {
+      success: success, d20: d20, dice: rolled.dice.slice(), mode: rolled.mode,
+      mod: mod, prof: prof, total: total, dc: sc.dc, skill: sc.skill, ability: ability, narr: narr
+    };
     this.emit({
       t: 'check', skill: sc.skill, ability: ability,
-      d20: d20, mod: mod, prof: prof, total: total, dc: sc.dc, success: success
+      d20: d20, dice: rolled.dice, mode: rolled.mode,
+      mod: mod, prof: prof, total: total, dc: sc.dc, success: success, narr: narr
     });
-    if (checkIsOnce(sc)) this.done[checkDoneId(sc.id)] = { success: success };
+    if (checkIsOnce(sc)) this.done[checkDoneId(sc.id)] = record;
     var branch = success ? sc.on_success : sc.on_failure;
     var branchSetsHp = branch && branch.hp_delta != null;
     if (!success && sc.fail_hp_delta && !branchSetsHp) {

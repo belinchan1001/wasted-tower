@@ -75,6 +75,7 @@
           break;
         case 'choice':
           out.push({ tone: 'act', text: '〔行動〕' + ev.label });
+          if (ev.narr) out.push({ tone: 'narr', text: ev.narr });
           break;
         case 'give':
           out.push({ tone: 'sys', text: '〔物品〕獲得　' + ev.itemName });
@@ -93,6 +94,7 @@
           break;
         case 'check':
           pushRolls(out, ev);
+          if (ev.narr) out.push({ tone: 'narr', text: ev.narr });
           break;
         case 'attack':
           pushRolls(out, ev);
@@ -287,6 +289,7 @@
           break;
 
         case 'check':
+          if (d && d.scripted) break;
           if (d) {
             out.push({ tone: 'narr', text: '難度 ' + d.dc + '。' });
             var eq = d.d20 + ' ＋ ' + (d.mod || 0) + (d.prof ? ' ＋ ' + d.prof : '') + ' ＝ ' + d.total;
@@ -410,6 +413,7 @@
     switch (event.t) {
       case 'check':
         return { kind: 'check', d20: event.d20, total: event.total, dc: event.dc, mod: event.mod, prof: event.prof,
+                 dice: event.dice || null, mode: event.mode || 'normal', scripted: !!event.narr,
                  nat: event.d20, outcome: event.success ? 'success' : 'fail' };
       case 'attack':
         return { kind: 'attack', d20: event.d20, total: event.total, dc: event.dc, bonus: event.bonus,

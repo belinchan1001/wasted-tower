@@ -43,7 +43,7 @@
 | type | 用途 |
 | --- | --- |
 | `beat` | 敘事同選項 |
-| `check` | 技能檢定。技能只限 `athletics`、`stealth`、`perception`、`insight`、`persuasion` |
+| `check` | 技能檢定。可用 `athletics`、`stealth`、`sleight_of_hand`、`perception`、`insight`、`survival`、`history`、`arcana`、`investigation`、`religion`、`persuasion`、`intimidation`、`deception`。洞察的中文名是「洞察」 |
 | `combat` | 戰鬥。`win_to` 必填，`flee_to` 可省略 |
 | `checkpoint` | 一層結束的歇腳。要有 `floor`、`name`、`facts`、`continue_to`。`facts` 可以是空陣列 |
 | `end` | 結局。`end` 是 `win`、`lose` 或 `secret_win`；`name` 是結局卡上的名字 |
@@ -121,6 +121,10 @@
 ### 檢定的成功和失敗
 
 `check` 仍然是 d20 加調整，點數剛好等於 DC 算成功。`on_success` 和 `on_failure` 可以各自 `set_flag`、`inc`、`dec`、`give`、`take`、`hp_delta`。兩邊的 `success_to` / `fail_to` 可以指向同一場。舊的 `fail_hp_delta` 還在；沒有寫 `min_hp` 時，傷害仍然可以把生命打到 0。
+
+`success_narr` 和 `fail_narr` 是擲完才出現的句子。`success_narr_variants`（失敗則是 `fail_narr_variants`）是 `{ "text", "when" }` 的陣列，第一條條件成立的句子會換掉原句。
+
+`advantage` 和 `disadvantage` 寫條件，不寫數字。條件成立時沿用戰鬥的兩粒 d20：優勢取高的那粒，劣勢取低的那粒，紀錄同樣寫「優勢：擲出 7 和 16，取 16」。兩邊同時成立就只擲一粒。不要把 `dc` 調低來代替優勢。骰子句子存在 `rollLog`，讀檔不會重擲。
 
 `min_hp`（寫作裡的 minHp，兩個名字都可以）是這次傷害的下限。下面這次失敗最多掉到 1，不會因此死亡：
 

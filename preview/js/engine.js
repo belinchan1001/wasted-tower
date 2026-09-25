@@ -1642,7 +1642,7 @@
       } else if (sc.type === 'checkpoint') {
         if (!Number.isInteger(sc.floor) || sc.floor < 1) err(where + ' 的 floor 必須是正整數。');
         if (typeof sc.name !== 'string' || !sc.name) err(where + ' 缺少 name。');
-        if (!Array.isArray(sc.facts) || sc.facts.length === 0) err(where + ' 需要一段歇腳摘要（facts）。');
+        if (!Array.isArray(sc.facts)) err(where + ' 的 facts 必須是陣列。');
         checkScene(sc.continue_to, where + ' 的 continue_to');
         if (sc.continue_label !== undefined && (typeof sc.continue_label !== 'string' || !sc.continue_label)) {
           err(where + ' 的 continue_label 必須是非空字串。');

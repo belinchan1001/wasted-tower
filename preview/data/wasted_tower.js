@@ -90,7 +90,7 @@
     "mira_redeemed": { "key": true, "label": "邪徒：驅走塔影" },
     "finn_sold": { "key": true, "label": "銅徽：賣出" },
     "finn_swapped": { "key": true, "label": "銅徽：掉包" },
-    "orr_kept": { "key": true, "label": "禁忌筆記" },
+    "orr_kept": { "key": true, "label": "禁忌筆記：收起" },
     "rival": { "key": true, "label": "對手" }
   },
   "items": [
@@ -1574,7 +1574,7 @@
       "choices": [
         {
           "id": "take_holy",
-          "label": "帶回祭壇走廊",
+          "label": "前往內室",
           "to": "f3_wight",
           "give": [
             "holy_water"
@@ -1612,9 +1612,7 @@
       "name": "三層歇腳",
       "place": "林緣",
       "continue_label": "繼續",
-      "facts": [
-        "怨靈散成灰，林緣風很大。你今夜做過的事，都在這裡清算。"
-      ],
+      "facts": [],
       "continue_to": "post_tower"
     },
     {
@@ -1788,7 +1786,6 @@
       "facts": [
         "你握緊銅徽。",
         "廢塔恢復寂靜。",
-        "這一夜結束了。",
         {
           "text": "你喊出賽勒斯的名字，他終於消散。",
           "when": {
@@ -1796,7 +1793,8 @@
               "knows_wight_name"
             ]
           }
-        }
+        },
+        "這一夜結束了。"
       ]
     },
     {

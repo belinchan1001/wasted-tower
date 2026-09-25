@@ -319,10 +319,13 @@ test('existing prose, items, classes, and enemy numbers are unchanged', function
   var factExact = {
     cp_f1: ['盜墓者的腳步聲遠去。你坐在石階口，塔裡靜得聽見自己的心跳。——第一層完。'],
     cp_f2: ['酸味漸漸散去，再往下就是底層鐵門。今夜最難的一段就在門後。——第二層完。'],
-    cp_f3: ['怨靈散成灰，林緣風很大。你今夜做過的事，都在這裡清算。'],
+    cp_f3: [],
     post_tower: ['怨靈散成灰。', '你從內室牆上取下銅徽。', '你走出廢塔。', '林緣風很大。']
   };
-  var labelChange = { 'f2_stairs/up': '沿正路向下' };
+  var labelChange = {
+    'f2_stairs/up': '沿正路向下',
+    'hide_crypt_loot/take_holy': '前往內室'
+  };
   var toChange = { 'f3_door/unlock': 'f3_cult_talk', 'f3_door/smash': 'f3_cult_talk' };
   function textsOf(facts) {
     return (facts || []).map(function (f) { return typeof f === 'string' ? f : f.text; });
@@ -331,7 +334,7 @@ test('existing prose, items, classes, and enemy numbers are unchanged', function
     var orig = snap.scenes[id];
     var now = byId[id];
     assert.ok(now, 'missing scene ' + id);
-    if (factExact[id]) {
+    if (Object.prototype.hasOwnProperty.call(factExact, id)) {
       assert.deepStrictEqual(textsOf(now.facts).filter(function (t) { return typeof t === 'string'; }), factExact[id], id);
     } else {
       var replaced = (orig.facts || []).map(function (f) {
@@ -383,6 +386,15 @@ test('existing prose, items, classes, and enemy numbers are unchanged', function
   });
   assert.strictEqual(byId.win.name, '廢塔一夜');
   assert.strictEqual(byId.f3_wight.flee_to, 'f3_shrine');
+  assert.deepStrictEqual(byId.cp_f3.facts, []);
+  var namedWin = T.resolveFacts(byId.win.facts, { flags: { knows_wight_name: true } });
+  var nameAt = namedWin.indexOf('你喊出賽勒斯的名字，他終於消散。');
+  var endAt = namedWin.indexOf('這一夜結束了。');
+  assert.ok(nameAt >= 0 && nameAt < endAt);
+  assert.strictEqual(adventure.flag_defs.orr_kept.label, '禁忌筆記：收起');
+  var holy = byId.hide_crypt_loot.choices.filter(function (c) { return c.id === 'take_holy'; })[0];
+  assert.strictEqual(holy.label, '前往內室');
+  assert.strictEqual(holy.to, 'f3_wight');
 });
 
 test('floor checkpoints sit between floors and can be continued', function () {

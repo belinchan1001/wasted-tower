@@ -45,7 +45,7 @@
 | `beat` | 敘事同選項 |
 | `check` | 技能檢定。技能只限 `athletics`、`stealth`、`perception`、`insight`、`persuasion` |
 | `combat` | 戰鬥。`win_to` 必填，`flee_to` 可省略 |
-| `checkpoint` | 一層結束的歇腳。要有 `floor`、`name`、`facts`、`continue_to` |
+| `checkpoint` | 一層結束的歇腳。要有 `floor`、`name`、`facts`、`continue_to`。`facts` 可以是空陣列 |
 | `end` | 結局。`end` 是 `win`、`lose` 或 `secret_win`；`name` 是結局卡上的名字 |
 
 角色沿用現有預製角色的欄位。每人剛好一個 `features`（`damage`、`heal` 或 `ac_bonus`，`uses` 為 3）。消耗品要有 `heal` 或 `damage` 其中一項，不能兩項都有。

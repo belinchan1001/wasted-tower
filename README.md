@@ -295,4 +295,4 @@ TOWER.assertReachable(adventure, {
 });
 ```
 
-改寫句子、加分支，通常不用動這兩個表。若你**改了已經上線的場景 id**，舊存檔會打不開，除非在 `js/engine.js` 的 `scriptMigrations` 加上一步：鍵是舊的 `scriptVersion`，函式回傳的存檔要把 `scriptVersion` 加一。沒有對應的升級時，遊戲會告訴玩家這份存檔讀不了，而不會直接當掉。
+改寫句子、加分支，通常不用動這兩個表。若你**改了已經上線的場景 id**，舊存檔會打不開，除非在 `preview/js/engine.js` 的 `scriptMigrations` 加上一步：鍵是舊的 `scriptVersion`，函式回傳的存檔要把 `scriptVersion` 加一。沒有對應的升級時，遊戲會告訴玩家這份存檔讀不了，而不會直接當掉。

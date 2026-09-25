@@ -526,9 +526,10 @@
         var ability = T.SKILL_ABILITY[a.skill];
         var mod = T.abilityMod(st.character.abilities[ability]);
         var prof = st.character.skills.indexOf(a.skill) >= 0 ? T.PROFICIENCY_BONUS : 0;
+        var modeWord = a.mode === 'advantage' ? '　優勢' : (a.mode === 'disadvantage' ? '　劣勢' : '');
         main.appendChild(button(
-          '擲骰：' + (T.SKILL_LABEL[a.skill] || a.skill) + '檢定（DC ' + a.dc + '）',
-          'd20 ' + sign(mod) + '（' + T.ABILITY_LABEL[ability] + '）' + (prof ? ' ' + sign(prof) + '（熟練）' : ''),
+          '擲骰：' + (T.SKILL_LABEL[a.skill] || a.skill) + '檢定（難度 ' + a.dc + '）',
+          'd20 ' + sign(mod) + '（' + T.ABILITY_LABEL[ability] + '）' + (prof ? ' ' + sign(prof) + '（熟練）' : '') + modeWord,
           'primary',
           function () { act({ type: 'roll' }); }
         ));

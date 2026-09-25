@@ -45,60 +45,158 @@
     {
       "id": "branch_warrior",
       "label": "歸隊",
-      "when": { "all_flags": ["cls_warrior"] },
-      "completed_when": { "all_flags": ["brun_buried_captain"] },
+      "when": {
+        "all_flags": [
+          "cls_warrior"
+        ]
+      },
+      "completed_when": {
+        "all_flags": [
+          "brun_buried_captain"
+        ]
+      },
       "miss_reason": "沒有收殮隊長"
     },
     {
       "id": "branch_ranger",
       "label": "林歸寂靜",
-      "when": { "all_flags": ["cls_ranger"] },
-      "completed_when": { "all_flags": ["sylvie_freed_deer"] },
+      "when": {
+        "all_flags": [
+          "cls_ranger"
+        ]
+      },
+      "completed_when": {
+        "all_flags": [
+          "sylvie_freed_deer"
+        ]
+      },
       "miss_reason": "將鹿角製成了箭"
     },
     {
       "id": "branch_rogue",
       "label": "偷天換徽",
-      "when": { "all_flags": ["cls_rogue"] },
-      "completed_when": { "all_flags": ["finn_contract", "finn_brass_scrap", "finn_swapped"] },
+      "when": {
+        "all_flags": [
+          "cls_rogue"
+        ]
+      },
+      "completed_when": {
+        "all_flags": [
+          "finn_contract",
+          "finn_brass_scrap",
+          "finn_swapped"
+        ]
+      },
       "miss_reason": "將真銅徽交給了黑手"
     },
     {
       "id": "branch_cleric",
       "label": "迷途者歸",
-      "when": { "all_flags": ["cls_cleric"] },
-      "completed_when": { "all_flags": ["mira_redeemed"] },
+      "when": {
+        "all_flags": [
+          "cls_cleric"
+        ]
+      },
+      "completed_when": {
+        "all_flags": [
+          "mira_redeemed"
+        ]
+      },
       "miss_reason": "沒有為艾文驅走塔影"
     },
     {
       "id": "branch_mage",
       "label": "師債徒還",
-      "when": { "all_flags": ["cls_mage"] },
-      "completed_when": { "all_flags": ["orr_burned"] },
+      "when": {
+        "all_flags": [
+          "cls_mage"
+        ]
+      },
+      "completed_when": {
+        "all_flags": [
+          "orr_burned"
+        ]
+      },
       "miss_reason": "收起了禁忌筆記"
     }
   ],
   "flag_defs": {
-    "cls_warrior": { "label": "戰士" },
-    "cls_ranger": { "label": "遊俠" },
-    "cls_rogue": { "label": "盜賊" },
-    "cls_cleric": { "label": "牧師" },
-    "cls_mage": { "label": "法師" },
-    "aff_bandit": { "min": 0, "max": 2, "label": "盜墓者好感" },
-    "spared_bandit": { "key": true, "label": "盜墓者：放過" },
-    "bandit_persuaded": { "key": true, "label": "盜墓者：勸服" },
-    "looted_bandit": { "key": true, "label": "盜墓者：搜身" },
-    "respected_dead": { "key": true, "label": "骸骨：合眼" },
-    "took_from_dead": { "key": true, "label": "骸骨：摸屍" },
-    "took_cloth": { "key": true, "label": "布條：有" },
-    "left_potion": { "key": true, "label": "濕室藥水：留下" },
-    "spared_cultist": { "key": true, "label": "邪徒：放過" },
-    "killed_cultist": { "key": true, "label": "邪徒：了結" },
-    "mira_redeemed": { "key": true, "label": "邪徒：驅走塔影" },
-    "finn_sold": { "key": true, "label": "銅徽：賣出" },
-    "finn_swapped": { "key": true, "label": "銅徽：掉包" },
-    "orr_kept": { "key": true, "label": "禁忌筆記：收起" },
-    "rival": { "key": true, "label": "對手" }
+    "cls_warrior": {
+      "label": "戰士"
+    },
+    "cls_ranger": {
+      "label": "遊俠"
+    },
+    "cls_rogue": {
+      "label": "盜賊"
+    },
+    "cls_cleric": {
+      "label": "牧師"
+    },
+    "cls_mage": {
+      "label": "法師"
+    },
+    "aff_bandit": {
+      "min": 0,
+      "max": 2,
+      "label": "盜墓者好感"
+    },
+    "spared_bandit": {
+      "key": true,
+      "label": "盜墓者：放過"
+    },
+    "bandit_persuaded": {
+      "key": true,
+      "label": "盜墓者：勸服"
+    },
+    "looted_bandit": {
+      "key": true,
+      "label": "盜墓者：搜身"
+    },
+    "respected_dead": {
+      "key": true,
+      "label": "骸骨：合眼"
+    },
+    "took_from_dead": {
+      "key": true,
+      "label": "骸骨：摸屍"
+    },
+    "took_cloth": {
+      "key": true,
+      "label": "布條：有"
+    },
+    "left_potion": {
+      "key": true,
+      "label": "濕室藥水：留下"
+    },
+    "spared_cultist": {
+      "key": true,
+      "label": "邪徒：放過"
+    },
+    "killed_cultist": {
+      "key": true,
+      "label": "邪徒：了結"
+    },
+    "mira_redeemed": {
+      "key": true,
+      "label": "邪徒：驅走塔影"
+    },
+    "finn_sold": {
+      "key": true,
+      "label": "銅徽：賣出"
+    },
+    "finn_swapped": {
+      "key": true,
+      "label": "銅徽：掉包"
+    },
+    "orr_kept": {
+      "key": true,
+      "label": "禁忌筆記：收起"
+    },
+    "rival": {
+      "key": true,
+      "label": "對手"
+    }
   },
   "items": [
     {
@@ -173,7 +271,9 @@
       "ac": 16,
       "hp_max": 12,
       "skills": [
-        "athletics"
+        "athletics",
+        "intimidation",
+        "history"
       ],
       "attack": {
         "name": "長劍",
@@ -231,7 +331,8 @@
       "hp_max": 11,
       "skills": [
         "stealth",
-        "perception"
+        "perception",
+        "survival"
       ],
       "attack": {
         "name": "短弓",
@@ -283,7 +384,10 @@
       "ac": 14,
       "hp_max": 9,
       "skills": [
-        "stealth"
+        "stealth",
+        "sleight_of_hand",
+        "investigation",
+        "deception"
       ],
       "attack": {
         "name": "短劍",
@@ -344,7 +448,9 @@
       "ac": 16,
       "hp_max": 10,
       "skills": [
-        "insight"
+        "insight",
+        "religion",
+        "persuasion"
       ],
       "attack": {
         "name": "神聖打擊",
@@ -403,7 +509,9 @@
       "ac": 12,
       "hp_max": 8,
       "skills": [
-        "perception"
+        "perception",
+        "arcana",
+        "investigation"
       ],
       "attack": {
         "name": "火焰箭",
@@ -493,7 +601,8 @@
         {
           "id": "search",
           "label": "搜查門廊",
-          "to": "f1_rats",
+          "to": "f1_foyer",
+          "narr": "門檻下壓著一把鏽鐵鑰匙，齒縫裡還沾著泥。有人比你先來過，又匆匆走了。",
           "give": [
             "iron_key"
           ],
@@ -513,7 +622,8 @@
         {
           "id": "search_finn",
           "label": "搜查門廊（門縫夾著一封信）",
-          "to": "f1_rats",
+          "to": "f1_foyer",
+          "narr": "門縫裡夾著一封信，封口的蠟印是一隻黑色手掌。門檻下還壓著一把鏽鐵鑰匙。",
           "give": [
             "iron_key"
           ],
@@ -530,14 +640,287 @@
           }
         },
         {
+          "id": "look",
+          "label": "察看門前",
+          "to": "f1_look",
+          "when": {
+            "not": {
+              "class": [
+                "戰士",
+                "遊俠"
+              ]
+            },
+            "none_flags": [
+              "gate_looked"
+            ]
+          }
+        },
+        {
+          "id": "look_crest",
+          "label": "辨認門框隊徽",
+          "to": "f1_look_crest",
+          "when": {
+            "class": "戰士",
+            "none_flags": [
+              "gate_looked"
+            ]
+          }
+        },
+        {
+          "id": "look_tracks",
+          "label": "追看白鹿蹄印",
+          "to": "f1_look_tracks",
+          "when": {
+            "class": "遊俠",
+            "none_flags": [
+              "gate_looked"
+            ]
+          }
+        },
+        {
           "id": "rush",
           "label": "直接進塔",
-          "to": "f1_rats",
+          "to": "f1_foyer",
+          "repeatable": true,
+          "narr": "你推開半掩的木門。門軸發出一聲長長的呻吟，黑暗撲面而來。",
           "set_flag": [
             "gate_rushed"
           ]
         }
       ]
+    },
+    {
+      "id": "f1_look",
+      "type": "check",
+      "facts": [
+        "你在門前停步，想先看清楚。"
+      ],
+      "skill": "perception",
+      "dc": 12,
+      "success_to": "f1_gate",
+      "fail_to": "f1_gate",
+      "success_narr": "你把耳朵貼近門縫。裡面傳來細碎的抓撓聲，不只一隻。",
+      "fail_narr": "門後只有風聲。天色又暗了一分，你看不出更多東西。",
+      "on_success": {
+        "set_flag": [
+          "f1_scouted",
+          "gate_looked"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "gate_looked"
+        ]
+      }
+    },
+    {
+      "id": "f1_look_crest",
+      "type": "check",
+      "facts": [
+        "你湊近門框上的隊徽。"
+      ],
+      "skill": "history",
+      "dc": 10,
+      "success_to": "f1_gate",
+      "fail_to": "f1_gate",
+      "success_narr": "隊徽下方刻著一道短箭頭，指向門廳深處。那是盾隊的暗號：前有伏敵。你握緊了劍柄。",
+      "fail_narr": "門後只有風聲。天色又暗了一分，你看不出更多東西。",
+      "on_success": {
+        "set_flag": [
+          "f1_scouted",
+          "gate_looked"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "gate_looked"
+        ]
+      }
+    },
+    {
+      "id": "f1_look_tracks",
+      "type": "check",
+      "facts": [
+        "你蹲下來，看門檻前的蹄印。"
+      ],
+      "skill": "survival",
+      "dc": 10,
+      "success_to": "f1_gate",
+      "fail_to": "f1_gate",
+      "success_narr": "蹄印在門檻前亂了一下，旁邊滿是細小的爪痕。白鹿在這裡受過驚，門廳裡有鼠群。",
+      "fail_narr": "門後只有風聲。天色又暗了一分，你看不出更多東西。",
+      "on_success": {
+        "set_flag": [
+          "f1_scouted",
+          "gate_looked"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "gate_looked"
+        ]
+      }
+    },
+    {
+      "id": "f1_foyer",
+      "type": "beat",
+      "place": "門廳",
+      "facts": [
+        "門廳裡很暗，牆腳傳來吱吱聲。",
+        "三隻腐鼠從碎石堆後探出頭，紅眼盯著你。",
+        "地上有齧過的布條。",
+        "對面有走廊。",
+        {
+          "text": "你早有準備。腐鼠還在啃咬布條，沒有發現你。",
+          "replace": "三隻腐鼠從碎石堆後探出頭，紅眼盯著你。",
+          "when": {
+            "all_flags": [
+              "f1_scouted"
+            ]
+          }
+        },
+        {
+          "text": "信上寫著：帶出銅徽，賞一百金。——黑手",
+          "when": {
+            "all_flags": [
+              "finn_contract"
+            ]
+          }
+        }
+      ],
+      "choices": [
+        {
+          "id": "fight",
+          "label": "拔出武器迎戰",
+          "to": "f1_rats"
+        },
+        {
+          "id": "sneak",
+          "label": "貼著牆根溜過去",
+          "to": "f1_foyer_sneak",
+          "when": {
+            "none_flags": [
+              "foyer_tried"
+            ]
+          }
+        },
+        {
+          "id": "scare",
+          "label": "大聲喝斥，把鼠群嚇退",
+          "to": "f1_foyer_scare",
+          "when": {
+            "none_flags": [
+              "foyer_tried"
+            ]
+          }
+        },
+        {
+          "id": "spark",
+          "label": "彈出一簇火花驚走鼠群",
+          "to": "f1_foyer_spark",
+          "when": {
+            "class": "法師",
+            "none_flags": [
+              "foyer_tried"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "f1_foyer_sneak",
+      "type": "check",
+      "facts": [
+        "你壓低身子，貼著牆根移動。"
+      ],
+      "skill": "stealth",
+      "dc": 12,
+      "advantage": {
+        "all_flags": [
+          "f1_scouted"
+        ]
+      },
+      "success_to": "f1_rats_after",
+      "fail_to": "f1_rats",
+      "fail_hp_delta": -1,
+      "minHp": 1,
+      "success_narr": "你踩著碎石間的空隙前進，腐鼠只顧著啃咬。直到你走遠，牠們才一哄而散，鑽回牆縫。",
+      "fail_narr": "一塊碎石在你腳下滾開。三雙紅眼同時轉了過來。",
+      "on_success": {
+        "set_flag": [
+          "foyer_tried"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "foyer_tried"
+        ]
+      }
+    },
+    {
+      "id": "f1_foyer_scare",
+      "type": "check",
+      "facts": [
+        "你吸一口氣，準備把鼠群喝退。"
+      ],
+      "skill": "intimidation",
+      "dc": 13,
+      "advantage": {
+        "has_item": [
+          "lantern"
+        ]
+      },
+      "success_to": "f1_rats_after",
+      "fail_to": "f1_rats",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你猛地踏前一步，喝聲在門廳裡迴盪。腐鼠尖叫著四散，一隻不剩地鑽進了牆縫。",
+      "success_narr_variants": [
+        {
+          "text": "你高舉提燈，猛地踏前一步。火光一晃，腐鼠尖叫著四散，一隻不剩地鑽進了牆縫。",
+          "when": {
+            "has_item": [
+              "lantern"
+            ]
+          }
+        }
+      ],
+      "fail_narr": "領頭的腐鼠弓起背，不退反撲，一口咬在你的小腿上。",
+      "on_success": {
+        "set_flag": [
+          "foyer_tried"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "foyer_tried"
+        ]
+      }
+    },
+    {
+      "id": "f1_foyer_spark",
+      "type": "check",
+      "facts": [
+        "你抬起手指，準備彈出火花。"
+      ],
+      "skill": "arcana",
+      "dc": 12,
+      "success_to": "f1_rats_after",
+      "fail_to": "f1_rats",
+      "fail_hp_delta": -1,
+      "minHp": 1,
+      "success_narr": "你指尖一彈，一簇藍白火花在鼠群中炸開。焦毛味散開，腐鼠逃得一隻不剩。",
+      "fail_narr": "火花只閃了一下就熄滅了。腐鼠愣了愣，隨即撲了上來。",
+      "on_success": {
+        "set_flag": [
+          "foyer_tried"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "foyer_tried"
+        ]
+      }
     },
     {
       "id": "f1_rats",
@@ -563,8 +946,14 @@
           "hp": 4,
           "atk": 2,
           "damage": "1d4",
-          "per_extra": { "hp": 0, "copies": 1 },
-          "yield": { "kind": "last_standing", "group": "rats" }
+          "per_extra": {
+            "hp": 0,
+            "copies": 1
+          },
+          "yield": {
+            "kind": "last_standing",
+            "group": "rats"
+          }
         },
         {
           "id": "rat_2",
@@ -573,8 +962,14 @@
           "hp": 4,
           "atk": 2,
           "damage": "1d4",
-          "per_extra": { "hp": 0, "copies": 0 },
-          "yield": { "kind": "last_standing", "group": "rats" }
+          "per_extra": {
+            "hp": 0,
+            "copies": 0
+          },
+          "yield": {
+            "kind": "last_standing",
+            "group": "rats"
+          }
         },
         {
           "id": "rat_3",
@@ -583,8 +978,14 @@
           "hp": 3,
           "atk": 2,
           "damage": "1d4",
-          "per_extra": { "hp": 0, "copies": 0 },
-          "yield": { "kind": "last_standing", "group": "rats" }
+          "per_extra": {
+            "hp": 0,
+            "copies": 0
+          },
+          "yield": {
+            "kind": "last_standing",
+            "group": "rats"
+          }
         }
       ],
       "win_to": "f1_rats_after",
@@ -663,6 +1064,14 @@
           "set_flag": [
             "hall_scan"
           ]
+        },
+        {
+          "id": "circle",
+          "label": "辨認師父的法陣",
+          "to": "f1_hall_arcana",
+          "when": {
+            "class": "法師"
+          }
         }
       ]
     },
@@ -674,9 +1083,12 @@
       ],
       "skill": "athletics",
       "dc": 12,
-      "success_to": "f1_bandit",
-      "fail_to": "f1_bandit",
-      "fail_hp_delta": -2
+      "success_to": "f1_bandit_front",
+      "fail_to": "f1_bandit_front",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你抓住朽木梁一蕩，穩穩落在對面。塵土簌簌落進黑洞裡。",
+      "fail_narr": "朽木梁在你手中斷裂，你重重摔在碎石上，才掙扎著爬過去。"
     },
     {
       "id": "f1_stl",
@@ -686,9 +1098,17 @@
       ],
       "skill": "stealth",
       "dc": 12,
-      "success_to": "f1_bandit",
-      "fail_to": "f1_bandit",
-      "fail_hp_delta": -2
+      "success_to": "f1_bandit_front",
+      "fail_to": "f1_bandit_front",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你貼著牆邊一步步挪過去，連灰塵都沒有驚起。石階口站著一個人影，他還沒有發現你。",
+      "fail_narr": "牆邊的地板突然下陷，你扭傷了腳踝，拖著腳挪到對面。",
+      "on_success": {
+        "set_flag": [
+          "hall_unseen"
+        ]
+      }
     },
     {
       "id": "f1_per",
@@ -698,9 +1118,235 @@
       ],
       "skill": "perception",
       "dc": 12,
-      "success_to": "f1_bandit",
+      "success_to": "f1_bandit_front",
+      "fail_to": "f1_bandit_front",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你認出哪些木板底下還有梁。踏過最後一塊時，你先看見了石階口那個握斧的人影。",
+      "fail_narr": "你挑中的木板發出一聲脆響，整片塌了下去。你攀著斷梁才爬上來。",
+      "on_success": {
+        "set_flag": [
+          "hall_unseen"
+        ]
+      }
+    },
+    {
+      "id": "f1_hall_arcana",
+      "type": "check",
+      "facts": [
+        "你辨認塌陷處下燒焦的陣紋。"
+      ],
+      "skill": "arcana",
+      "dc": 12,
+      "success_to": "f1_bandit_front",
+      "fail_to": "f1_bandit_front",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "焦黑的陣紋還留著一絲餘溫。你認得這個陣式，是師父賽勒斯用來加固落腳處的。你踩著陣紋走過去，腳下穩如平地。師父為何來過這裡？",
+      "fail_narr": "你伸手觸碰陣紋，殘存的法力反咬一口，指尖一陣灼痛。你咬著牙跨了過去。",
+      "on_success": {
+        "set_flag": [
+          "hall_unseen"
+        ]
+      }
+    },
+    {
+      "id": "f1_bandit_front",
+      "type": "beat",
+      "place": "石階口",
+      "facts": [
+        "石階口有一個盜墓者擋住去路。",
+        "他握著生鏽短斧。",
+        "只有這一個人。",
+        {
+          "text": "盜墓者喝道：「誰在那裡？這塔裡的東西是我先找到的！」",
+          "when": {
+            "none_flags": [
+              "hall_unseen"
+            ]
+          }
+        },
+        {
+          "text": "他背對著你，正盯著石階下方，嘴裡念著數目。",
+          "when": {
+            "all_flags": [
+              "hall_unseen"
+            ]
+          }
+        }
+      ],
+      "choices": [
+        {
+          "id": "fight",
+          "label": "動手",
+          "to": "f1_bandit"
+        },
+        {
+          "id": "talk",
+          "label": "開口和他談",
+          "to": "f1_bandit_talk",
+          "when": {
+            "none_flags": [
+              "bandit_front_tried"
+            ]
+          }
+        },
+        {
+          "id": "threat",
+          "label": "厲聲喝退他",
+          "to": "f1_bandit_threat",
+          "when": {
+            "none_flags": [
+              "bandit_front_tried"
+            ]
+          }
+        },
+        {
+          "id": "sneak",
+          "label": "繞到背後制住他",
+          "to": "f1_bandit_sneak",
+          "when": {
+            "not": {
+              "class": "盜賊"
+            },
+            "none_flags": [
+              "bandit_front_tried"
+            ]
+          }
+        },
+        {
+          "id": "lift",
+          "label": "摸走他的短斧",
+          "to": "f1_bandit_lift",
+          "when": {
+            "class": "盜賊",
+            "none_flags": [
+              "bandit_front_tried"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "f1_bandit_talk",
+      "type": "check",
+      "facts": [
+        "你放下架勢，準備開口。"
+      ],
+      "skill": "persuasion",
+      "dc": 13,
+      "advantage": {
+        "class": "牧師"
+      },
+      "success_to": "f1_bandit_after",
       "fail_to": "f1_bandit",
-      "fail_hp_delta": -2
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "盜墓者握斧的手鬆了鬆：「……你不是來搶我的？」他退到牆邊，把短斧放在腳下。",
+      "fail_narr": "「少廢話！」他掄起短斧劈來，你閃得慢了半步。",
+      "on_success": {
+        "set_flag": [
+          "bandit_front_tried",
+          "bandit_parley"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "bandit_front_tried"
+        ]
+      }
+    },
+    {
+      "id": "f1_bandit_threat",
+      "type": "check",
+      "facts": [
+        "你往前踏了一步。"
+      ],
+      "skill": "intimidation",
+      "dc": 13,
+      "advantage": {
+        "stat_min": {
+          "str": 14
+        }
+      },
+      "success_to": "f1_bandit_after",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你往前一站，影子壓住整個石階口。短斧噹啷落地：「別、別殺我！」",
+      "fail_narr": "他乾笑一聲：「嚇唬誰？」斧柄狠狠撞在你胸口。",
+      "on_success": {
+        "set_flag": [
+          "bandit_front_tried"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "bandit_front_tried"
+        ]
+      }
+    },
+    {
+      "id": "f1_bandit_sneak",
+      "type": "check",
+      "facts": [
+        "你繞向他的背後。"
+      ],
+      "skill": "stealth",
+      "dc": 13,
+      "advantage": {
+        "all_flags": [
+          "hall_unseen"
+        ]
+      },
+      "success_to": "f1_bandit_after",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你的手搭上他的後頸，他才驚覺。「好、好，我不動！」",
+      "fail_narr": "碎石在你腳下一響，他猛然回身，斧刃擦過你的手臂。",
+      "on_success": {
+        "set_flag": [
+          "bandit_front_tried",
+          "bandit_pinned"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "bandit_front_tried"
+        ]
+      }
+    },
+    {
+      "id": "f1_bandit_lift",
+      "type": "check",
+      "facts": [
+        "你的目光停在他腰間的短斧上。"
+      ],
+      "skill": "sleight_of_hand",
+      "dc": 12,
+      "advantage": {
+        "all_flags": [
+          "hall_unseen"
+        ]
+      },
+      "success_to": "f1_bandit_after",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你從他腰間抽走短斧，在他耳邊輕聲說：「找這個嗎？」他僵在原地，不敢回頭。",
+      "fail_narr": "碎石在你腳下一響，他猛然回身，斧刃擦過你的手臂。",
+      "on_success": {
+        "set_flag": [
+          "bandit_front_tried",
+          "bandit_pinned"
+        ]
+      },
+      "on_failure": {
+        "set_flag": [
+          "bandit_front_tried"
+        ]
+      }
     },
     {
       "id": "f1_bandit",
@@ -718,8 +1364,15 @@
           "hp": 11,
           "atk": 3,
           "damage": "1d6+1",
-          "per_extra": { "hp": 6, "copies": 0 },
-          "yield": { "kind": "hp_fraction", "num": 1, "den": 3 }
+          "per_extra": {
+            "hp": 6,
+            "copies": 0
+          },
+          "yield": {
+            "kind": "hp_fraction",
+            "num": 1,
+            "den": 3
+          }
         }
       ],
       "win_to": "f1_bandit_after",
@@ -729,7 +1382,25 @@
       "id": "f1_bandit_after",
       "type": "beat",
       "facts": [
-        "盜墓者跪地求饒。"
+        "盜墓者跪地求饒。",
+        {
+          "text": "盜墓者放下短斧，退到牆邊，沒有再上前。",
+          "replace": "盜墓者跪地求饒。",
+          "when": {
+            "all_flags": [
+              "bandit_parley"
+            ]
+          }
+        },
+        {
+          "text": "盜墓者被你制住，不敢再動。",
+          "replace": "盜墓者跪地求饒。",
+          "when": {
+            "all_flags": [
+              "bandit_pinned"
+            ]
+          }
+        }
       ],
       "choices": [
         {
@@ -821,7 +1492,11 @@
             "opened_vault_door"
           ],
           "repeatable": true,
-          "when": { "none_flags": ["vault_cleared"] }
+          "when": {
+            "none_flags": [
+              "vault_cleared"
+            ]
+          }
         },
         {
           "id": "pick",
@@ -886,7 +1561,10 @@
           "hp": 14,
           "atk": 4,
           "damage": "1d6+1",
-          "per_extra": { "hp": 8, "copies": 0 }
+          "per_extra": {
+            "hp": 8,
+            "copies": 0
+          }
         }
       ],
       "win_to": "hide_vault_loot",
@@ -933,7 +1611,10 @@
           "hp": 9,
           "atk": 3,
           "damage": "1d4+1",
-          "per_extra": { "hp": 6, "copies": 0 }
+          "per_extra": {
+            "hp": 6,
+            "copies": 0
+          }
         }
       ],
       "win_to": "f2_bones_after",
@@ -1119,7 +1800,10 @@
           "hp": 14,
           "atk": 3,
           "damage": "1d4+1",
-          "per_extra": { "hp": 8, "copies": 0 }
+          "per_extra": {
+            "hp": 8,
+            "copies": 0
+          }
         }
       ],
       "win_to": "f2_ooze_after",
@@ -1377,8 +2061,15 @@
           "hp": 12,
           "atk": 3,
           "damage": "1d6+1",
-          "per_extra": { "hp": 6, "copies": 0 },
-          "yield": { "kind": "hp_fraction", "num": 1, "den": 4 }
+          "per_extra": {
+            "hp": 6,
+            "copies": 0
+          },
+          "yield": {
+            "kind": "hp_fraction",
+            "num": 1,
+            "den": 4
+          }
         }
       ],
       "win_to": "f3_cult_after",
@@ -1695,7 +2386,10 @@
           "hp": 10,
           "atk": 3,
           "damage": "1d4+2",
-          "per_extra": { "hp": 6, "copies": 0 }
+          "per_extra": {
+            "hp": 6,
+            "copies": 0
+          }
         }
       ],
       "win_to": "hide_crypt_loot",
@@ -1737,7 +2431,10 @@
           "hp": 16,
           "atk": 4,
           "damage": "1d6+1",
-          "per_extra": { "hp": 10, "copies": 0 }
+          "per_extra": {
+            "hp": 10,
+            "copies": 0
+          }
         }
       ],
       "win_to": "cp_f3",
@@ -1904,7 +2601,10 @@
       "enemies": [
         {
           "from_pregen": "selected_rival",
-          "per_extra": { "hp": 0, "copies": 0 }
+          "per_extra": {
+            "hp": 0,
+            "copies": 0
+          }
         }
       ],
       "win_to": "secret_win",

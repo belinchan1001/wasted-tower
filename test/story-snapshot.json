@@ -67,7 +67,9 @@
       "ac": 16,
       "hp_max": 12,
       "skills": [
-        "athletics"
+        "athletics",
+        "intimidation",
+        "history"
       ],
       "attack": {
         "name": "長劍",
@@ -77,17 +79,6 @@
       "inventory": [
         "potion_heal",
         "lantern"
-      ],
-      "features": [
-        {
-          "id": "power_strike",
-          "name": "破甲重擊",
-          "uses": 3,
-          "effect": {
-            "type": "damage",
-            "amount": 10
-          }
-        }
       ]
     },
     {
@@ -104,7 +95,8 @@
       "hp_max": 11,
       "skills": [
         "stealth",
-        "perception"
+        "perception",
+        "survival"
       ],
       "attack": {
         "name": "短弓",
@@ -114,17 +106,6 @@
       "inventory": [
         "potion_heal",
         "alchemist_fire"
-      ],
-      "features": [
-        {
-          "id": "aimed_shot",
-          "name": "穿心一箭",
-          "uses": 3,
-          "effect": {
-            "type": "damage",
-            "amount": 8
-          }
-        }
       ]
     },
     {
@@ -140,7 +121,10 @@
       "ac": 14,
       "hp_max": 9,
       "skills": [
-        "stealth"
+        "stealth",
+        "sleight_of_hand",
+        "investigation",
+        "deception"
       ],
       "attack": {
         "name": "短劍",
@@ -150,17 +134,6 @@
       "inventory": [
         "potion_heal",
         "lantern"
-      ],
-      "features": [
-        {
-          "id": "sneak_stab",
-          "name": "暗影偷襲",
-          "uses": 3,
-          "effect": {
-            "type": "damage",
-            "amount": 9
-          }
-        }
       ]
     },
     {
@@ -176,7 +149,9 @@
       "ac": 16,
       "hp_max": 10,
       "skills": [
-        "insight"
+        "insight",
+        "religion",
+        "persuasion"
       ],
       "attack": {
         "name": "神聖打擊",
@@ -186,17 +161,6 @@
       "inventory": [
         "cure_wounds",
         "potion_heal"
-      ],
-      "features": [
-        {
-          "id": "lay_on_hands",
-          "name": "聖療",
-          "uses": 3,
-          "effect": {
-            "type": "heal",
-            "amount": 8
-          }
-        }
       ]
     },
     {
@@ -212,7 +176,9 @@
       "ac": 12,
       "hp_max": 8,
       "skills": [
-        "perception"
+        "perception",
+        "arcana",
+        "investigation"
       ],
       "attack": {
         "name": "火焰箭",
@@ -222,18 +188,6 @@
       "inventory": [
         "burning_hands",
         "potion_heal"
-      ],
-      "features": [
-        {
-          "id": "mage_armor",
-          "name": "法師護甲",
-          "uses": 3,
-          "effect": {
-            "type": "ac_bonus",
-            "amount": 3,
-            "duration": "combat"
-          }
-        }
       ]
     }
   ],
@@ -250,15 +204,50 @@
         {
           "id": "search",
           "label": "搜查門廊",
-          "to": "f1_rats",
+          "to": "f1_foyer",
           "give": [
             "iron_key"
+          ],
+          "set_flag": [
+            "gate_searched",
+            "searched_porch"
           ]
         },
         {
           "id": "rush",
           "label": "直接進塔",
-          "to": "f1_rats"
+          "to": "f1_foyer",
+          "set_flag": [
+            "gate_rushed"
+          ]
+        },
+        {
+          "id": "search_finn",
+          "label": "搜查門廊（門縫夾著一封信）",
+          "to": "f1_foyer",
+          "give": [
+            "iron_key"
+          ],
+          "set_flag": [
+            "gate_searched",
+            "searched_porch",
+            "finn_contract"
+          ]
+        },
+        {
+          "id": "look",
+          "label": "察看門前",
+          "to": "f1_look"
+        },
+        {
+          "id": "look_crest",
+          "label": "辨認門框隊徽",
+          "to": "f1_look_crest"
+        },
+        {
+          "id": "look_tracks",
+          "label": "追看白鹿蹄印",
+          "to": "f1_look_tracks"
         }
       ]
     },
@@ -333,9 +322,12 @@
       ],
       "skill": "athletics",
       "dc": 12,
-      "success_to": "f1_bandit",
-      "fail_to": "f1_bandit",
-      "fail_hp_delta": -2
+      "success_to": "f1_bandit_front",
+      "fail_to": "f1_bandit_front",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你抓住朽木梁一蕩，穩穩落在對面。塵土簌簌落進黑洞裡。",
+      "fail_narr": "朽木梁在你手中斷裂，你重重摔在碎石上，才掙扎著爬過去。"
     },
     "f1_stl": {
       "id": "f1_stl",
@@ -345,9 +337,12 @@
       ],
       "skill": "stealth",
       "dc": 12,
-      "success_to": "f1_bandit",
-      "fail_to": "f1_bandit",
-      "fail_hp_delta": -2
+      "success_to": "f1_bandit_front",
+      "fail_to": "f1_bandit_front",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你貼著牆邊一步步挪過去，連灰塵都沒有驚起。石階口站著一個人影，他還沒有發現你。",
+      "fail_narr": "牆邊的地板突然下陷，你扭傷了腳踝，拖著腳挪到對面。"
     },
     "f1_per": {
       "id": "f1_per",
@@ -357,9 +352,12 @@
       ],
       "skill": "perception",
       "dc": 12,
-      "success_to": "f1_bandit",
-      "fail_to": "f1_bandit",
-      "fail_hp_delta": -2
+      "success_to": "f1_bandit_front",
+      "fail_to": "f1_bandit_front",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "你認出哪些木板底下還有梁。踏過最後一塊時，你先看見了石階口那個握斧的人影。",
+      "fail_narr": "你挑中的木板發出一聲脆響，整片塌了下去。你攀著斷梁才爬上來。"
     },
     "f1_bandit": {
       "id": "f1_bandit",
@@ -736,6 +734,282 @@
         "銅徽在夜色中發亮。",
         "隱藏結局。"
       ]
+    },
+    "f1_look": {
+      "id": "f1_look",
+      "type": "check",
+      "skill": "perception",
+      "dc": 12,
+      "success_to": "f1_gate",
+      "fail_to": "f1_gate",
+      "success_narr": "你把耳朵貼近門縫。裡面傳來細碎的抓撓聲，不只一隻。",
+      "fail_narr": "門後只有風聲。天色又暗了一分，你看不出更多東西。"
+    },
+    "f1_look_crest": {
+      "id": "f1_look_crest",
+      "type": "check",
+      "skill": "history",
+      "dc": 10,
+      "success_to": "f1_gate",
+      "fail_to": "f1_gate",
+      "success_narr": "隊徽下方刻著一道短箭頭，指向門廳深處。那是盾隊的暗號：前有伏敵。你握緊了劍柄。",
+      "fail_narr": "門後只有風聲。天色又暗了一分，你看不出更多東西。"
+    },
+    "f1_look_tracks": {
+      "id": "f1_look_tracks",
+      "type": "check",
+      "skill": "survival",
+      "dc": 10,
+      "success_to": "f1_gate",
+      "fail_to": "f1_gate",
+      "success_narr": "蹄印在門檻前亂了一下，旁邊滿是細小的爪痕。白鹿在這裡受過驚，門廳裡有鼠群。",
+      "fail_narr": "門後只有風聲。天色又暗了一分，你看不出更多東西。"
+    },
+    "f1_foyer": {
+      "id": "f1_foyer",
+      "type": "beat",
+      "facts": [
+        "門廳裡很暗，牆腳傳來吱吱聲。",
+        "三隻腐鼠從碎石堆後探出頭，紅眼盯著你。",
+        "地上有齧過的布條。",
+        "對面有走廊。",
+        {
+          "text": "你早有準備。腐鼠還在啃咬布條，沒有發現你。",
+          "replace": "三隻腐鼠從碎石堆後探出頭，紅眼盯著你。",
+          "when": {
+            "all_flags": [
+              "f1_scouted"
+            ]
+          }
+        },
+        {
+          "text": "信上寫著：帶出銅徽，賞一百金。——黑手",
+          "when": {
+            "all_flags": [
+              "finn_contract"
+            ]
+          }
+        }
+      ],
+      "choices": [
+        {
+          "id": "fight",
+          "label": "拔出武器迎戰",
+          "to": "f1_rats"
+        },
+        {
+          "id": "sneak",
+          "label": "貼著牆根溜過去",
+          "to": "f1_foyer_sneak"
+        },
+        {
+          "id": "scare",
+          "label": "大聲喝斥，把鼠群嚇退",
+          "to": "f1_foyer_scare"
+        },
+        {
+          "id": "spark",
+          "label": "彈出一簇火花驚走鼠群",
+          "to": "f1_foyer_spark"
+        }
+      ]
+    },
+    "f1_foyer_sneak": {
+      "id": "f1_foyer_sneak",
+      "type": "check",
+      "skill": "stealth",
+      "dc": 12,
+      "success_to": "f1_rats_after",
+      "fail_to": "f1_rats",
+      "fail_hp_delta": -1,
+      "minHp": 1,
+      "advantage": {
+        "all_flags": [
+          "f1_scouted"
+        ]
+      },
+      "success_narr": "你踩著碎石間的空隙前進，腐鼠只顧著啃咬。直到你走遠，牠們才一哄而散，鑽回牆縫。",
+      "fail_narr": "一塊碎石在你腳下滾開。三雙紅眼同時轉了過來。"
+    },
+    "f1_foyer_scare": {
+      "id": "f1_foyer_scare",
+      "type": "check",
+      "skill": "intimidation",
+      "dc": 13,
+      "success_to": "f1_rats_after",
+      "fail_to": "f1_rats",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "advantage": {
+        "has_item": [
+          "lantern"
+        ]
+      },
+      "success_narr": "你猛地踏前一步，喝聲在門廳裡迴盪。腐鼠尖叫著四散，一隻不剩地鑽進了牆縫。",
+      "fail_narr": "領頭的腐鼠弓起背，不退反撲，一口咬在你的小腿上。"
+    },
+    "f1_foyer_spark": {
+      "id": "f1_foyer_spark",
+      "type": "check",
+      "skill": "arcana",
+      "dc": 12,
+      "success_to": "f1_rats_after",
+      "fail_to": "f1_rats",
+      "fail_hp_delta": -1,
+      "minHp": 1,
+      "success_narr": "你指尖一彈，一簇藍白火花在鼠群中炸開。焦毛味散開，腐鼠逃得一隻不剩。",
+      "fail_narr": "火花只閃了一下就熄滅了。腐鼠愣了愣，隨即撲了上來。"
+    },
+    "f1_hall_arcana": {
+      "id": "f1_hall_arcana",
+      "type": "check",
+      "skill": "arcana",
+      "dc": 12,
+      "success_to": "f1_bandit_front",
+      "fail_to": "f1_bandit_front",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "success_narr": "焦黑的陣紋還留著一絲餘溫。你認得這個陣式，是師父賽勒斯用來加固落腳處的。你踩著陣紋走過去，腳下穩如平地。師父為何來過這裡？",
+      "fail_narr": "你伸手觸碰陣紋，殘存的法力反咬一口，指尖一陣灼痛。你咬著牙跨了過去。"
+    },
+    "f1_bandit_front": {
+      "id": "f1_bandit_front",
+      "type": "beat",
+      "facts": [
+        "石階口有一個盜墓者擋住去路。",
+        "他握著生鏽短斧。",
+        "只有這一個人。",
+        {
+          "text": "盜墓者喝道：「誰在那裡？這塔裡的東西是我先找到的！」",
+          "when": {
+            "none_flags": [
+              "hall_unseen"
+            ]
+          }
+        },
+        {
+          "text": "他背對著你，正盯著石階下方，嘴裡念著數目。",
+          "when": {
+            "all_flags": [
+              "hall_unseen"
+            ]
+          }
+        }
+      ],
+      "choices": [
+        {
+          "id": "fight",
+          "label": "動手",
+          "to": "f1_bandit"
+        },
+        {
+          "id": "talk",
+          "label": "開口和他談",
+          "to": "f1_bandit_talk"
+        },
+        {
+          "id": "threat",
+          "label": "厲聲喝退他",
+          "to": "f1_bandit_threat"
+        },
+        {
+          "id": "sneak",
+          "label": "繞到背後制住他",
+          "to": "f1_bandit_sneak"
+        },
+        {
+          "id": "lift",
+          "label": "摸走他的短斧",
+          "to": "f1_bandit_lift"
+        }
+      ]
+    },
+    "f1_bandit_talk": {
+      "id": "f1_bandit_talk",
+      "type": "check",
+      "skill": "persuasion",
+      "dc": 13,
+      "success_to": "f1_bandit_after",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "advantage": {
+        "class": "牧師"
+      },
+      "success_narr": "盜墓者握斧的手鬆了鬆：「……你不是來搶我的？」他退到牆邊，把短斧放在腳下。",
+      "fail_narr": "「少廢話！」他掄起短斧劈來，你閃得慢了半步。"
+    },
+    "f1_bandit_threat": {
+      "id": "f1_bandit_threat",
+      "type": "check",
+      "skill": "intimidation",
+      "dc": 13,
+      "success_to": "f1_bandit_after",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "advantage": {
+        "stat_min": {
+          "str": 14
+        }
+      },
+      "success_narr": "你往前一站，影子壓住整個石階口。短斧噹啷落地：「別、別殺我！」",
+      "fail_narr": "他乾笑一聲：「嚇唬誰？」斧柄狠狠撞在你胸口。"
+    },
+    "f1_bandit_sneak": {
+      "id": "f1_bandit_sneak",
+      "type": "check",
+      "skill": "stealth",
+      "dc": 13,
+      "success_to": "f1_bandit_after",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "advantage": {
+        "all_flags": [
+          "hall_unseen"
+        ]
+      },
+      "success_narr": "你的手搭上他的後頸，他才驚覺。「好、好，我不動！」",
+      "fail_narr": "碎石在你腳下一響，他猛然回身，斧刃擦過你的手臂。"
+    },
+    "f1_bandit_lift": {
+      "id": "f1_bandit_lift",
+      "type": "check",
+      "skill": "sleight_of_hand",
+      "dc": 12,
+      "success_to": "f1_bandit_after",
+      "fail_to": "f1_bandit",
+      "fail_hp_delta": -2,
+      "minHp": 1,
+      "advantage": {
+        "all_flags": [
+          "hall_unseen"
+        ]
+      },
+      "success_narr": "你從他腰間抽走短斧，在他耳邊輕聲說：「找這個嗎？」他僵在原地，不敢回頭。",
+      "fail_narr": "碎石在你腳下一響，他猛然回身，斧刃擦過你的手臂。"
     }
-  }
+  },
+  "check_dice": [
+    {
+      "id": "f1_foyer_sneak",
+      "faces": [
+        7,
+        16
+      ],
+      "taken": 16,
+      "mode": "advantage",
+      "line": "優勢：擲出 7 和 16，取 16"
+    },
+    {
+      "id": "f1_bandit_threat",
+      "faces": [
+        8
+      ],
+      "taken": 8,
+      "mode": "normal",
+      "line": "d20 擲出 8"
+    }
+  ]
 }

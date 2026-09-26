@@ -575,9 +575,10 @@ test('features and consumables keep their old limits', function () {
   mage.encounter.round = 1;
   mage.rng = seqRng([1, 1, 1]);
   var buff = mage.perform({ type: 'use_feature', featureId: 'shield' });
-  assert.strictEqual(buff.ok, true, buff.error);
-  assert.strictEqual(mage.effectiveAc(), 20);
-  assert.strictEqual(mage.character.pools.slots.uses, 2);
+  assert.strictEqual(buff.ok, false);
+  assert.ok(buff.error.indexOf('護盾術') >= 0);
+  assert.strictEqual(mage.effectiveAc(), 15);
+  assert.strictEqual(mage.character.pools.slots.uses, 3);
   mage.perform({ type: 'flee' });
   assert.strictEqual(mage.character.acBonus, 0);
   assert.strictEqual(mage.effectiveAc(), 15);
@@ -666,7 +667,7 @@ test('old save codes migrate and bad codes fail without throwing', function () {
   assert.strictEqual(upgraded.engine.playTimeKnown, false);
 
   var newer = engine.exportSave();
-  newer.v = 6;
+  newer.v = 7;
   var tooNew = T.loadGame(adventure, T.encodeSaveCode(newer));
   assert.strictEqual(tooNew.ok, false);
   assert.ok(/較新/.test(tooNew.error));
@@ -784,14 +785,14 @@ test('WT4 saves use the preview key, and WT3 or corrupt codes do not crash', fun
   var engine = new T.Engine(adventure, { seed: 90 });
   engine.start(0);
   var code = T.encodeSaveCode(engine.exportSave());
-  assert.strictEqual(code.indexOf('WT5.'), 0);
+  assert.strictEqual(code.indexOf('WT6.'), 0);
   assert.deepStrictEqual(engine.exportSave().character.statuses, []);
   assert.strictEqual(engine.exportSave().character.hpMaxReduction, 0);
   var slot = new T.SaveSlot(storage);
   assert.strictEqual(slot.key, 'wasted-tower-preview-save');
   assert.strictEqual(slot.write(code).ok, true);
   assert.deepStrictEqual(Object.keys(bag), ['wasted-tower-preview-save']);
-  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT5.'), 0);
+  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT6.'), 0);
   var back;
   assert.doesNotThrow(function () { back = T.loadGame(adventure, slot.read()); });
   assert.strictEqual(back.ok, true, back.error);
@@ -2167,7 +2168,7 @@ test('floor 1 depth: every class can fight or bypass, and checks cannot empty th
   var stored = scout.rollLog.filter(function (row) { return row.t === 'check'; }).pop();
   assert.deepStrictEqual(stored.lines, narrator.Mechanics.rollLines(advCheck));
   var code = T.encodeSaveCode(scout.exportSave());
-  assert.strictEqual(code.indexOf('WT5.'), 0);
+  assert.strictEqual(code.indexOf('WT6.'), 0);
   var back = T.loadGame(adventure, code);
   assert.strictEqual(back.ok, true, back.error);
   assert.deepStrictEqual(back.engine.done['check:f1_foyer_sneak'].dice, [7, 16]);
@@ -2851,7 +2852,7 @@ test('WT3 migrates, checkpoints restore uses only, and retry takes a new seed', 
   assert.deepStrictEqual(migrated.engine.character.statuses, []);
   assert.strictEqual(migrated.engine.character.hpMaxReduction, 0);
   var code = T.decodeSaveCode(T.encodeSaveCode(fighter.exportSave()));
-  assert.strictEqual(code.save.v, 5);
+  assert.strictEqual(code.save.v, 6);
   assert.strictEqual(code.save.rng.kind, 'seeded');
   assert.ok(Number.isInteger(code.save.rng.count));
 
@@ -3137,6 +3138,15 @@ test('fleeing the floor-1 bandit does not reroll resolved hall checks', function
   assert.ok(choiceIds(bandit.engine).indexOf('climb') < 0);
 });
 
+function outsideHealWorthPotion(heal, hp, hpMax) {
+  if (!Number.isInteger(heal) || heal < 1) return false;
+  if (!Number.isInteger(hp) || !Number.isInteger(hpMax)) return false;
+  var missing = hpMax - hp;
+  if (missing <= 0) return false;
+  var restored = missing < heal ? missing : heal;
+  // 1 or 2 points is a scratch. A larger gap is worth the potion.
+  return restored >= 3;
+}
 function hitChance(bonus, ac) {
   var face, hits = 0;
   for (face = 1; face <= 20; face++) {
@@ -3215,7 +3225,14 @@ function simulateClass(index, runs, options) {
         eng.character.inventory.forEach(function (id, i) {
           if (slot < 0 && (id === 'potion_heal' || id === 'potion_heal_2' || id === 'cure_wounds')) slot = i;
         });
-        if (slot >= 0) action = { actor: 0, action: 'item', slot: slot };
+        if (slot >= 0) {
+          var item = eng.items[eng.character.inventory[slot]];
+          var heal = item && item.heal;
+          // Restoring 1 or 2 points spends the potion before an emergency needs it.
+          if (heal && (options.potionOutside === 'any' || outsideHealWorthPotion(heal, eng.character.hp, eng.character.hp_max))) {
+            action = { actor: 0, action: 'item', slot: slot };
+          }
+        }
       }
       if (!action) return;
       var before = eng.character.hp;
@@ -3250,9 +3267,6 @@ function simulateClass(index, runs, options) {
       if (!(c.tempHp > 0) && usesOf(eng, 'false_life') > 0) {
         return { actor: 0, action: 'move', moveId: 'false_life' };
       }
-    }
-    if (c.hp <= 4 && usesOf(eng, 'shield') > 0 && !(c.acBonus > 0)) {
-      return { actor: 0, action: 'move', moveId: 'shield' };
     }
     if (living.length >= 2 && usesOf(eng, 'burning_hands') > 0) {
       return { actor: 0, action: 'move', moveId: 'burning_hands' };
@@ -4128,7 +4142,7 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
   wiz.enterScene('f1_bandit');
   wiz.character.tempHp = 3;
   wiz.character.hp = 8;
-  wiz.rng = seqRng([15, 6]);
+  wiz.rng = seqRng([17, 6]);
   wiz.runEnemyTurn(0);
   var swing = wiz.events.filter(function (e) { return e.t === 'enemy_attack'; })[0];
   assert.strictEqual(swing.tempAbsorbed, 3);
@@ -4186,7 +4200,7 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
   assert.strictEqual(loaded.engine.character.tempHp, 6);
   assert.strictEqual(loaded.engine.character.pools.slots.uses, 1);
   assert.strictEqual(loaded.engine.character.features.filter(function (f) { return f.id === 'arcane_recovery'; })[0].uses, 0);
-  assert.strictEqual(loaded.engine.exportSave().v, 5);
+  assert.strictEqual(loaded.engine.exportSave().v, 6);
 
   var old = keep.exportSave();
   old.v = 4;
@@ -4196,7 +4210,7 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
   strikeLeft.uses = 1;
   var migrated = T.loadGame(adventure, T.encodeSaveCode(old));
   assert.strictEqual(migrated.ok, true, migrated.error);
-  assert.strictEqual(migrated.engine.exportSave().v, 5);
+  assert.strictEqual(migrated.engine.exportSave().v, 6);
   assert.strictEqual(migrated.engine.character.tempHp, 0);
   assert.ok(migrated.engine.character.features.some(function (f) { return f.id === 'false_life'; }));
   assert.ok(migrated.engine.character.features.some(function (f) { return f.id === 'fire_bolt'; }));
@@ -4204,8 +4218,8 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
   assert.strictEqual(migrated.engine.character.features.filter(function (f) { return f.id === 'arcane_recovery'; })[0].uses, 0);
 
   var shield = adventure.pregens[4].features.filter(function (f) { return f.id === 'shield'; })[0];
-  assert.strictEqual(shield.timing, 'ready');
-  assert.strictEqual(shield.costs_turn, true);
+  assert.strictEqual(shield.timing, 'reaction');
+  assert.strictEqual(shield.costs_turn, false);
   adventure.pregens.forEach(function (p) {
     p.features.forEach(function (f) {
       assert.ok(!f.status && !f.condition, f.id);
@@ -4222,6 +4236,195 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
     });
   });
   assert.strictEqual(adventure.meta.required_for_secret.length, 8);
+});
+
+test('outside-combat potions are skipped when they would restore only 1 or 2 points', function () {
+  assert.strictEqual(outsideHealWorthPotion(8, 8, 9), false);
+  assert.strictEqual(outsideHealWorthPotion(8, 7, 9), false);
+  assert.strictEqual(outsideHealWorthPotion(8, 6, 9), true);
+  assert.strictEqual(outsideHealWorthPotion(8, 5, 9), true);
+  assert.strictEqual(outsideHealWorthPotion(8, 1, 9), true);
+  assert.strictEqual(outsideHealWorthPotion(8, 9, 9), false);
+  assert.strictEqual(outsideHealWorthPotion(10, 7, 9), false);
+  assert.strictEqual(outsideHealWorthPotion(10, 6, 9), true);
+});
+
+test('shield reacts only when +5 turns a hit into a miss', function () {
+  var SHIELD_LINE = '護盾術擋下攻擊（用去一個法術位）';
+  function wizard() {
+    var eng = new T.Engine(adventure, { seed: 31 });
+    eng.start(4);
+    eng.enterScene('f1_rats');
+    return eng;
+  }
+  function reactions(events) {
+    return (events || []).filter(function (e) { return e.t === 'reaction' && e.featureId === 'shield'; });
+  }
+  function swing(eng, face, damage) {
+    eng.events = [];
+    eng.rng = seqRng([face].concat(damage || []));
+    eng.runEnemyTurn(0);
+    return eng.events;
+  }
+  function attackOf(events) {
+    return events.filter(function (e) { return e.t === 'enemy_attack'; })[0];
+  }
+
+  var miss = wizard();
+  var ev = swing(miss, 12);
+  assert.strictEqual(reactions(ev).length, 0);
+  assert.strictEqual(attackOf(ev).hit, false);
+  assert.strictEqual(attackOf(ev).ac, 15);
+  assert.strictEqual(miss.character.pools.slots.uses, 3);
+  assert.strictEqual(miss.effectiveAc(), 15);
+  ev = swing(miss, 1);
+  assert.strictEqual(reactions(ev).length, 0);
+  assert.strictEqual(attackOf(ev).hit, false);
+  assert.strictEqual(miss.character.pools.slots.uses, 3);
+
+  var fire = wizard();
+  ev = swing(fire, 13);
+  assert.strictEqual(reactions(ev).length, 1);
+  assert.strictEqual(reactions(ev)[0].narr, SHIELD_LINE);
+  assert.strictEqual(attackOf(ev).hit, false);
+  assert.strictEqual(attackOf(ev).ac, 20);
+  assert.strictEqual(fire.effectiveAc(), 20);
+  assert.strictEqual(fire.character.acBonus, 5);
+  assert.strictEqual(fire.character.reactionUsed, true);
+  assert.strictEqual(fire.character.pools.slots.uses, 2);
+  assert.strictEqual(fire.character.features.filter(function (f) { return f.id === 'magic_missile'; })[0].uses, 2);
+  assert.strictEqual(countLine(playerLog(ev), SHIELD_LINE), 1);
+  assert.ok(playerLog(ev).join('\n').indexOf('側身') < 0);
+  var high = wizard();
+  ev = swing(high, 17);
+  assert.strictEqual(reactions(ev).length, 1);
+  assert.strictEqual(attackOf(ev).hit, false);
+  assert.strictEqual(attackOf(ev).total, 19);
+  assert.strictEqual(high.effectiveAc(), 20);
+
+  var through = wizard();
+  ev = swing(through, 18, [3]);
+  assert.strictEqual(reactions(ev).length, 0);
+  assert.strictEqual(attackOf(ev).hit, true);
+  assert.strictEqual(attackOf(ev).ac, 15);
+  assert.strictEqual(through.character.pools.slots.uses, 3);
+  assert.strictEqual(through.character.hp, 5);
+
+  var crit = wizard();
+  crit.character.ac = 18;
+  ev = swing(crit, 20, [1, 1]);
+  assert.strictEqual(reactions(ev).length, 0);
+  assert.strictEqual(attackOf(ev).hit, true);
+  assert.strictEqual(attackOf(ev).crit, true);
+  assert.strictEqual(attackOf(ev).total, 22);
+  assert.ok(attackOf(ev).total < 18 + 3 + 5);
+  assert.strictEqual(crit.character.pools.slots.uses, 3);
+  assert.strictEqual(crit.effectiveAc(), 21);
+
+  var empty = wizard();
+  empty.character.pools.slots.uses = 0;
+  empty.character.features.forEach(function (f) { if (f.pool === 'slots') f.uses = 0; });
+  ev = swing(empty, 13, [2]);
+  assert.strictEqual(reactions(ev).length, 0);
+  assert.strictEqual(attackOf(ev).hit, true);
+  assert.strictEqual(empty.character.pools.slots.uses, 0);
+  assert.strictEqual(empty.character.hp, 6);
+
+  var spent = wizard();
+  spent.character.reactionUsed = true;
+  ev = swing(spent, 13, [2]);
+  assert.strictEqual(reactions(ev).length, 0);
+  assert.strictEqual(attackOf(ev).hit, true);
+  assert.strictEqual(spent.character.pools.slots.uses, 3);
+  assert.strictEqual(spent.character.acBonus, 0);
+
+  var later = wizard();
+  ev = swing(later, 13);
+  assert.strictEqual(later.character.pools.slots.uses, 2);
+  ev = swing(later, 16);
+  assert.strictEqual(reactions(ev).length, 0);
+  assert.strictEqual(attackOf(ev).hit, false);
+  assert.strictEqual(attackOf(ev).ac, 20);
+  assert.strictEqual(later.character.pools.slots.uses, 2);
+  ev = swing(later, 18, [1]);
+  assert.strictEqual(reactions(ev).length, 0);
+  assert.strictEqual(attackOf(ev).hit, true);
+  assert.strictEqual(attackOf(ev).ac, 20);
+  assert.strictEqual(later.character.pools.slots.uses, 2);
+  later.beginHeroTurn();
+  assert.strictEqual(later.character.acBonus, 0);
+  assert.strictEqual(later.character.reactionUsed, false);
+  assert.strictEqual(later.effectiveAc(), 15);
+  ev = swing(later, 13);
+  assert.strictEqual(reactions(ev).length, 1);
+  assert.strictEqual(later.character.pools.slots.uses, 1);
+  assert.strictEqual(later.effectiveAc(), 20);
+
+  var flow = wizard();
+  heroFirst(flow);
+  flow.encounter.enemies.forEach(function (e) {
+    e.hp = 30;
+    e.hp_max = 30;
+    e.yield = null;
+  });
+  flow.rng = seqRng([1, 14, 16, 10]);
+  var turned = flow.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(turned.ok, true, turned.error);
+  var swings = turned.events.filter(function (e) { return e.t === 'enemy_attack'; });
+  assert.strictEqual(swings.length, 3);
+  assert.strictEqual(reactions(turned.events).length, 1);
+  assert.strictEqual(swings[0].hit, false);
+  assert.strictEqual(swings[0].ac, 20);
+  assert.strictEqual(swings[1].hit, false);
+  assert.strictEqual(swings[1].ac, 20);
+  assert.strictEqual(swings[2].hit, false);
+  assert.strictEqual(flow.effectiveAc(), 20);
+  assert.strictEqual(flow.character.pools.slots.uses, 2);
+  assert.strictEqual(flow.openTurn(), true);
+  assert.strictEqual(flow.character.acBonus, 0);
+  assert.strictEqual(flow.character.reactionUsed, false);
+  assert.strictEqual(flow.effectiveAc(), 15);
+
+  var menu = wizard();
+  assert.ok(!menu.legalActions().some(function (a) { return a.featureId === 'shield'; }));
+  var listed = findSheetMove(menu, 'shield');
+  assert.strictEqual(listed.enabled, false);
+  assert.strictEqual(listed.grey, true);
+  assert.strictEqual(listed.reason, '攻擊將失時自動施放');
+  assert.ok(listed.usesLabel.indexOf('●') >= 0);
+  var manual = menu.perform({ type: 'use_feature', featureId: 'shield' });
+  assert.strictEqual(manual.ok, false);
+  assert.strictEqual(menu.character.pools.slots.uses, 3);
+
+  function fromOld(version) {
+    var src = wizard();
+    src.character.pools.slots.uses = 2;
+    src.character.features.forEach(function (f) { if (f.pool === 'slots') f.uses = 2; });
+    var old = src.exportSave();
+    old.v = version;
+    delete old.character.reactionUsed;
+    if (version < 5) delete old.character.tempHp;
+    var row = old.character.features.filter(function (f) { return f.id === 'shield'; })[0];
+    row.timing = 'ready';
+    row.costs_turn = true;
+    var loaded = T.loadGame(adventure, T.encodeSaveCode(old));
+    assert.strictEqual(loaded.ok, true, loaded.error);
+    assert.strictEqual(loaded.engine.exportSave().v, 6);
+    assert.strictEqual(loaded.engine.character.pools.slots.uses, 2);
+    assert.strictEqual(loaded.engine.character.reactionUsed, false);
+    var feat = loaded.engine.character.features.filter(function (f) { return f.id === 'shield'; })[0];
+    assert.strictEqual(feat.timing, 'reaction');
+    assert.strictEqual(feat.costs_turn, false);
+    loaded.engine.enterScene('f1_rats');
+    var got = swing(loaded.engine, 13);
+    assert.strictEqual(reactions(got).length, 1);
+    assert.strictEqual(attackOf(got).hit, false);
+    assert.strictEqual(attackOf(got).ac, 20);
+    assert.strictEqual(loaded.engine.character.pools.slots.uses, 1);
+    assert.strictEqual(countLine(playerLog(got), SHIELD_LINE), 1);
+  }
+  fromOld(5);
+  fromOld(4);
 });
 
 if (failed) {

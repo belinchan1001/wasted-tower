@@ -5183,6 +5183,301 @@ test('restrained and prone do not stack, and saves from WT4 through WT7 still lo
   assert.strictEqual(rows.filter(function (s) { return s.id === 'prone'; })[0].hold, 1);
 });
 
+test('the new preview UI loads WT4 through WT8 saves and renders them', function () {
+  var vm = require('vm');
+  var sentence = 'This work includes material taken from the System Reference Document 5.1 (\u201cSRD 5.1\u201d) by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode.';
+  var original = '故事、角色、地點與敵人名稱屬本作原創，並加入原創能力。';
+  var html = fs.readFileSync(path.join(__dirname, 'preview/index.html'), 'utf8');
+  var css = fs.readFileSync(path.join(__dirname, 'preview/ui.css'), 'utf8');
+  var uiSrc = fs.readFileSync(path.join(__dirname, 'preview/js/ui.js'), 'utf8');
+  assert.ok(html.indexOf(sentence) >= 0);
+  assert.ok(html.indexOf(original) >= 0);
+  assert.ok(html.indexOf('credits-src') >= 0);
+  assert.ok(html.indexOf('js/ui.js') >= 0);
+  assert.ok(html.indexOf('ui.css') >= 0);
+  assert.ok(uiSrc.indexOf('credits-src') >= 0);
+  assert.ok(uiSrc.indexOf('PREVIEW_STORAGE_KEYS.save') >= 0);
+  assert.ok(uiSrc.indexOf('Wizards of the Coast') < 0);
+  [html, css, uiSrc, fs.readFileSync(path.join(__dirname, 'preview/favicon.svg'), 'utf8')].forEach(function (text) {
+    assert.ok(text.indexOf('grok') < 0);
+    assert.ok(!/<script[^>]+src=["']https?:/i.test(text));
+    assert.ok(!/<link[^>]+href=["']https?:/i.test(text));
+    assert.ok(!/@import\s+url\(\s*['"]?https?:/i.test(text));
+    assert.ok(!/url\(\s*['"]?https?:/i.test(text));
+  });
+
+  function makeNode(tag) {
+    var data = '';
+    var el = {
+      tag: tag,
+      nodeType: tag === '#text' ? 3 : (tag === '#fragment' ? 11 : 1),
+      childNodes: [],
+      parentNode: null,
+      className: '',
+      id: '',
+      style: {},
+      attrs: {},
+      listeners: {},
+      disabled: false,
+      type: '',
+      value: '',
+      readOnly: false,
+      content: null
+    };
+    el.appendChild = function (child) {
+      if (!child) return child;
+      if (child.parentNode && child.parentNode.removeChild) child.parentNode.removeChild(child);
+      child.parentNode = el;
+      el.childNodes.push(child);
+      return child;
+    };
+    el.removeChild = function (child) {
+      var i = el.childNodes.indexOf(child);
+      if (i >= 0) el.childNodes.splice(i, 1);
+      if (child) child.parentNode = null;
+      return child;
+    };
+    el.insertBefore = function (child, ref) {
+      if (child.parentNode && child.parentNode.removeChild) child.parentNode.removeChild(child);
+      child.parentNode = el;
+      var i = ref ? el.childNodes.indexOf(ref) : -1;
+      if (i < 0) el.childNodes.push(child);
+      else el.childNodes.splice(i, 0, child);
+      return child;
+    };
+    el.setAttribute = function (key, value) {
+      el.attrs[key] = String(value);
+      if (key === 'id') el.id = String(value);
+    };
+    el.getAttribute = function (key) { return Object.prototype.hasOwnProperty.call(el.attrs, key) ? el.attrs[key] : null; };
+    el.addEventListener = function (name, fn) {
+      if (!el.listeners[name]) el.listeners[name] = [];
+      el.listeners[name].push(fn);
+    };
+    el.remove = function () { if (el.parentNode) el.parentNode.removeChild(el); };
+    el.focus = function () {};
+    el.select = function () {};
+    el.cloneNode = function (deep) {
+      var copy = makeNode(el.tag);
+      copy.className = el.className;
+      copy.id = el.id;
+      copy.nodeType = el.nodeType;
+      if (el.nodeType === 3) copy.textContent = el.textContent;
+      if (deep) el.childNodes.forEach(function (child) { copy.appendChild(child.cloneNode(true)); });
+      if (el.content && el.content.cloneNode) copy.content = el.content.cloneNode(true);
+      return copy;
+    };
+    Object.defineProperty(el, 'textContent', {
+      get: function () {
+        if (el.nodeType === 3) return data;
+        if (!el.childNodes.length) return data;
+        return el.childNodes.map(function (child) { return child.textContent || ''; }).join('');
+      },
+      set: function (value) {
+        data = value == null ? '' : String(value);
+        el.childNodes.splice(0, el.childNodes.length);
+        if (el.nodeType !== 3 && data) {
+          var text = makeNode('#text');
+          text.textContent = data;
+          el.appendChild(text);
+        }
+      }
+    });
+    Object.defineProperty(el, 'firstChild', {
+      get: function () { return el.childNodes[0] || null; }
+    });
+    Object.defineProperty(el, 'classList', {
+      get: function () {
+        return {
+          toggle: function (name, on) {
+            var parts = el.className.split(/\s+/).filter(Boolean);
+            var has = parts.indexOf(name) >= 0;
+            var next = on === undefined ? !has : !!on;
+            if (next && !has) parts.push(name);
+            if (!next) parts = parts.filter(function (part) { return part !== name; });
+            el.className = parts.join(' ');
+            return next;
+          }
+        };
+      }
+    });
+    return el;
+  }
+
+  function findId(node, id) {
+    if (!node || node.nodeType === 3) return null;
+    if (node.id === id) return node;
+    var i;
+    for (i = 0; i < node.childNodes.length; i++) {
+      var found = findId(node.childNodes[i], id);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function buttons(node, out) {
+    out = out || [];
+    if (!node || node.nodeType === 3) return out;
+    if (node.tag === 'button') out.push(node);
+    node.childNodes.forEach(function (child) { buttons(child, out); });
+    return out;
+  }
+
+  function clickMatch(root, pred, label) {
+    var match = buttons(root).filter(pred);
+    assert.ok(match.length > 0, 'missing button ' + label + ' in ' + root.textContent.slice(0, 240));
+    var btn = match[0];
+    (btn.listeners.click || []).forEach(function (fn) {
+      fn({ target: btn, preventDefault: function () {}, stopPropagation: function () {} });
+    });
+    return btn;
+  }
+
+  function boot(stored) {
+    var bag = {};
+    if (stored) bag['wasted-tower-preview-save'] = stored;
+    var storage = {
+      getItem: function (key) { return Object.prototype.hasOwnProperty.call(bag, key) ? bag[key] : null; },
+      setItem: function (key, value) { bag[key] = String(value); },
+      removeItem: function (key) { delete bag[key]; }
+    };
+    var body = makeNode('body');
+    var root = makeNode('div');
+    root.id = 'tower-root';
+    body.appendChild(root);
+    var credits = makeNode('template');
+    credits.id = 'credits-src';
+    var frag = makeNode('#fragment');
+    var attrib = makeNode('p');
+    attrib.className = 'attrib';
+    attrib.textContent = sentence;
+    frag.appendChild(attrib);
+    var line = makeNode('p');
+    line.textContent = original;
+    frag.appendChild(line);
+    credits.content = frag;
+    body.appendChild(credits);
+    var document = {
+      body: body,
+      createElement: function (tag) { return makeNode(tag); },
+      createElementNS: function () { return makeNode('svg'); },
+      createTextNode: function (text) {
+        var node = makeNode('#text');
+        node.textContent = text;
+        return node;
+      },
+      getElementById: function (id) { return findId(body, id); },
+      execCommand: function () { return false; }
+    };
+    var sandbox = {
+      document: document,
+      ADVENTURES: data.ADVENTURES,
+      DEFAULT_ADVENTURE_ID: data.DEFAULT_ADVENTURE_ID,
+      TOWER: global.TOWER,
+      localStorage: storage,
+      navigator: {},
+      console: console,
+      Date: Date,
+      Math: Math,
+      setTimeout: setTimeout,
+      clearTimeout: clearTimeout,
+      requestAnimationFrame: function () { return 1; },
+      cancelAnimationFrame: function () {}
+    };
+    vm.createContext(sandbox);
+    sandbox.window = sandbox;
+    sandbox.self = sandbox;
+    sandbox.globalThis = sandbox;
+    vm.runInContext(uiSrc, sandbox, { filename: 'preview/js/ui.js' });
+    sandbox.TowerUI.mount(root);
+    return { body: body, storage: storage, bag: bag };
+  }
+
+  function playingSave(index, sceneId, decorate) {
+    var eng = new T.Engine(adventure, { seed: 21 });
+    eng.start(index);
+    eng.enterScene(sceneId);
+    heroFirst(eng);
+    if (decorate) decorate(eng);
+    return eng.exportSave();
+  }
+
+  var marked = playingSave(1, 'f1_bandit', function (eng) {
+    eng.addStatus(eng.encounter.enemies[0], { id: 'restrained', src: 'net', escape_dc: 10 });
+    eng.addStatus(eng.encounter.enemies[0], { id: 'prone', src: 'command', hold: 1 });
+  });
+  [4, 5, 6, 7, 8].forEach(function (version) {
+    var copy = JSON.parse(JSON.stringify(marked));
+    copy.v = version;
+    var code = T.encodeSaveCode(copy);
+    assert.strictEqual(code.indexOf('WT' + version + '.'), 0);
+    var view = boot(code);
+    assert.ok(view.body.textContent.indexOf('希薇') >= 0, 'WT' + version);
+    clickMatch(view.body, function (btn) { return btn.textContent.indexOf('繼續這一夜') >= 0; }, 'continue ' + version);
+    var shown = view.body.textContent;
+    assert.ok(shown.indexOf('希薇') >= 0, 'WT' + version + ' play');
+    assert.ok(shown.indexOf('盜墓者') >= 0, 'WT' + version + ' foe');
+    assert.strictEqual(view.bag['wasted-tower-preview-save'].indexOf('WT8.'), 0, 'WT' + version);
+    assert.ok(!Object.prototype.hasOwnProperty.call(view.bag, 'wasted-tower-preview-probe'));
+    if (version === 8) {
+      assert.ok(shown.indexOf('束縛') >= 0);
+      assert.ok(shown.indexOf('倒地') >= 0);
+      clickMatch(view.body, function (btn) { return btn.className.indexOf('badge') >= 0 && btn.textContent === '束縛'; }, 'restrained');
+      assert.ok(view.body.textContent.indexOf('攻擊它有優勢，它攻擊劣勢') >= 0);
+      clickMatch(view.body, function (btn) { return btn.className.indexOf('badge') >= 0 && btn.textContent === '倒地'; }, 'prone');
+      assert.ok(view.body.textContent.indexOf('近戰攻擊它有優勢，遠程劣勢') >= 0);
+    } else {
+      assert.ok(shown.indexOf('束縛') < 0, 'WT' + version);
+      assert.ok(shown.indexOf('倒地') < 0, 'WT' + version);
+    }
+  });
+
+  var moves = boot(T.encodeSaveCode(marked));
+  clickMatch(moves.body, function (btn) { return btn.textContent.indexOf('繼續這一夜') >= 0; }, 'continue moves');
+  clickMatch(moves.body, function (btn) { return btn.textContent.indexOf('招式') === 0; }, 'moves');
+  var groups = moves.body.textContent;
+  assert.ok(groups.indexOf('平時用') >= 0);
+  assert.ok(groups.indexOf('大招') >= 0);
+  assert.ok(groups.indexOf('救命') >= 0);
+  clickMatch(moves.body, function (btn) { return btn.getAttribute('data-group') === 'big'; }, 'big');
+  clickMatch(moves.body, function (btn) { return btn.getAttribute('data-move') === 'net'; }, 'net');
+  assert.ok(moves.body.textContent.indexOf('敵人血多、想爭取時間時用。') >= 0);
+
+  var immune = boot(T.encodeSaveCode(playingSave(1, 'f2_ooze')));
+  clickMatch(immune.body, function (btn) { return btn.textContent.indexOf('繼續這一夜') >= 0; }, 'continue ooze');
+  clickMatch(immune.body, function (btn) { return btn.textContent.indexOf('招式') === 0; }, 'ooze moves');
+  clickMatch(immune.body, function (btn) { return btn.getAttribute('data-group') === 'big'; }, 'ooze big');
+  clickMatch(immune.body, function (btn) { return btn.getAttribute('data-move') === 'net'; }, 'ooze net');
+  assert.ok(immune.body.textContent.indexOf('對它無效') >= 0);
+
+  var mage = boot(T.encodeSaveCode(playingSave(4, 'f1_rats')));
+  clickMatch(mage.body, function (btn) { return btn.textContent.indexOf('繼續這一夜') >= 0; }, 'continue mage');
+  clickMatch(mage.body, function (btn) { return btn.textContent.indexOf('招式') === 0; }, 'mage moves');
+  clickMatch(mage.body, function (btn) { return btn.getAttribute('data-group') === 'rescue'; }, 'rescue');
+  var shield = buttons(mage.body).filter(function (btn) { return btn.getAttribute('data-move') === 'shield'; })[0];
+  assert.ok(shield);
+  assert.ok(shield.textContent.indexOf('護盾術') >= 0);
+  assert.ok(shield.className.indexOf('spent') >= 0);
+  assert.strictEqual(shield.getAttribute('data-spent'), '1');
+
+  var cleric = boot(T.encodeSaveCode(playingSave(3, 'f1_bandit')));
+  clickMatch(cleric.body, function (btn) { return btn.textContent.indexOf('繼續這一夜') >= 0; }, 'continue cleric');
+  clickMatch(cleric.body, function (btn) { return btn.textContent.indexOf('人物') >= 0; }, 'sheet');
+  assert.ok(cleric.body.textContent.indexOf('被動') >= 0);
+  assert.ok(cleric.body.textContent.indexOf('神聖打擊') >= 0);
+  clickMatch(cleric.body, function (btn) { return btn.textContent.indexOf('招式') === 0; }, 'cleric moves');
+  assert.ok(cleric.body.textContent.indexOf('被動') >= 0);
+  clickMatch(cleric.body, function (btn) { return btn.getAttribute('data-group') === 'big'; }, 'command group');
+  clickMatch(cleric.body, function (btn) { return btn.getAttribute('data-move') === 'command'; }, 'command');
+  assert.ok(cleric.body.textContent.indexOf('對通人語、血多的敵人用。') >= 0);
+
+  var gate = boot(null);
+  clickMatch(gate.body, function (btn) { return btn.textContent.indexOf('授權與鳴謝') >= 0; }, 'credits');
+  assert.ok(gate.body.textContent.indexOf(sentence) >= 0);
+  assert.ok(gate.body.textContent.indexOf(original) >= 0);
+  assert.ok(gate.body.textContent.indexOf('布倫') >= 0 || gate.body.textContent.indexOf('返回') >= 0);
+});
+
 if (process.env.SKIP_TESTS !== '1') {
   if (failed) {
     console.error(failed + ' failed, ' + passed + ' passed');

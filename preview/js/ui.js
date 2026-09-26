@@ -82,6 +82,7 @@
   var logEl = null, statusEl = null, actionsEl = null;
   var trayMode = null; // null | 'items' | 'moves' | 'export' | 'attack' | {slot:n} | {featureId:id} | {confirmId:id}
   var openGroups = { everyday: true, big: false, rescue: false, passive: true };
+  var openBadge = null;
   var slot = new T.SaveSlot(browserStorage(), T.PREVIEW_STORAGE_KEYS.save);
   var saveNote = '';
   var endingCanvas = null;
@@ -650,6 +651,32 @@
     actionsEl.appendChild(main);
 
     if (st.sceneType === 'combat') {
+      var foes = el('div', 'foes');
+      (st.enemies || []).forEach(function (e) {
+        if (!e.alive) return;
+        var card = el('div', 'foe');
+        var head = el('div', 'foe-head');
+        head.appendChild(el('span', 'foe-name', e.name));
+        head.appendChild(el('span', 'foe-hp', '生命 ' + e.hp + '/' + e.hp_max));
+        (e.statuses || []).forEach(function (s) {
+          var key = e.index + ':' + s.id;
+          var badge = el('button', 'badge ' + s.id, s.label);
+          badge.type = 'button';
+          badge.addEventListener('click', function () {
+            openBadge = openBadge === key ? null : key;
+            refresh();
+          });
+          head.appendChild(badge);
+        });
+        card.appendChild(head);
+        (e.statuses || []).forEach(function (s) {
+          if (openBadge !== e.index + ':' + s.id) return;
+          card.appendChild(el('p', 'badge-note', s.line));
+          card.appendChild(el('p', 'badge-note', s.ends));
+        });
+        foes.appendChild(card);
+      });
+      if (foes.childNodes.length) actionsEl.appendChild(foes);
       var menu = el('div', 'combat-menu');
       var fleeAct = null;
       acts.forEach(function (a) { if (a.type === 'flee') fleeAct = a; });
@@ -706,7 +733,12 @@
     } else if (trayMode === 'attack') {
       tray.appendChild(el('h3', null, '攻擊哪一個？'));
       attackActs.forEach(function (a) {
-        tray.appendChild(button(a.targetName, '生命 ' + a.targetHp + '/' + a.targetHpMax, null, function () {
+        var hint = '生命 ' + a.targetHp + '/' + a.targetHpMax;
+        (st.enemies || []).forEach(function (e) {
+          if (e.index !== a.target || !e.statuses || !e.statuses.length) return;
+          hint += '　' + e.statuses.map(function (s) { return s.label; }).join('、');
+        });
+        tray.appendChild(button(a.targetName, hint, null, function () {
           act({ actor: 0, action: 'attack', target: a.target });
         }));
       });
@@ -735,6 +767,7 @@
         tray.appendChild(el('h3', null, picked ? picked.name : '招式'));
         if (picked) {
           tray.appendChild(el('p', 'hint', picked.detail || picked.summary || ''));
+          if (picked.hint) tray.appendChild(el('p', 'hint when', picked.hint));
           if (picked.usesLabel) tray.appendChild(el('p', 'hint', picked.usesLabel));
           if (picked.enabled) {
             tray.appendChild(button('確認使用', picked.summary || null, 'primary', function () {
@@ -768,7 +801,11 @@
       tray.appendChild(el('h3', null, '用在誰身上？'));
       st.enemies.forEach(function (e) {
         if (!e.alive) return;
-        tray.appendChild(button(e.name, '生命 ' + e.hp + '/' + e.hp_max, null, function () {
+        var hint = '生命 ' + e.hp + '/' + e.hp_max;
+        if (e.statuses && e.statuses.length) {
+          hint += '　' + e.statuses.map(function (s) { return s.label; }).join('、');
+        }
+        tray.appendChild(button(e.name, hint, null, function () {
           act({ type: 'use_feature', featureId: trayMode.featureId, target: e.index });
         }));
       });

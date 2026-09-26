@@ -19,7 +19,12 @@
 
   function recordFromEvent(ev) {
     if (!ev) return null;
-    if (ev.t !== 'check' && ev.t !== 'attack' && ev.t !== 'enemy_attack' && ev.t !== 'save') return null;
+    var kind = ev.t;
+    var side = ev.t === 'enemy_attack' ? 'enemy' : 'player';
+    if (ev.t === 'status_cast' && ev.via === 'attack') kind = 'attack';
+    else if (ev.t === 'status_cast' && ev.via === 'save') kind = 'save';
+    else if (ev.t === 'status_escape') { kind = 'check'; side = 'enemy'; }
+    else if (ev.t !== 'check' && ev.t !== 'attack' && ev.t !== 'enemy_attack' && ev.t !== 'save') return null;
     if (!Number.isInteger(ev.d20) || ev.d20 < 1 || ev.d20 > 20) return null;
     var dice = [];
     if (Array.isArray(ev.dice)) {
@@ -30,8 +35,8 @@
     if (!dice.length) dice = [ev.d20];
     var mode = ev.mode === 'advantage' || ev.mode === 'disadvantage' ? ev.mode : 'normal';
     return {
-      kind: ev.t,
-      side: ev.t === 'enemy_attack' ? 'enemy' : 'player',
+      kind: kind,
+      side: side,
       d20: ev.d20,
       dice: dice,
       mode: mode

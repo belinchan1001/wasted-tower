@@ -53,6 +53,17 @@
       return '先攻。d20 擲出 ' + row.roll + '，加值 ' + sign(row.bonus || 0) + '，總數 ' + row.total;
     });
   }
+  function escapeRollLines(ev) {
+    if (ev.d20 == null) return [];
+    var lines = [];
+    var mode = modeLine(ev);
+    if (mode) lines.push(mode);
+    var result = ev.success ? '成功' : '失敗';
+    if (ev.nat === 20 || ev.d20 === 20) result = '自然 20，' + result;
+    else if (ev.nat === 1 || ev.d20 === 1) result = '自然 1，' + result;
+    lines.push('d20 擲出 ' + ev.d20 + '，力量 ' + sign(ev.bonus || 0) + '，總數 ' + ev.total + '，難度 ' + ev.dc + '，' + result);
+    return lines;
+  }
   function saveRollLines(ev) {
     if (ev.d20 == null) return [];
     var ability = (T.ABILITY_LABEL && T.ABILITY_LABEL[ev.save]) || '屬性';
@@ -65,7 +76,9 @@
     if (!ev) return [];
     if (ev.t === 'check') return checkRollLines(ev);
     if (ev.t === 'attack' || ev.t === 'enemy_attack') return attackRollLines(ev);
-    if (ev.t === 'save') return saveRollLines(ev);
+    if (ev.t === 'status_cast' && ev.via === 'attack') return attackRollLines(ev);
+    if (ev.t === 'save' || (ev.t === 'status_cast' && ev.via === 'save')) return saveRollLines(ev);
+    if (ev.t === 'status_escape') return escapeRollLines(ev);
     if (ev.t === 'initiative') return initiativeRollLines(ev);
     return [];
   }
@@ -228,6 +241,14 @@
           break;
         case 'clear_status':
           out.push({ tone: 'good', text: '〔狀態〕異常狀態解除。' });
+          break;
+        case 'status_cast':
+        case 'status_skip':
+        case 'status_end':
+        case 'status_escape':
+        case 'status_immune':
+          pushRolls(out, ev);
+          if (ev.narr) out.push({ tone: 'narr', text: ev.narr });
           break;
         case 'ambush':
           out.push({
@@ -420,6 +441,8 @@
         case 'clear_status':
           out.push({ tone: 'narr', text: '身上的異常散去。' });
           break;
+        case 'status_line':
+          break;
         case 'ambush':
           out.push({ tone: 'narr', text: '有人想搶先一步。' });
           break;
@@ -451,6 +474,8 @@
   // Convert a settled event to a value-free template cue. This adapter lives
   // outside the narrator; the narrator itself receives no engine event object.
   function cueOf(event) {
+    if (event.t === 'status_cast' || event.t === 'status_skip' || event.t === 'status_end' ||
+        event.t === 'status_escape' || event.t === 'status_immune') return 'status_line';
     if (event.t === 'reaction' && event.narr) return 'reaction_line';
     if (event.t === 'passive' && event.narr) return 'passive_line';
     if (event.t === 'scene') return 'scene_' + event.sceneType;

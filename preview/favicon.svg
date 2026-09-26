@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="廢塔一夜">
+  <rect width="32" height="32" rx="7" fill="#100E0C"/>
+  <rect x="15" y="3" width="2" height="4" fill="#8C3A32"/>
+  <rect x="8.5" y="7" width="15" height="3" rx="1" fill="#F3EADC"/>
+  <path fill="#D4A054" d="M10 11.5h12l-1.6 11.2H11.6z"/>
+  <rect x="14.6" y="14.2" width="2.8" height="5" rx="0.4" fill="#100E0C"/>
+  <rect x="11" y="22.2" width="10" height="2.4" rx="0.6" fill="#F3EADC"/>
+  <path fill="#8C3A32" d="M15.2 24.6h1.6l.6 3.2h-2.8z"/>
+</svg>

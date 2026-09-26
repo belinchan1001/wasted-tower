@@ -35,7 +35,7 @@
   };
 
   var SCENE_TYPES = ['beat', 'check', 'combat', 'checkpoint', 'end'];
-  var SAVE_VERSION = 7;
+  var SAVE_VERSION = 8;
   var HERO_INITIATIVE_BONUS = 2;
   var ITEM_KINDS = ['gear', 'key', 'consumable'];
   var ENDING_TYPES = ['lose', 'main', 'variant', 'class', 'secret'];
@@ -117,7 +117,22 @@
 
   function abilityMod(score) { return Math.floor((score - 10) / 2); }
 
-  var MOVE_ROLLS = { attack: 1, spell_attack: 1, auto: 1, check: 1, save: 1 };
+  var MOVE_ROLLS = { attack: 1, spell_attack: 1, auto: 1, check: 1, save: 1, apply_status: 1 };
+  var STATUS_IDS = { restrained: 1, prone: 1 };
+  // Short labels shown on the enemy. Effect lines stay within 14 characters.
+  var STATUS_TEXT = {
+    restrained: {
+      label: '束縛',
+      line: '攻擊它有優勢，它攻擊劣勢',
+      ends: '它用回合掙脫才解除'
+    },
+    prone: {
+      label: '倒地',
+      line: '近戰攻擊它有優勢，遠程劣勢',
+      ends: '它下次行動時站起',
+      endsHold: '趨下：跳過這次行動'
+    }
+  };
   var MOVE_TARGETS = { self: 1, ally: 1, enemy: 1, enemies: 1 };
   var MOVE_GROUPS = { everyday: 1, big: 1, rescue: 1 };
   var SAVE_ABILITIES = { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 };
@@ -680,8 +695,47 @@
         return true;
       });
       return next;
+    },
+    // Versions before 8 never stored a real condition. Wipe them, then refresh
+    // moves so a rested Net or Command appears with the current pregen.
+    7: function (save, adventure) {
+      var next = deepCopy(save);
+      next.v = 8;
+      wipeStoredStatuses(next.character);
+      (next.allies || []).forEach(wipeStoredStatuses);
+      if (next.encounter && Array.isArray(next.encounter.enemies)) {
+        next.encounter.enemies.forEach(wipeStoredStatuses);
+      }
+      var c = next.character;
+      if (!c || typeof c !== 'object') return next;
+      var pre = adventure && adventure.pregens && adventure.pregens[next.pregenIndex];
+      if (pre) refreshSavedBuild(c, pre);
+      return next;
     }
   };
+
+  function wipeStoredStatuses(entity) {
+    if (!entity || typeof entity !== 'object') return;
+    entity.statuses = [];
+  }
+
+  function cleanStatuses(list) {
+    if (!Array.isArray(list)) return [];
+    var seen = {};
+    var out = [];
+    list.forEach(function (s) {
+      if (!s || typeof s.id !== 'string' || !STATUS_IDS[s.id] || seen[s.id]) return;
+      seen[s.id] = 1;
+      var src = typeof s.src === 'string' ? s.src : '';
+      if (s.id === 'prone') {
+        out.push({ id: 'prone', src: src, hold: (Number.isInteger(s.hold) && s.hold > 0) ? 1 : 0 });
+      } else {
+        var dc = Number.isInteger(s.escape_dc) && s.escape_dc > 0 ? s.escape_dc : 10;
+        out.push({ id: 'restrained', src: src, escape_dc: dc });
+      }
+    });
+    return out;
+  }
 
   // Older saves recorded the hall approach as a flag, not as a finished check.
   // Fill the missing check records so a resolved check is not offered again.
@@ -1647,6 +1701,7 @@
 
     // --- scenes
     var scenes = {};
+    var enemyIds = { rival: 1 };
     if (!Array.isArray(adv.scenes) || adv.scenes.length === 0) {
       err('冒險缺少 scenes 陣列。');
     } else {
@@ -1990,8 +2045,10 @@
           }
           if (e.from_pregen) {
             if (e.from_pregen !== 'selected_rival') err(ew + ' 的 from_pregen 只接受 selected_rival。');
+            else enemyIds.rival = 1;
             return;
           }
+          if (typeof e.id === 'string' && e.id) enemyIds[e.id] = 1;
           if (typeof e.name !== 'string' || !e.name) err(ew + ' 缺少 name。');
           ['ac', 'hp', 'atk'].forEach(function (f) {
             if (!Number.isInteger(e[f])) err(ew + ' 的 ' + f + ' 必須是整數。');
@@ -2272,6 +2329,21 @@
               if (!parseDice(f.damage_dice)) err(fw + ' 的豁免傷害缺少 damage_dice。');
               if (f.target !== 'enemy' && f.target !== 'enemies') err(fw + ' 的豁免傷害目標必須是 enemy / enemies。');
             }
+            if (f.ranged !== undefined && typeof f.ranged !== 'boolean') err(fw + ' 的 ranged 必須是布林。');
+            if (f.roll === 'apply_status') {
+              if (f.status !== 'restrained' && f.status !== 'prone') err(fw + ' 的 status 必須是 restrained / prone。');
+              if (f.via !== 'attack' && f.via !== 'save') err(fw + ' 的 via 必須是 attack / save。');
+              if (f.via === 'attack' && !Number.isInteger(f.attack_bonus)) err(fw + ' 的 attack_bonus 必須是整數。');
+              if (f.via === 'save') {
+                if (!SAVE_ABILITIES[f.save]) err(fw + ' 的 save 必須是六項屬性之一。');
+                if (!Number.isInteger(f.dc) || f.dc < 1) err(fw + ' 的 dc 必須是正整數。');
+              }
+              if (f.target !== 'enemy') err(fw + ' 的目標必須是 enemy。');
+              if (!Array.isArray(f.no_effect)) err(fw + ' 的 no_effect 必須是陣列。');
+              else f.no_effect.forEach(function (id) {
+                if (typeof id !== 'string' || !enemyIds[id]) err(fw + ' 的 no_effect「' + id + '」不是戰鬥中的敵人。');
+              });
+            }
             if (f.strikes !== undefined) {
               if (!Array.isArray(f.strikes) || f.strikes.length < 2) err(fw + ' 的 strikes 至少要兩擊。');
               else f.strikes.forEach(function (s, si) {
@@ -2397,9 +2469,18 @@
   };
 
   // Structured d20 result for the save. The UI may animate it later; this does not roll.
-  function persistedRoll(ev) {
+  function presentedKind(ev) {
     if (!ev) return null;
-    if (ev.t !== 'check' && ev.t !== 'attack' && ev.t !== 'enemy_attack' && ev.t !== 'save') return null;
+    if (ev.t === 'check' || ev.t === 'attack' || ev.t === 'enemy_attack' || ev.t === 'save') return ev.t;
+    if (ev.t === 'status_cast' && ev.via === 'attack') return 'attack';
+    if (ev.t === 'status_cast' && ev.via === 'save') return 'save';
+    if (ev.t === 'status_escape') return 'check';
+    return null;
+  }
+
+  function persistedRoll(ev) {
+    var kind = presentedKind(ev);
+    if (!kind) return null;
     if (!Number.isInteger(ev.d20) || ev.d20 < 1 || ev.d20 > 20) return null;
     var dice = [];
     if (Array.isArray(ev.dice)) {
@@ -2409,9 +2490,10 @@
     }
     if (!dice.length) dice = [ev.d20];
     var mode = ev.mode === 'advantage' || ev.mode === 'disadvantage' ? ev.mode : 'normal';
+    var side = (ev.t === 'enemy_attack' || ev.t === 'status_escape') ? 'enemy' : 'player';
     return {
-      kind: ev.t,
-      side: ev.t === 'enemy_attack' ? 'enemy' : 'player',
+      kind: kind,
+      side: side,
       d20: ev.d20,
       dice: dice,
       mode: mode
@@ -2470,7 +2552,21 @@
   Engine.prototype.enemySnapshot = function () {
     if (!this.encounter) return [];
     return this.encounter.enemies.map(function (e, i) {
-      return { index: i, name: e.name, hp: e.hp, hp_max: e.hp_max, alive: e.hp > 0 && !e.yielded, yielded: !!e.yielded };
+      var statuses = [];
+      (e.statuses || []).forEach(function (s) {
+        var info = STATUS_TEXT[s && s.id];
+        if (!info) return;
+        statuses.push({
+          id: s.id,
+          label: info.label,
+          line: info.line,
+          ends: (s.id === 'prone' && s.hold > 0) ? info.endsHold : info.ends
+        });
+      });
+      return {
+        index: i, id: e.id || null, name: e.name, hp: e.hp, hp_max: e.hp_max,
+        alive: e.hp > 0 && !e.yielded, yielded: !!e.yielded, statuses: statuses
+      };
     });
   };
 
@@ -3550,6 +3646,18 @@
     }
     if (!inCombat) { out.reason = '只能在戰鬥中使用'; return out; }
     if (!living.length) { out.reason = '沒有目標'; return out; }
+    if (feature.roll === 'apply_status' && Array.isArray(feature.no_effect)) {
+      var anyValid = false;
+      living.forEach(function (e) {
+        if (feature.no_effect.indexOf(e.ref.id) < 0) anyValid = true;
+      });
+      if (!anyValid) {
+        out.grey = true;
+        out.enabled = false;
+        out.reason = '對它無效';
+        return out;
+      }
+    }
     out.enabled = true;
     if (feature.missiles) out.needsTarget = living.length > 1;
     else if (feature.target === 'enemy') out.needsTarget = living.length > 1;
@@ -3748,11 +3856,82 @@
     var passive = null;
     (hero.passives || []).forEach(function (p) { if (p && p.id === 'sneak_attack') passive = p; });
     if (!passive || hero.sneakUsed) return null;
-    var afflicted = target.statuses && target.statuses.length > 0;
     var ally = (this.party || []).some(function (m) { return m && m !== hero && m.hp > 0; });
-    if (!(hadAdvantage || afflicted || ally)) return null;
+    if (!(hadAdvantage || ally)) return null;
     hero.sneakUsed = true;
     return rollDamage(passive.dice || '2d6', this.rng, !!crit);
+  };
+
+  Engine.prototype.findStatus = function (target, id) {
+    var found = null;
+    if (!target || !Array.isArray(target.statuses)) return null;
+    target.statuses.forEach(function (s) {
+      if (s && s.id === id) found = s;
+    });
+    return found;
+  };
+
+  Engine.prototype.removeStatus = function (target, id) {
+    if (!target || !Array.isArray(target.statuses)) return;
+    target.statuses = target.statuses.filter(function (s) { return s && s.id !== id; });
+  };
+
+  // One copy of each condition. Applying it again replaces that copy.
+  Engine.prototype.addStatus = function (target, next) {
+    if (!target || !next || !STATUS_IDS[next.id]) return;
+    if (!Array.isArray(target.statuses)) target.statuses = [];
+    this.removeStatus(target, next.id);
+    if (next.id === 'prone') {
+      target.statuses.push({
+        id: 'prone',
+        src: next.src || '',
+        hold: next.hold > 0 ? 1 : 0
+      });
+      return;
+    }
+    target.statuses.push({
+      id: 'restrained',
+      src: next.src || '',
+      escape_dc: Number.isInteger(next.escape_dc) && next.escape_dc > 0 ? next.escape_dc : 10
+    });
+  };
+
+  Engine.prototype.weaponIsRanged = function (hero) {
+    var ranged = false;
+    ((hero && hero.features) || []).forEach(function (f) {
+      if (!f || !f.at_will) return;
+      if (f.ranged === true) ranged = true;
+      else if (f.roll === 'spell_attack' && f.ranged !== false) ranged = true;
+    });
+    return ranged;
+  };
+
+  Engine.prototype.strikeIsRanged = function (hero, move, strikeSpec) {
+    if (strikeSpec && typeof strikeSpec.ranged === 'boolean') return strikeSpec.ranged;
+    if (move && typeof move.ranged === 'boolean') return move.ranged;
+    if ((strikeSpec && strikeSpec.roll === 'spell_attack') || (move && move.roll === 'spell_attack')) return true;
+    if (strikeSpec && strikeSpec.uses_weapon) return this.weaponIsRanged(hero);
+    if (!strikeSpec && (!move || move.uses_weapon)) return this.weaponIsRanged(hero);
+    return false;
+  };
+
+  // Advantage and disadvantage cancel, no matter how many sources of each.
+  Engine.prototype.attackModeAgainst = function (target, ranged, baseMode) {
+    var adv = baseMode === 'advantage';
+    var dis = baseMode === 'disadvantage';
+    if (this.findStatus(target, 'restrained')) adv = true;
+    if (this.findStatus(target, 'prone')) {
+      if (ranged) dis = true;
+      else adv = true;
+    }
+    if (target && target.grantAdvantage) {
+      target.grantAdvantage = false;
+      adv = true;
+    }
+    if (adv && dis) return 'normal';
+    if (adv) return 'advantage';
+    if (dis) return 'disadvantage';
+    return 'normal';
   };
 
   // Shield (SRD): +5 AC against the triggering attack, until your next turn.
@@ -3798,6 +3977,40 @@
     var hero = this.character;
     if (!enemy || enemy.hp <= 0 || enemy.yielded) return;
     if (this.status !== 'playing') return;
+    var prone = this.findStatus(enemy, 'prone');
+    if (prone && prone.hold > 0) {
+      prone.hold = 0;
+      this.emit({
+        t: 'status_skip', statusId: 'prone', targetName: enemy.name,
+        narr: enemy.name + '趨下倒地，無法行動。'
+      });
+      return;
+    }
+    if (prone) {
+      this.removeStatus(enemy, 'prone');
+      this.emit({
+        t: 'status_end', statusId: 'prone', targetName: enemy.name,
+        narr: enemy.name + '站了起來。'
+      });
+    }
+    var bound = this.findStatus(enemy, 'restrained');
+    if (bound) {
+      var escapeDc = Number.isInteger(bound.escape_dc) ? bound.escape_dc : 10;
+      var escapeRoll = rollD20(this.rng, 'normal');
+      var escapeBonus = 0;
+      var escapeTotal = escapeRoll.face + escapeBonus;
+      var escaped = escapeRoll.face !== 1 && (escapeRoll.face === 20 || escapeTotal >= escapeDc);
+      if (escaped) this.removeStatus(enemy, 'restrained');
+      this.emit({
+        t: 'status_escape', statusId: 'restrained', ability: 'str',
+        targetName: enemy.name,
+        d20: escapeRoll.face, dice: escapeRoll.dice.slice(), mode: escapeRoll.mode,
+        bonus: escapeBonus, total: escapeTotal, dc: escapeDc,
+        success: escaped, nat: escapeRoll.face,
+        narr: escaped ? (enemy.name + '掙脫了網。') : (enemy.name + '沒能掙脫。')
+      });
+      return;
+    }
     var mode = 'normal';
     if (hero.dodging || enemy.disadvantageNext) mode = 'disadvantage';
     if (enemy.disadvantageNext) enemy.disadvantageNext = false;
@@ -3946,12 +4159,8 @@
     var bonus = hero.attack.bonus;
     if (strikeSpec && Number.isInteger(strikeSpec.attack_bonus)) bonus = strikeSpec.attack_bonus;
     else if (move && Number.isInteger(move.attack_bonus)) bonus = move.attack_bonus;
-    var attackMode = mode || 'normal';
-    if (target.grantAdvantage) {
-      target.grantAdvantage = false;
-      if (attackMode === 'disadvantage') attackMode = 'normal';
-      else if (attackMode !== 'advantage') attackMode = 'advantage';
-    }
+    var ranged = this.strikeIsRanged(hero, move, strikeSpec);
+    var attackMode = this.attackModeAgainst(target, ranged, mode || 'normal');
     var rolled = rollD20(this.rng, attackMode);
     var face = rolled.face;
     var total = face + bonus;
@@ -4104,6 +4313,74 @@
     return this.ok();
   };
 
+  Engine.prototype.moveNoEffect = function (feature, enemy) {
+    if (!feature || !enemy || !Array.isArray(feature.no_effect)) return false;
+    return feature.no_effect.indexOf(enemy.id) >= 0;
+  };
+
+  // Net is an attack roll. Command is a save. Neither spends a use on an immune target.
+  Engine.prototype.castStatus = function (feature, cmd, inCombat) {
+    var c = this.character;
+    if (!inCombat) return this.reject(feature.name + '只能在戰鬥中使用。');
+    var picked = this.pickEnemy(cmd.target);
+    if (picked.error) return this.reject(picked.error);
+    if (!this.openTurn()) return this.ok();
+    if (!this.encounter) return this.ok();
+    picked = this.pickEnemy(picked.index);
+    if (picked.error) return this.reject(picked.error);
+    var foe = picked.enemy;
+    if (this.moveNoEffect(feature, foe)) {
+      this.emit({
+        t: 'status_immune', featureId: feature.id, featureName: feature.name,
+        targetName: foe.name, narr: '對它無效'
+      });
+      return this.ok();
+    }
+    if (this.spendMove(c, feature) < 0) return this.reject(feature.name + '需休息。');
+    if (feature.via === 'save') {
+      var saveMode = 'normal';
+      if (feature.save === 'dex' && this.findStatus(foe, 'restrained')) saveMode = 'disadvantage';
+      var rolled = rollD20(this.rng, saveMode);
+      var bonus = 0;
+      var total = rolled.face + bonus;
+      var success = rolled.face !== 1 && (rolled.face === 20 || total >= feature.dc);
+      if (!success) {
+        if (feature.status === 'restrained') this.addStatus(foe, { id: 'restrained', src: feature.id, escape_dc: 10 });
+        else this.addStatus(foe, { id: 'prone', src: feature.id, hold: 1 });
+      }
+      this.emit({
+        t: 'status_cast', via: 'save', featureId: feature.id, featureName: feature.name,
+        save: feature.save, d20: rolled.face, dice: rolled.dice.slice(), mode: rolled.mode,
+        bonus: bonus, total: total, dc: feature.dc, success: success, nat: rolled.face,
+        targetName: foe.name, statusId: success ? null : 'prone',
+        narr: success ? (foe.name + '不受命令影響。') : (foe.name + '趨下倒地，無法行動。')
+      });
+    } else {
+      var ranged = this.strikeIsRanged(c, feature, null);
+      var mode = this.attackModeAgainst(foe, ranged, 'normal');
+      var bonusAtk = Number.isInteger(feature.attack_bonus) ? feature.attack_bonus : c.attack.bonus;
+      var rolledA = rollD20(this.rng, mode);
+      var totalA = rolledA.face + bonusAtk;
+      var miss = rolledA.face === 1;
+      var hit = !miss && (rolledA.face === 20 || totalA >= foe.ac);
+      if (hit) {
+        if (feature.status === 'prone') this.addStatus(foe, { id: 'prone', src: feature.id, hold: 1 });
+        else this.addStatus(foe, { id: 'restrained', src: feature.id, escape_dc: 10 });
+      }
+      this.emit({
+        t: 'status_cast', via: 'attack', featureId: feature.id, featureName: feature.name,
+        d20: rolledA.face, dice: rolledA.dice.slice(), mode: rolledA.mode,
+        bonus: bonusAtk, total: totalA, ac: foe.ac, dc: foe.ac,
+        hit: hit, crit: false, nat: rolledA.face,
+        targetName: foe.name, statusId: hit ? 'restrained' : null,
+        narr: hit ? (foe.name + '被網纏住。') : (foe.name + '避開了網。')
+      });
+    }
+    if (this.combatResult()) return this.winCombat(this.combatResult());
+    if (feature.costs_turn) return this.spendTurn();
+    return this.ok();
+  };
+
   // Enemy save bonus stays +0. Do not read an enemy saves field.
   Engine.prototype.castSave = function (feature, cmd, inCombat) {
     var c = this.character;
@@ -4134,7 +4411,9 @@
     for (i = 0; i < targets.length; i++) {
       var foe = this.encounter.enemies[targets[i].index];
       if (!foe || foe.hp <= 0 || foe.yielded) continue;
-      var rolled = rollD20(this.rng, 'normal');
+      var saveMode = 'normal';
+      if (feature.save === 'dex' && this.findStatus(foe, 'restrained')) saveMode = 'disadvantage';
+      var rolled = rollD20(this.rng, saveMode);
       var bonus = 0;
       var total = rolled.face + bonus;
       var success = rolled.face !== 1 && (rolled.face === 20 || total >= feature.dc);
@@ -4225,6 +4504,7 @@
     }
     if (feature.temp_hp_dice) return this.castTempHp(feature, inCombat);
     if (feature.restore_pool) return this.castRecover(feature, inCombat);
+    if (feature.roll === 'apply_status') return this.castStatus(feature, cmd, inCombat);
     if (feature.roll === 'save') return this.castSave(feature, cmd, inCombat);
     if (feature.strikes && feature.strikes.length) return this.castStrikes(feature, cmd, inCombat);
     if (feature.heal_dice || (feature.roll === 'auto' && feature.target === 'self') || feature.target === 'ally' && feature.heal_dice) {
@@ -4737,6 +5017,7 @@
     if (!Number.isInteger(character.tempHp) || character.tempHp < 0) character.tempHp = 0;
     character.reactionUsed = character.reactionUsed === true;
     character.divineStrikeUsed = character.divineStrikeUsed === true;
+    character.statuses = cleanStatuses(character.statuses);
 
     this.pregenIndex = save.pregenIndex;
     this.character = character;
@@ -4778,7 +5059,7 @@
       if (!Array.isArray(this.encounter.order)) this.encounter.order = [];
       this.encounter.enemies.forEach(function (e) {
         if (!e.per_extra) e.per_extra = { hp: 0, copies: 0 };
-        if (!Array.isArray(e.statuses)) e.statuses = [];
+        e.statuses = cleanStatuses(e.statuses);
         if (e.yielded === undefined) e.yielded = false;
       });
       var rawNarr = this.encounter.outcomeNarr;

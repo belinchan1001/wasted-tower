@@ -17,6 +17,7 @@ var passed = 0;
 var failed = 0;
 
 function test(name, fn) {
+  if (process.env.SKIP_TESTS === '1') return;
   try {
     fn();
     passed++;
@@ -669,7 +670,7 @@ test('old save codes migrate and bad codes fail without throwing', function () {
   assert.strictEqual(upgraded.engine.playTimeKnown, false);
 
   var newer = engine.exportSave();
-  newer.v = 8;
+  newer.v = 9;
   var tooNew = T.loadGame(adventure, T.encodeSaveCode(newer));
   assert.strictEqual(tooNew.ok, false);
   assert.ok(/較新/.test(tooNew.error));
@@ -787,14 +788,14 @@ test('WT4 saves use the preview key, and WT3 or corrupt codes do not crash', fun
   var engine = new T.Engine(adventure, { seed: 90 });
   engine.start(0);
   var code = T.encodeSaveCode(engine.exportSave());
-  assert.strictEqual(code.indexOf('WT7.'), 0);
+  assert.strictEqual(code.indexOf('WT8.'), 0);
   assert.deepStrictEqual(engine.exportSave().character.statuses, []);
   assert.strictEqual(engine.exportSave().character.hpMaxReduction, 0);
   var slot = new T.SaveSlot(storage);
   assert.strictEqual(slot.key, 'wasted-tower-preview-save');
   assert.strictEqual(slot.write(code).ok, true);
   assert.deepStrictEqual(Object.keys(bag), ['wasted-tower-preview-save']);
-  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT7.'), 0);
+  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT8.'), 0);
   var back;
   assert.doesNotThrow(function () { back = T.loadGame(adventure, slot.read()); });
   assert.strictEqual(back.ok, true, back.error);
@@ -2170,7 +2171,7 @@ test('floor 1 depth: every class can fight or bypass, and checks cannot empty th
   var stored = scout.rollLog.filter(function (row) { return row.t === 'check'; }).pop();
   assert.deepStrictEqual(stored.lines, narrator.Mechanics.rollLines(advCheck));
   var code = T.encodeSaveCode(scout.exportSave());
-  assert.strictEqual(code.indexOf('WT7.'), 0);
+  assert.strictEqual(code.indexOf('WT8.'), 0);
   var back = T.loadGame(adventure, code);
   assert.strictEqual(back.ok, true, back.error);
   assert.deepStrictEqual(back.engine.done['check:f1_foyer_sneak'].dice, [7, 16]);
@@ -2505,9 +2506,9 @@ function heroFirst(engine) {
 test('each class has exactly the two step-1 moves', function () {
   var expect = {
     '戰士': ['longsword', 'power_strike', 'second_wind'],
-    '遊俠': ['longbow', 'aimed_shot', 'hunters_mark', 'cure_wounds'],
+    '遊俠': ['longbow', 'net', 'aimed_shot', 'hunters_mark', 'cure_wounds'],
     '盜賊': ['shortsword', 'two_weapon', 'shadow_attack', 'uncanny_dodge'],
-    '牧師': ['mace', 'sacred_flame', 'guiding_bolt', 'cure_wounds', 'healing_word'],
+    '牧師': ['mace', 'sacred_flame', 'guiding_bolt', 'command', 'cure_wounds', 'healing_word'],
     '法師': ['fire_bolt', 'magic_missile', 'burning_hands', 'arcane_recovery', 'shield', 'false_life']
   };
   adventure.pregens.forEach(function (p) {
@@ -2854,7 +2855,7 @@ test('WT3 migrates, checkpoints restore uses only, and retry takes a new seed', 
   assert.deepStrictEqual(migrated.engine.character.statuses, []);
   assert.strictEqual(migrated.engine.character.hpMaxReduction, 0);
   var code = T.decodeSaveCode(T.encodeSaveCode(fighter.exportSave()));
-  assert.strictEqual(code.save.v, 7);
+  assert.strictEqual(code.save.v, 8);
   assert.strictEqual(code.save.rng.kind, 'seeded');
   assert.ok(Number.isInteger(code.save.rng.count));
 
@@ -3161,6 +3162,8 @@ function simulateClass(index, runs, options) {
   var wins = 0;
   var roundSum = 0;
   var finished = 0;
+  var netCasts = 0;
+  var commandCasts = 0;
   var r, engine, guard, rounds;
   function forceCheck(eng) {
     var saved = eng.rng;
@@ -3270,6 +3273,20 @@ function simulateClass(index, runs, options) {
         return { actor: 0, action: 'move', moveId: 'false_life' };
       }
     }
+    if (foe && foeHas(foe, 'prone') && !foeHas(foe, 'restrained')) {
+      if (usesOf(eng, 'two_weapon') > 0) {
+        return { actor: 0, action: 'move', moveId: 'two_weapon', target: foe.index };
+      }
+      return { actor: 0, action: 'attack', target: foe.index };
+    }
+    if (options.statusUse === 'smart' && foe && controlWorth(eng, foe)) {
+      if (usesOf(eng, 'net') > 0 && !moveImmune(eng, 'net', foe) && !foeHas(foe, 'restrained')) {
+        return { actor: 0, action: 'move', moveId: 'net', target: foe.index };
+      }
+      if (usesOf(eng, 'command') > 0 && !moveImmune(eng, 'command', foe) && !foeHas(foe, 'prone')) {
+        return { actor: 0, action: 'move', moveId: 'command', target: foe.index };
+      }
+    }
     if (living.length >= 2 && usesOf(eng, 'burning_hands') > 0) {
       return { actor: 0, action: 'move', moveId: 'burning_hands' };
     }
@@ -3305,6 +3322,11 @@ function simulateClass(index, runs, options) {
       var living = eng.livingEnemies();
       if (!living.length) break;
       var res = eng.perform(policy(eng));
+      (res.events || []).forEach(function (ev) {
+        if (ev.t !== 'status_cast') return;
+        if (ev.featureId === 'net') netCasts++;
+        if (ev.featureId === 'command') commandCasts++;
+      });
       if (!res.ok) {
         res = eng.perform({ actor: 0, action: 'attack', target: living[0].index });
         if (!res.ok) { eng.lose('policy'); break; }
@@ -3428,7 +3450,76 @@ function simulateClass(index, runs, options) {
       guard++;
     }
   }
-  return { wins: wins, runs: runs, avg: finished ? (roundSum / finished) : 0 };
+  return {
+    wins: wins, runs: runs, avg: finished ? (roundSum / finished) : 0,
+    netCasts: netCasts, commandCasts: commandCasts
+  };
+}
+
+function foeBody(foe) { return (foe && foe.ref) || foe || {}; }
+function foeHas(foe, id) {
+  var list = foeBody(foe).statuses || [];
+  var i;
+  for (i = 0; i < list.length; i++) if (list[i] && list[i].id === id) return true;
+  return false;
+}
+function moveImmune(eng, id, foe) {
+  var feat = null;
+  (eng.character.features || []).forEach(function (f) { if (f && f.id === id) feat = f; });
+  if (!feat || !Array.isArray(feat.no_effect)) return true;
+  return feat.no_effect.indexOf(foeBody(foe).id) >= 0;
+}
+function avgDiceSpec(spec) {
+  var p = T.parseDice(spec);
+  if (!p) return 0;
+  return p.count * (p.sides + 1) / 2 + p.mod;
+}
+function hitP(bonus, ac, mode) {
+  var p = hitChance(bonus, ac);
+  if (mode === 'advantage') return 1 - (1 - p) * (1 - p);
+  if (mode === 'disadvantage') return p * p;
+  return p;
+}
+function damageToFinish(foe) {
+  var ref = foeBody(foe);
+  var hp = ref.hp;
+  if (ref.yield && ref.yield.kind === 'hp_fraction') {
+    var threshold = Math.floor(ref.hp_max * ref.yield.num / ref.yield.den);
+    if (threshold > 0 && hp > threshold) return hp - threshold;
+  }
+  return hp;
+}
+function bestSwing(eng, foe) {
+  var ac = foeBody(foe).ac;
+  var c = eng.character;
+  var weapon = avgDiceSpec(c.attack.damage);
+  var bonus = c.attack.bonus;
+  var best = hitP(bonus, ac, 'normal') * weapon;
+  var holy = (c.passives || []).some(function (p) {
+    return p && p.id === 'divine_strike' && !c.divineStrikeUsed;
+  });
+  if (holy) best = Math.max(best, hitP(bonus, ac, 'normal') * (weapon + 2.5));
+  if (usesLeft(eng, 'aimed_shot') > 0) best = Math.max(best, hitP(bonus, ac, 'advantage') * (weapon + 4.5));
+  if (usesLeft(eng, 'hunters_mark') > 0) best = Math.max(best, hitP(bonus, ac, 'normal') * (weapon + 3.5));
+  if (usesLeft(eng, 'power_strike') > 0) best = Math.max(best, hitP(bonus, ac, 'normal') * (weapon + 4.5));
+  if (usesLeft(eng, 'guiding_bolt') > 0) best = Math.max(best, hitP(5, ac, 'normal') * 14);
+  if (usesLeft(eng, 'magic_missile') > 0) best = Math.max(best, 10.5);
+  if (usesLeft(eng, 'two_weapon') > 0) {
+    best = Math.max(best, hitP(bonus, ac, 'normal') * (weapon + 2.5));
+  }
+  return best;
+}
+function usesLeft(eng, id) {
+  var found = null;
+  (eng.character.features || []).forEach(function (f) { if (f && f.id === id) found = f; });
+  if (!found) return 0;
+  return eng.moveUsesLeft(eng.character, found);
+}
+function controlWorth(eng, foe) {
+  var need = damageToFinish(foe);
+  if (need < 12) return false;
+  if (bestSwing(eng, foe) >= need * 0.85) return false;
+  return true;
 }
 
 function printSimulator() {
@@ -3454,32 +3545,42 @@ function printSimulator() {
       { policy: 'full', slots: 'B', sneak: '2d6', burning: '3d6', title: '戰前補滿（一兩點不喝藥水），法術位 3，偷襲 2d6，燃燒之手 3d6，護盾術自動（本版）' }
     ];
   }
+  if (process.env.SIM_FOCUS === 'status') {
+    variants = [
+      { policy: 'straight', slots: 'B', sneak: '2d6', burning: '3d6', statusUse: 'never', title: '直打，從不用束縛或倒地（基準）' },
+      { policy: 'straight', slots: 'B', sneak: '2d6', burning: '3d6', statusUse: 'smart', title: '直打，高生命才用束縛或倒地' },
+      { policy: 'full', slots: 'B', sneak: '2d6', burning: '3d6', statusUse: 'never', title: '戰前補滿（一兩點不喝藥水），從不用束縛或倒地' },
+      { policy: 'full', slots: 'B', sneak: '2d6', burning: '3d6', statusUse: 'smart', title: '戰前補滿（一兩點不喝藥水），高生命才用束縛或倒地' }
+    ];
+  }
   console.log('');
   console.log('模擬（每職業 ' + runs + ' 場，內部參考，不入遊戲）');
-  variants.forEach(function (variant) {
+  function printRow(variant) {
     console.log(variant.title);
     console.log('職業    通關率     平均回合');
     names.forEach(function (name, i) {
       var row = simulateClass(i, runs, variant);
       var pct = ((row.wins / row.runs) * 100).toFixed(1) + '%';
       while (pct.length < 8) pct = pct + ' ';
-      console.log(name + '    ' + pct + '   ' + row.avg.toFixed(1));
+      var extra = '';
+      if (variant.statusUse) extra = '   網 ' + row.netCasts + '  命令 ' + row.commandCasts;
+      console.log(name + '    ' + pct + '   ' + row.avg.toFixed(1) + extra);
     });
-  });
+  }
+  variants.forEach(printRow);
   if (process.env.SIM_FOCUS === 'shipped') {
     [
       { policy: 'straight', slots: 'B', sneak: '2d6', burning: '3d6', route: 'secret', title: '隱藏路線，直打，法術位 3，偷襲 2d6，燃燒之手 3d6，護盾術自動' },
       { policy: 'full', slots: 'B', sneak: '2d6', burning: '3d6', route: 'secret', title: '隱藏路線，戰前補滿（一兩點不喝藥水），法術位 3，偷襲 2d6，燃燒之手 3d6，護盾術自動' }
-    ].forEach(function (variant) {
-      console.log(variant.title);
-      console.log('職業    通關率     平均回合');
-      names.forEach(function (name, i) {
-        var row = simulateClass(i, runs, variant);
-        var pct = ((row.wins / row.runs) * 100).toFixed(1) + '%';
-        while (pct.length < 8) pct = pct + ' ';
-        console.log(name + '    ' + pct + '   ' + row.avg.toFixed(1));
-      });
-    });
+    ].forEach(printRow);
+  }
+  if (process.env.SIM_FOCUS === 'status') {
+    [
+      { policy: 'straight', slots: 'B', sneak: '2d6', burning: '3d6', statusUse: 'never', route: 'secret', title: '隱藏路線，直打，從不用束縛或倒地' },
+      { policy: 'straight', slots: 'B', sneak: '2d6', burning: '3d6', statusUse: 'smart', route: 'secret', title: '隱藏路線，直打，高生命才用束縛或倒地' },
+      { policy: 'full', slots: 'B', sneak: '2d6', burning: '3d6', statusUse: 'never', route: 'secret', title: '隱藏路線，戰前補滿（一兩點不喝藥水），從不用束縛或倒地' },
+      { policy: 'full', slots: 'B', sneak: '2d6', burning: '3d6', statusUse: 'smart', route: 'secret', title: '隱藏路線，戰前補滿（一兩點不喝藥水），高生命才用束縛或倒地' }
+    ].forEach(printRow);
   }
 }
 
@@ -4051,11 +4152,11 @@ function collectButtons(node, out) {
 test('move groups render the right moves, uses, saves, temp HP, and extra attacks', function () {
   var expect = {
     '戰士': { everyday: ['longsword'], big: ['power_strike'], rescue: ['second_wind', 'defend'] },
-    '遊俠': { everyday: ['longbow'], big: ['aimed_shot', 'hunters_mark'], rescue: ['cure_wounds', 'defend'] },
+    '遊俠': { everyday: ['longbow'], big: ['net', 'aimed_shot', 'hunters_mark'], rescue: ['cure_wounds', 'defend'] },
     '盜賊': { everyday: ['shortsword', 'two_weapon'], big: ['shadow_attack'], rescue: ['uncanny_dodge', 'defend'] },
     '牧師': {
       everyday: ['mace', 'sacred_flame'],
-      big: ['guiding_bolt'],
+      big: ['guiding_bolt', 'command'],
       rescue: ['cure_wounds', 'healing_word', 'defend'],
       passive: ['divine_strike']
     },
@@ -4285,7 +4386,7 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
   assert.strictEqual(loaded.engine.character.tempHp, 6);
   assert.strictEqual(loaded.engine.character.pools.slots.uses, 1);
   assert.strictEqual(loaded.engine.character.features.filter(function (f) { return f.id === 'arcane_recovery'; })[0].uses, 0);
-  assert.strictEqual(loaded.engine.exportSave().v, 7);
+  assert.strictEqual(loaded.engine.exportSave().v, 8);
 
   var old = keep.exportSave();
   old.v = 4;
@@ -4295,7 +4396,7 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
   strikeLeft.uses = 1;
   var migrated = T.loadGame(adventure, T.encodeSaveCode(old));
   assert.strictEqual(migrated.ok, true, migrated.error);
-  assert.strictEqual(migrated.engine.exportSave().v, 7);
+  assert.strictEqual(migrated.engine.exportSave().v, 8);
   assert.strictEqual(migrated.engine.character.tempHp, 0);
   assert.ok(migrated.engine.character.features.some(function (f) { return f.id === 'false_life'; }));
   assert.ok(migrated.engine.character.features.some(function (f) { return f.id === 'fire_bolt'; }));
@@ -4307,11 +4408,18 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
   assert.strictEqual(shield.costs_turn, false);
   adventure.pregens.forEach(function (p) {
     p.features.forEach(function (f) {
-      assert.ok(!f.status && !f.condition, f.id);
+      if (f.id === 'net') assert.strictEqual(f.status, 'restrained');
+      else if (f.id === 'command') assert.strictEqual(f.status, 'prone');
+      else assert.ok(!f.status && !f.condition, f.id);
       var blob = JSON.stringify(f);
-      ['prone', 'poisoned', 'charmed', 'frightened', 'restrained', 'unconscious', 'sleep', '倒地', '中毒', '魅惑', '昏睡'].forEach(function (word) {
+      ['poisoned', 'charmed', 'frightened', 'unconscious', 'sleep', 'blinded', '中毒', '魅惑', '昏睡', '目盲'].forEach(function (word) {
         assert.ok(blob.indexOf(word) < 0, f.id + ' ' + word);
       });
+      if (f.id !== 'net' && f.id !== 'command') {
+        ['prone', 'restrained', '倒地', '束縛'].forEach(function (word) {
+          assert.ok(blob.indexOf(word) < 0, f.id + ' ' + word);
+        });
+      }
     });
     assert.ok(!p.features.some(function (f) { return f.id === 'action_surge' || f.id === 'defense'; }));
   });
@@ -4494,7 +4602,7 @@ test('shield reacts only when +5 turns a hit into a miss', function () {
     row.costs_turn = true;
     var loaded = T.loadGame(adventure, T.encodeSaveCode(old));
     assert.strictEqual(loaded.ok, true, loaded.error);
-    assert.strictEqual(loaded.engine.exportSave().v, 7);
+    assert.strictEqual(loaded.engine.exportSave().v, 8);
     assert.strictEqual(loaded.engine.character.pools.slots.uses, 2);
     assert.strictEqual(loaded.engine.character.reactionUsed, false);
     var feat = loaded.engine.character.features.filter(function (f) { return f.id === 'shield'; })[0];
@@ -4700,7 +4808,7 @@ test('mira divine strike adds 1d4 once per turn and old saves keep the passive',
     var loaded = T.loadGame(adventure, T.encodeSaveCode(save));
     assert.strictEqual(loaded.ok, true, version + ' ' + (loaded.error || ''));
     var c = loaded.engine.character;
-    assert.strictEqual(loaded.engine.exportSave().v, 7, String(version));
+    assert.strictEqual(loaded.engine.exportSave().v, 8, String(version));
     assert.strictEqual(c.attack.name, '釘頭錘', String(version));
     assert.strictEqual(c.divineStrikeUsed, false, String(version));
     var passiveRows = (c.passives || []).filter(function (p) { return p && (p.id === 'divine_strike' || p.name === '神聖打擊'); });
@@ -4737,11 +4845,312 @@ test('mira divine strike adds 1d4 once per turn and old saves keep the passive',
   oldMira(4);
   oldMira(5);
   oldMira(6);
+  oldMira(7);
 });
 
-if (failed) {
-  console.error(failed + ' failed, ' + passed + ' passed');
-  process.exit(1);
+function pinEnemies(eng) {
+  heroFirst(eng);
+  eng.encounter.enemies.forEach(function (e, i) {
+    eng.encounter.acted['enemy:' + i] = true;
+  });
+}
+function usesOfId(eng, id) {
+  var found = null;
+  (eng.character.features || []).forEach(function (f) { if (f.id === id) found = f; });
+  return found ? eng.moveUsesLeft(eng.character, found) : 0;
+}
+
+test('restrained and prone do not stack, and saves from WT4 through WT7 still load', function () {
+  var ranger = new T.Engine(adventure, { seed: 11 });
+  ranger.start(1);
+  ranger.enterScene('f1_bandit');
+  var foe = ranger.encounter.enemies[0];
+  foe.hp = 40;
+  foe.hp_max = 40;
+  foe.yield = null;
+  pinEnemies(ranger);
+  ranger.rng = seqRng([18, 16, 15, 5]);
+  var netted = ranger.perform({ actor: 0, action: 'move', moveId: 'net', target: 0 });
+  assert.strictEqual(netted.ok, true, netted.error);
+  assert.strictEqual(foe.statuses.length, 1);
+  assert.strictEqual(foe.statuses[0].id, 'restrained');
+  assert.strictEqual(foe.statuses[0].escape_dc, 10);
+  assert.strictEqual(usesOfId(ranger, 'net'), 0);
+  assert.ok(playerLog(netted.events).indexOf('盜墓者被網纏住。') >= 0);
+  var netFeat = null;
+  ranger.character.features.forEach(function (f) { if (f.id === 'net') netFeat = f; });
+  netFeat.uses = 1;
+  var again = ranger.perform({ actor: 0, action: 'move', moveId: 'net', target: 0 });
+  assert.strictEqual(again.ok, true, again.error);
+  assert.strictEqual(foe.statuses.filter(function (s) { return s.id === 'restrained'; }).length, 1);
+
+  ranger.addStatus(foe, { id: 'prone', src: 'command', hold: 1 });
+  ranger.addStatus(foe, { id: 'prone', src: 'command', hold: 1 });
+  assert.strictEqual(foe.statuses.filter(function (s) { return s.id === 'prone'; }).length, 1);
+  assert.strictEqual(foe.statuses.filter(function (s) { return s.id === 'prone'; })[0].hold, 1);
+  ranger.events = [];
+  ranger.runEnemyTurn(0);
+  assert.strictEqual(ranger.events.filter(function (e) { return e.t === 'enemy_attack'; }).length, 0);
+  assert.strictEqual(ranger.findStatus(foe, 'prone').hold, 0);
+  assert.ok(ranger.findStatus(foe, 'restrained'));
+  ranger.events = [];
+  ranger.rng = seqRng([12, 3]);
+  ranger.runEnemyTurn(0);
+  assert.ok(!ranger.findStatus(foe, 'prone'));
+  assert.ok(ranger.events.some(function (e) { return e.t === 'status_end'; }));
+  assert.strictEqual(ranger.events.filter(function (e) { return e.t === 'status_escape'; }).length, 1);
+  assert.strictEqual(ranger.events.filter(function (e) { return e.t === 'enemy_attack'; }).length, 0);
+
+  var fresh = new T.Engine(adventure, { seed: 12 });
+  fresh.start(1);
+  fresh.enterScene('f1_bandit');
+  var bandit = fresh.encounter.enemies[0];
+  bandit.yield = null;
+  fresh.addStatus(bandit, { id: 'restrained', src: 'net', escape_dc: 10 });
+  fresh.rng = seqRng([9]);
+  fresh.events = [];
+  fresh.runEnemyTurn(0);
+  assert.strictEqual(fresh.events.filter(function (e) { return e.t === 'enemy_attack'; }).length, 0);
+  assert.ok(fresh.findStatus(bandit, 'restrained'));
+  assert.strictEqual(fresh.events.filter(function (e) { return e.t === 'status_escape'; })[0].dc, 10);
+  assert.strictEqual(fresh.events.filter(function (e) { return e.t === 'status_escape'; })[0].success, false);
+  fresh.rng = seqRng([10]);
+  fresh.events = [];
+  fresh.runEnemyTurn(0);
+  assert.ok(!fresh.findStatus(bandit, 'restrained'));
+  assert.strictEqual(fresh.events.filter(function (e) { return e.t === 'enemy_attack'; }).length, 0);
+  assert.strictEqual(fresh.events.filter(function (e) { return e.t === 'status_escape'; })[0].success, true);
+
+  var cleric = new T.Engine(adventure, { seed: 13 });
+  cleric.start(3);
+  cleric.enterScene('f1_bandit');
+  var target = cleric.encounter.enemies[0];
+  target.hp = 40;
+  target.hp_max = 40;
+  target.yield = null;
+  target.statuses = [{ id: 'prone', src: 'command', hold: 0 }];
+  pinEnemies(cleric);
+  var slots = cleric.character.pools.channel.uses;
+  cleric.rng = seqRng([8, 18, 4, 2]);
+  var mace = cleric.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(mace.ok, true, mace.error);
+  var melee = mace.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(melee.mode, 'advantage');
+  assert.deepStrictEqual(melee.dice, [8, 18]);
+  assert.ok(playerLog(mace.events).join('\n').indexOf('8 和 18') >= 0);
+
+  target.statuses = [{ id: 'prone', src: 'command', hold: 0 }];
+  var bow = new T.Engine(adventure, { seed: 14 });
+  bow.start(1);
+  bow.enterScene('f1_bandit');
+  var marked = bow.encounter.enemies[0];
+  marked.hp = 40;
+  marked.hp_max = 40;
+  marked.yield = null;
+  marked.statuses = [{ id: 'prone', src: 'command', hold: 0 }];
+  pinEnemies(bow);
+  bow.rng = seqRng([16, 15, 4]);
+  var shot = bow.perform({ actor: 0, action: 'attack', target: 0 });
+  var ranged = shot.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(ranged.mode, 'disadvantage');
+  assert.deepStrictEqual(ranged.dice, [16, 15]);
+  assert.strictEqual(ranged.d20, 15);
+
+  pinEnemies(cleric);
+  target.statuses = [{ id: 'prone', src: 'command', hold: 0 }];
+  target.hp = 40;
+  cleric.character.divineStrikeUsed = true;
+  cleric.rng = seqRng([19, 3]);
+  var bolt = cleric.perform({ actor: 0, action: 'move', moveId: 'guiding_bolt', target: 0 });
+  assert.strictEqual(bolt.ok, true, bolt.error);
+  var spell = bolt.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(spell.mode, 'disadvantage');
+  assert.strictEqual(spell.d20, 3);
+
+  var rogue = new T.Engine(adventure, { seed: 15 });
+  rogue.start(2);
+  rogue.enterScene('f1_bandit');
+  var dummy = rogue.encounter.enemies[0];
+  dummy.hp = 40;
+  dummy.hp_max = 40;
+  dummy.yield = null;
+  dummy.statuses = [{ id: 'marked' }];
+  pinEnemies(rogue);
+  rogue.rng = seqRng([15, 4]);
+  var plain = rogue.perform({ actor: 0, action: 'attack', target: 0 });
+  var plainHit = plain.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(plainHit.mode, 'normal');
+  assert.deepStrictEqual(plainHit.damage.rolls, [4]);
+  assert.strictEqual(rogue.character.sneakUsed, false);
+
+  dummy.statuses = [{ id: 'restrained', src: 'net', escape_dc: 10 }];
+  dummy.hp = 40;
+  pinEnemies(rogue);
+  rogue.character.sneakUsed = false;
+  rogue.rng = seqRng([8, 17, 3, 4, 5]);
+  var sneaky = rogue.perform({ actor: 0, action: 'attack', target: 0 });
+  var sneakHit = sneaky.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(sneakHit.mode, 'advantage');
+  assert.ok(sneakHit.damage.rolls.length >= 3);
+  assert.strictEqual(rogue.character.sneakUsed, true);
+
+  rogue.character.features.push({
+    id: 'test_bow', name: '試弓', group: 'everyday', at_will: true,
+    summary: '試', detail: '試射。', costs_turn: true, target: 'enemy',
+    roll: 'attack', uses_weapon: true, ranged: true
+  });
+  dummy.statuses = [{ id: 'prone', src: 'command', hold: 0 }];
+  dummy.hp = 40;
+  rogue.character.sneakUsed = false;
+  pinEnemies(rogue);
+  rogue.rng = seqRng([18, 16, 3]);
+  var far = rogue.perform({ actor: 0, action: 'move', moveId: 'test_bow', target: 0 });
+  var farHit = far.events.filter(function (e) { return e.t === 'attack'; })[0];
+  assert.strictEqual(farHit.mode, 'disadvantage');
+  assert.deepStrictEqual(farHit.damage.rolls, [3]);
+  assert.strictEqual(rogue.character.sneakUsed, false);
+
+  var ooze = new T.Engine(adventure, { seed: 16 });
+  ooze.start(1);
+  ooze.enterScene('f2_ooze');
+  pinEnemies(ooze);
+  var beforeUses = usesOfId(ooze, 'net');
+  var immune = ooze.perform({ actor: 0, action: 'move', moveId: 'net', target: 0 });
+  assert.strictEqual(immune.ok, true, immune.error);
+  assert.strictEqual(usesOfId(ooze, 'net'), beforeUses);
+  assert.deepStrictEqual(ooze.encounter.enemies[0].statuses, []);
+  assert.ok(playerLog(immune.events).indexOf('對它無效') >= 0);
+  assert.strictEqual(immune.events.filter(function (e) { return e.t === 'enemy_attack'; }).length, 0);
+  var grey = findSheetMove(ooze, 'net');
+  assert.strictEqual(grey.enabled, false);
+  assert.strictEqual(grey.reason, '對它無效');
+
+  var shade = new T.Engine(adventure, { seed: 17 });
+  shade.start(1);
+  shade.enterScene('hide_crypt');
+  pinEnemies(shade);
+  var shadeUses = usesOfId(shade, 'net');
+  var shadeRes = shade.perform({ actor: 0, action: 'move', moveId: 'net', target: 0 });
+  assert.strictEqual(shadeRes.ok, true, shadeRes.error);
+  assert.strictEqual(usesOfId(shade, 'net'), shadeUses);
+  assert.ok(playerLog(shadeRes.events).indexOf('對它無效') >= 0);
+
+  function rejectCommand(sceneId) {
+    var eng = new T.Engine(adventure, { seed: 18 });
+    eng.start(3);
+    eng.enterScene(sceneId);
+    pinEnemies(eng);
+    var left = usesOfId(eng, 'command');
+    var pool = eng.character.pools.channel.uses;
+    var res = eng.perform({ actor: 0, action: 'move', moveId: 'command', target: 0 });
+    assert.strictEqual(res.ok, true, sceneId + ' ' + res.error);
+    assert.strictEqual(usesOfId(eng, 'command'), left, sceneId);
+    assert.strictEqual(eng.character.pools.channel.uses, pool, sceneId);
+    assert.deepStrictEqual(eng.encounter.enemies[0].statuses, [], sceneId);
+    assert.ok(playerLog(res.events).indexOf('對它無效') >= 0, sceneId);
+  }
+  rejectCommand('f1_rats');
+  rejectCommand('f2_bones');
+  rejectCommand('f3_wight');
+  rejectCommand('hide_vault');
+
+  var mira = new T.Engine(adventure, { seed: 19 });
+  mira.start(3);
+  mira.enterScene('f1_bandit');
+  var cult = mira.encounter.enemies[0];
+  cult.hp = 30;
+  cult.hp_max = 30;
+  cult.yield = null;
+  pinEnemies(mira);
+  var poolBefore = mira.character.pools.channel.uses;
+  mira.rng = seqRng([4, 2]);
+  var cmd = mira.perform({ actor: 0, action: 'move', moveId: 'command', target: 0 });
+  assert.strictEqual(cmd.ok, true, cmd.error);
+  assert.strictEqual(mira.character.pools.channel.uses, poolBefore);
+  assert.strictEqual(usesOfId(mira, 'command'), 0);
+  assert.strictEqual(mira.findStatus(cult, 'prone').hold, 1);
+  assert.ok(playerLog(cmd.events).indexOf('盜墓者趨下倒地，無法行動。') >= 0);
+  var spent = mira.perform({ actor: 0, action: 'move', moveId: 'command', target: 0 });
+  assert.strictEqual(spent.ok, false);
+  mira.character.features.forEach(function (f) { if (f.id === 'command') f.uses = 1; });
+  pinEnemies(mira);
+  mira.rng = seqRng([3]);
+  mira.perform({ actor: 0, action: 'move', moveId: 'command', target: 0 });
+  assert.strictEqual(cult.statuses.filter(function (s) { return s.id === 'prone'; }).length, 1);
+  assert.strictEqual(mira.findStatus(cult, 'prone').hold, 1);
+  mira.enterScene('cp_f1');
+  assert.strictEqual(usesOfId(mira, 'command'), 1);
+
+  mira.rivalPregenIndex = 0;
+  mira.enterScene('rival_boss');
+  pinEnemies(mira);
+  var rivalPool = mira.character.pools.channel.uses;
+  mira.rng = seqRng([6]);
+  var onRival = mira.perform({ actor: 0, action: 'move', moveId: 'command', target: 0 });
+  assert.strictEqual(onRival.ok, true, onRival.error);
+  assert.strictEqual(mira.character.pools.channel.uses, rivalPool);
+  assert.strictEqual(mira.encounter.enemies[0].id, 'rival');
+  assert.strictEqual(mira.findStatus(mira.encounter.enemies[0], 'prone').hold, 1);
+
+  ranger.addStatus(foe, { id: 'restrained', src: 'net', escape_dc: 10 });
+  ranger.addStatus(foe, { id: 'prone', src: 'command', hold: 1 });
+  var view = ranger.enemySnapshot();
+  assert.strictEqual(view[0].statuses.length, 2);
+  view[0].statuses.forEach(function (s) {
+    assert.ok(Array.from(s.label).length <= 14, s.label);
+    assert.ok(Array.from(s.line).length <= 14 && Array.from(s.line).length >= 1, s.line);
+    assert.ok(Array.from(s.ends).length <= 14 && Array.from(s.ends).length >= 1, s.ends);
+  });
+
+  var mid = new T.Engine(adventure, { seed: 20 });
+  mid.start(1);
+  mid.enterScene('f1_bandit');
+  mid.addStatus(mid.encounter.enemies[0], { id: 'restrained', src: 'net', escape_dc: 10 });
+  mid.addStatus(mid.encounter.enemies[0], { id: 'prone', src: 'command', hold: 1 });
+  var code = T.encodeSaveCode(mid.exportSave());
+  assert.strictEqual(code.indexOf('WT8.'), 0);
+  var back = T.loadGame(adventure, code);
+  assert.strictEqual(back.ok, true, back.error);
+  var kept = back.engine.encounter.enemies[0].statuses;
+  assert.strictEqual(kept.length, 2);
+  assert.strictEqual(kept.filter(function (s) { return s.id === 'restrained'; })[0].escape_dc, 10);
+  assert.strictEqual(kept.filter(function (s) { return s.id === 'prone'; })[0].hold, 1);
+
+  [4, 5, 6, 7].forEach(function (version) {
+    var old = mid.exportSave();
+    old.v = version;
+    old.encounter.enemies[0].statuses = [
+      { id: 'blinded', turns_left: 2 },
+      { id: 'restrained', escape_dc: 10 },
+      { id: 'prone', hold: 3 }
+    ];
+    var loaded = T.loadGame(adventure, T.encodeSaveCode(old));
+    assert.strictEqual(loaded.ok, true, version + ' ' + (loaded.error || ''));
+    assert.strictEqual(loaded.engine.exportSave().v, 8);
+    assert.deepStrictEqual(loaded.engine.encounter.enemies[0].statuses, []);
+    assert.deepStrictEqual(loaded.engine.character.statuses, []);
+  });
+
+  var dirty = mid.exportSave();
+  dirty.encounter.enemies[0].statuses = [
+    { id: 'restrained', escape_dc: 10 },
+    { id: 'restrained', escape_dc: 99 },
+    { id: 'blinded' },
+    { id: 'prone', hold: 4 }
+  ];
+  var cleaned = T.loadGame(adventure, T.encodeSaveCode(dirty));
+  assert.strictEqual(cleaned.ok, true, cleaned.error);
+  var rows = cleaned.engine.encounter.enemies[0].statuses;
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows.filter(function (s) { return s.id === 'restrained'; }).length, 1);
+  assert.strictEqual(rows.filter(function (s) { return s.id === 'prone'; })[0].hold, 1);
+});
+
+if (process.env.SKIP_TESTS !== '1') {
+  if (failed) {
+    console.error(failed + ' failed, ' + passed + ' passed');
+    process.exit(1);
+  }
 }
 printSimulator();
-console.log(passed + ' passed');
+if (process.env.SKIP_TESTS !== '1') console.log(passed + ' passed');

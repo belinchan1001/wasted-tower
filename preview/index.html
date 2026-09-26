@@ -113,6 +113,15 @@ body{
 .fatal ul{margin:12px 0 0;padding-left:20px}
 .fatal li{margin:4px 0;color:#f0c9c4;font-size:14px;word-break:break-word}
 
+.foes{display:flex;flex-direction:column;gap:8px}
+.foe{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px}
+.foe-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.foe-name{font-weight:700}
+.foe-hp{color:var(--muted);font-size:14px}
+.badge{border:1px solid transparent;border-radius:999px;padding:0 8px;font-size:13px;line-height:1.7;cursor:pointer;background:#2a2418;color:var(--accent)}
+.badge.prone{background:#1a2433;color:var(--roll);border-color:#3d5270}
+.badge.restrained{background:#2a2418;color:var(--accent);border-color:#6a5428}
+.badge-note{margin:6px 0 0;color:#d5dbe6;font-size:14px}
 .combat-menu{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .combat-menu > .btn{min-height:56px;font-size:18px;text-align:center;padding:14px 10px}
 .combat-menu > .btn.span{grid-column:1 / -1}

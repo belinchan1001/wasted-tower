@@ -379,7 +379,24 @@
           "costs_turn": true,
           "target": "enemy",
           "roll": "attack",
-          "uses_weapon": true
+          "uses_weapon": true,
+          "ranged": true
+        },
+        {
+          "id": "net",
+          "name": "擲網",
+          "group": "big",
+          "summary": "命中則束縛，不造成傷害",
+          "detail": "d20＋5 對目標 AC 擲出網。命中則目標被束縛，直到它用一整個回合通過力量檢定（難度 10）掙脫。不造成傷害。對沒有固定形體的敵人無效。每次休息一次。【原創簡化】",
+          "uses": 1,
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "apply_status",
+          "via": "attack",
+          "attack_bonus": 5,
+          "ranged": true,
+          "status": "restrained",
+          "no_effect": ["ooze", "crypt_shade"]
         },
         {
           "id": "aimed_shot",
@@ -626,6 +643,22 @@
           }
         },
         {
+          "id": "command",
+          "name": "命令術",
+          "group": "big",
+          "summary": "感知豁免，失敗則趨下",
+          "detail": "目標進行感知豁免（難度 13）。失敗則趨下倒地，並失去下一次行動。近戰攻擊它有優勢，遠程攻擊有劣勢。它在再下一次行動開始時站起。對不死生物及聽不懂你語言的敵人無效。每次休息一次，不消耗法術位。【原創簡化】",
+          "uses": 1,
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "apply_status",
+          "via": "save",
+          "save": "wis",
+          "dc": 13,
+          "status": "prone",
+          "no_effect": ["rat_1", "rat_2", "rat_3", "statue", "bone_guard", "ooze", "crypt_shade", "tower_wight"]
+        },
+        {
           "id": "cure_wounds",
           "name": "治療術",
           "group": "rescue",
@@ -706,7 +739,8 @@
           "roll": "spell_attack",
           "attack_bonus": 4,
           "damage_dice": "1d8+2",
-          "damage_type": "fire"
+          "damage_type": "fire",
+          "ranged": true
         },
         {
           "id": "magic_missile",

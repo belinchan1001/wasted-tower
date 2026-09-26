@@ -767,6 +767,7 @@
         tray.appendChild(el('h3', null, picked ? picked.name : '招式'));
         if (picked) {
           tray.appendChild(el('p', 'hint', picked.detail || picked.summary || ''));
+          if (picked.hint) tray.appendChild(el('p', 'hint when', picked.hint));
           if (picked.usesLabel) tray.appendChild(el('p', 'hint', picked.usesLabel));
           if (picked.enabled) {
             tray.appendChild(button('確認使用', picked.summary || null, 'primary', function () {

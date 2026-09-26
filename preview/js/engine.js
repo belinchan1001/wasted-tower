@@ -2297,6 +2297,14 @@
                 if (f.detail.indexOf(needle) >= 0) err(fw + ' 的 detail 含有口語字「' + needle + '」。');
               });
             }
+            if (f.hint !== undefined) {
+              if (typeof f.hint !== 'string' || !f.hint) err(fw + ' 的 hint 必須是文字。');
+              else {
+                SUMMARY_BAN.forEach(function (needle) {
+                  if (f.hint.indexOf(needle) >= 0) err(fw + ' 的 hint 含有口語字「' + needle + '」。');
+                });
+              }
+            }
             if (f.at_will) {
               if (f.pool) err(fw + ' 是無限次，不能再用法術位。');
               if (f.per) err(fw + ' 是無限次，不能再標全晚一次。');
@@ -3568,6 +3576,20 @@
     return feature.uses;
   };
 
+  // When-to-use copy lives on the pregen. A save from before the line still shows it.
+  Engine.prototype.publishedHint = function (feature) {
+    if (feature && typeof feature.hint === 'string' && feature.hint) return feature.hint;
+    var id = feature && feature.id;
+    var text = '';
+    if (!id || !this.adventure) return '';
+    (this.adventure.pregens || []).forEach(function (p) {
+      (p.features || []).forEach(function (f) {
+        if (f && f.id === id && typeof f.hint === 'string' && f.hint) text = f.hint;
+      });
+    });
+    return text;
+  };
+
   Engine.prototype.describeMove = function (feature) {
     var c = this.character;
     var inCombat = !!(this.scene && this.scene.type === 'combat');
@@ -3579,6 +3601,7 @@
       name: feature.name,
       summary: feature.summary || '',
       detail: feature.detail || '',
+      hint: this.publishedHint(feature),
       group: feature.group || null,
       atWill: !!feature.at_will,
       per: feature.per || null,
@@ -3755,6 +3778,12 @@
             summary.className = 'summary';
             summary.textContent = move.summary;
             b.appendChild(summary);
+          }
+          if (move.hint) {
+            var when = doc.createElement('small');
+            when.className = 'when';
+            when.textContent = move.hint;
+            b.appendChild(when);
           }
           if (move.usesLabel) {
             var uses = doc.createElement('small');

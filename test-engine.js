@@ -4860,6 +4860,43 @@ function usesOfId(eng, id) {
   return found ? eng.moveUsesLeft(eng.character, found) : 0;
 }
 
+test('net and command hints say when to use them', function () {
+  var expect = {
+    net: '敵人血多、想爭取時間時用。',
+    command: '對通人語且未受傷的敵人最有效。'
+  };
+  var summaries = {
+    net: '命中則束縛，不造成傷害',
+    command: '感知豁免，失敗則趨下'
+  };
+  Object.keys(expect).forEach(function (id) {
+    var feat = null;
+    adventure.pregens.forEach(function (p) {
+      (p.features || []).forEach(function (f) { if (f.id === id) feat = f; });
+    });
+    assert.ok(feat, id);
+    assert.strictEqual(feat.hint, expect[id], id);
+    assert.strictEqual(feat.summary, summaries[id], id);
+  });
+  [{ index: 1, id: 'net' }, { index: 3, id: 'command' }].forEach(function (row) {
+    var eng = new T.Engine(adventure, { seed: 3 });
+    eng.start(row.index);
+    eng.enterScene('f1_bandit');
+    var move = findSheetMove(eng, row.id);
+    assert.strictEqual(move.hint, expect[row.id], row.id);
+    assert.strictEqual(move.summary, summaries[row.id], row.id);
+    var sheet = eng.moveSheet();
+    sheet.groups.forEach(function (g) { g.open = true; });
+    var parent = { children: [], appendChild: function (c) { this.children.push(c); return c; } };
+    T.renderMoveGroups(fakeDocument(), parent, sheet, {});
+    var labels = collectText(parent);
+    assert.ok(labels.indexOf(expect[row.id]) >= 0, row.id);
+    assert.ok(labels.indexOf(summaries[row.id]) >= 0, row.id);
+    eng.character.features.forEach(function (f) { if (f.id === row.id) delete f.hint; });
+    assert.strictEqual(findSheetMove(eng, row.id).hint, expect[row.id], row.id + ' pregen');
+  });
+});
+
 test('restrained and prone do not stack, and saves from WT4 through WT7 still load', function () {
   var ranger = new T.Engine(adventure, { seed: 11 });
   ranger.start(1);

@@ -2192,18 +2192,54 @@
     return ev;
   };
 
+  // Structured d20 result for the save. The UI may animate it later; this does not roll.
+  function persistedRoll(ev) {
+    if (!ev) return null;
+    if (ev.t !== 'check' && ev.t !== 'attack' && ev.t !== 'enemy_attack') return null;
+    if (!Number.isInteger(ev.d20) || ev.d20 < 1 || ev.d20 > 20) return null;
+    var dice = [];
+    if (Array.isArray(ev.dice)) {
+      ev.dice.forEach(function (n) {
+        if (Number.isInteger(n) && n >= 1 && n <= 20) dice.push(n);
+      });
+    }
+    if (!dice.length) dice = [ev.d20];
+    var mode = ev.mode === 'advantage' || ev.mode === 'disadvantage' ? ev.mode : 'normal';
+    return {
+      kind: ev.t,
+      side: ev.t === 'enemy_attack' ? 'enemy' : 'player',
+      d20: ev.d20,
+      dice: dice,
+      mode: mode
+    };
+  }
+
+  function sanitizeSavedRoll(roll) {
+    if (!roll || typeof roll !== 'object') return null;
+    var kind = roll.kind === 'attack' || roll.kind === 'enemy_attack' || roll.kind === 'check' ? roll.kind : null;
+    if (!kind) return null;
+    if (roll.side === 'enemy') kind = 'enemy_attack';
+    return persistedRoll({ t: kind, d20: roll.d20, dice: roll.dice, mode: roll.mode });
+  }
+
   // Store the sentences the player already saw. Later loads print these
-  // strings and do not draw the dice again.
+  // strings and do not draw the dice again. The numeric roll is stored too,
+  // so a reload during a purely visual animation shows the same faces.
   Engine.prototype.captureRoll = function (ev) {
+    var roll = persistedRoll(ev);
     var root = typeof globalThis !== 'undefined' ? globalThis : this;
     var mechanics = root.TOWER && root.TOWER.Mechanics;
-    if (!mechanics || typeof mechanics.rollLines !== 'function') return;
-    var lines = mechanics.rollLines(ev);
-    if (!lines || !lines.length) return;
+    var lines = [];
+    if (mechanics && typeof mechanics.rollLines === 'function') {
+      lines = mechanics.rollLines(ev) || [];
+    }
+    if ((!lines || !lines.length) && !roll) return;
     if (!this.rollLog) this.rollLog = [];
     var copy = lines.slice();
-    ev.rollLines = copy;
-    this.rollLog.push({ t: ev.t, lines: copy });
+    if (copy.length) ev.rollLines = copy;
+    var entry = { t: ev.t, lines: copy };
+    if (roll) entry.roll = roll;
+    this.rollLog.push(entry);
   };
   Engine.prototype.ok = function () { return { ok: true, error: null, events: this.events.slice() }; };
   // reject() never mutates game state; the caller's attempt simply did not happen.
@@ -4136,10 +4172,13 @@
     if (Array.isArray(save.rollLog)) {
       save.rollLog.forEach(function (row) {
         if (!row || !Array.isArray(row.lines)) return;
-        this.rollLog.push({
+        var restored = {
           t: typeof row.t === 'string' ? row.t : 'roll',
           lines: row.lines.map(function (line) { return String(line); })
-        });
+        };
+        var roll = sanitizeSavedRoll(row.roll);
+        if (roll) restored.roll = roll;
+        this.rollLog.push(restored);
       }, this);
     }
     this.status = save.status;

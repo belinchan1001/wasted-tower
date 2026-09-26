@@ -207,6 +207,10 @@
           pushRolls(out, ev);
           break;
         case 'reaction':
+          if (ev.narr) {
+            out.push({ tone: 'narr', text: ev.narr });
+            break;
+          }
           out.push({
             tone: 'good',
             text: '〔反應〕' + ev.featureName + '：傷害 ' + ev.original + ' 減為 ' + ev.amount +
@@ -400,6 +404,8 @@
         case 'reaction':
           out.push({ tone: 'narr', text: view.name + '側身讓過一半力道。' });
           break;
+        case 'reaction_line':
+          break;
         case 'move_refresh':
           out.push({ tone: 'narr', text: view.name + '歇了一歇，招式又能用了。傷口還在。' });
           break;
@@ -440,6 +446,7 @@
   // Convert a settled event to a value-free template cue. This adapter lives
   // outside the narrator; the narrator itself receives no engine event object.
   function cueOf(event) {
+    if (event.t === 'reaction' && event.narr) return 'reaction_line';
     if (event.t === 'scene') return 'scene_' + event.sceneType;
     if (event.t === 'hp') return event.delta < 0 ? 'hp_loss' : 'hp_gain';
     if (event.t === 'flee') return event.escaped ? 'flee' : 'flee_restart';

@@ -35,7 +35,7 @@
   };
 
   var SCENE_TYPES = ['beat', 'check', 'combat', 'checkpoint', 'end'];
-  var SAVE_VERSION = 5;
+  var SAVE_VERSION = 6;
   var HERO_INITIATIVE_BONUS = 2;
   var ITEM_KINDS = ['gear', 'key', 'consumable'];
   var ENDING_TYPES = ['lose', 'main', 'variant', 'class', 'secret'];
@@ -532,6 +532,48 @@
   SaveError.prototype = Object.create(Error.prototype);
   SaveError.prototype.constructor = SaveError;
 
+  // Rebuild move definitions from the pregen, keeping resources already spent.
+  function refreshSavedBuild(c, pre) {
+    var built = buildCharacter(pre);
+    var oldFeat = {};
+    (c.features || []).forEach(function (f) {
+      if (f && typeof f.id === 'string') oldFeat[f.id] = f;
+    });
+    var oldPools = (c.pools && typeof c.pools === 'object' && !Array.isArray(c.pools)) ? c.pools : {};
+    Object.keys(built.pools).forEach(function (id) {
+      var old = oldPools[id];
+      if (!old || !Number.isInteger(old.uses)) return;
+      var max = built.pools[id].usesMax;
+      var n = old.uses;
+      if (n < 0) n = 0;
+      if (n > max) n = max;
+      built.pools[id].uses = n;
+    });
+    built.features.forEach(function (f) {
+      if (f.pool && built.pools[f.pool]) {
+        f.uses = built.pools[f.pool].uses;
+        f.usesMax = built.pools[f.pool].usesMax;
+        return;
+      }
+      var old = oldFeat[f.id];
+      if (!old || f.at_will) return;
+      if (f.per === 'night') {
+        if (Number.isInteger(old.uses)) f.uses = old.uses > 0 ? 1 : 0;
+        return;
+      }
+      if (Number.isInteger(old.uses) && Number.isInteger(f.usesMax)) {
+        var u = old.uses;
+        if (u < 0) u = 0;
+        if (u > f.usesMax) u = f.usesMax;
+        f.uses = u;
+      }
+    });
+    c.features = built.features;
+    c.pools = built.pools;
+    c.passives = built.passives;
+    c.attack = built.attack;
+  }
+
   var formatMigrations = {
     0: function (save) {
       var next = deepCopy(save);
@@ -594,44 +636,18 @@
       if (!Number.isInteger(c.tempHp) || c.tempHp < 0) c.tempHp = 0;
       var pre = adventure && adventure.pregens && adventure.pregens[next.pregenIndex];
       if (!pre) return next;
-      var built = buildCharacter(pre);
-      var oldFeat = {};
-      (c.features || []).forEach(function (f) {
-        if (f && typeof f.id === 'string') oldFeat[f.id] = f;
-      });
-      var oldPools = (c.pools && typeof c.pools === 'object' && !Array.isArray(c.pools)) ? c.pools : {};
-      Object.keys(built.pools).forEach(function (id) {
-        var old = oldPools[id];
-        if (!old || !Number.isInteger(old.uses)) return;
-        var max = built.pools[id].usesMax;
-        var n = old.uses;
-        if (n < 0) n = 0;
-        if (n > max) n = max;
-        built.pools[id].uses = n;
-      });
-      built.features.forEach(function (f) {
-        if (f.pool && built.pools[f.pool]) {
-          f.uses = built.pools[f.pool].uses;
-          f.usesMax = built.pools[f.pool].usesMax;
-          return;
-        }
-        var old = oldFeat[f.id];
-        if (!old || f.at_will) return;
-        if (f.per === 'night') {
-          if (Number.isInteger(old.uses)) f.uses = old.uses > 0 ? 1 : 0;
-          return;
-        }
-        if (Number.isInteger(old.uses) && Number.isInteger(f.usesMax)) {
-          var u = old.uses;
-          if (u < 0) u = 0;
-          if (u > f.usesMax) u = f.usesMax;
-          f.uses = u;
-        }
-      });
-      c.features = built.features;
-      c.pools = built.pools;
-      c.passives = built.passives;
-      c.attack = built.attack;
+      refreshSavedBuild(c, pre);
+      return next;
+    },
+    5: function (save, adventure) {
+      var next = deepCopy(save);
+      next.v = 6;
+      var c = next.character;
+      if (!c || typeof c !== 'object') return next;
+      if (c.reactionUsed !== true) c.reactionUsed = false;
+      var pre = adventure && adventure.pregens && adventure.pregens[next.pregenIndex];
+      if (!pre) return next;
+      refreshSavedBuild(c, pre);
       return next;
     }
   };
@@ -2300,7 +2316,8 @@
       passives: deepCopy(p.passives || []),
       statuses: [],
       dodging: false,
-      sneakUsed: false
+      sneakUsed: false,
+      reactionUsed: false
     };
   }
 
@@ -2404,7 +2421,7 @@
       ac: 12, acBonus: 0, hp: 10, hp_max: 10, hpMaxReduction: 0, tempHp: 0,
       skills: [], attack: { name: '短劍', bonus: 2, damage: '1d4' },
       inventory: [], features: [], pools: {}, passives: [], statuses: [],
-      dodging: false, sneakUsed: false, ally: true
+      dodging: false, sneakUsed: false, reactionUsed: false, ally: true
     };
   };
 
@@ -2439,6 +2456,7 @@
     this.character.acBonus = 0;
     this.character.dodging = false;
     this.character.sneakUsed = false;
+    this.character.reactionUsed = false;
   };
 
   Engine.prototype.restoreMoveUses = function (hero) {
@@ -3423,7 +3441,13 @@
     else if (pool) out.usesLabel = poolDots(pool);
     else out.usesLabel = '剩 ' + uses + '／' + feature.usesMax;
     if (feature.timing === 'reaction') {
-      out.reason = '受創時自動發動';
+      out.enabled = false;
+      if (feature.effect && feature.effect.type === 'ac_bonus') {
+        out.grey = true;
+        out.reason = '攻擊將失時自動施放';
+      } else {
+        out.reason = '受創時自動發動';
+      }
       return out;
     }
     if (feature.combat === false) {
@@ -3641,6 +3665,44 @@
     return rollDamage(passive.dice || '2d6', this.rng, !!crit);
   };
 
+  // Shield (SRD): +5 AC against the triggering attack, until your next turn.
+  // Only when that +5 turns a hit into a miss. A natural 20 still hits.
+  Engine.prototype.acReaction = function (hero) {
+    var found = null;
+    ((hero && hero.features) || []).forEach(function (f) {
+      if (found || !f || f.timing !== 'reaction') return;
+      if (!f.effect || f.effect.type !== 'ac_bonus') return;
+      found = f;
+    });
+    return found;
+  };
+
+  Engine.prototype.maybeCastShield = function (hero, face, total) {
+    if (!hero || face === 1 || face === 20 || hero.reactionUsed) return false;
+    var feature = this.acReaction(hero);
+    if (!feature) return false;
+    var bonus = feature.effect && Number.isInteger(feature.effect.amount) ? feature.effect.amount : 5;
+    if (bonus < 1) bonus = 5;
+    var ac = this.effectiveAc();
+    if (total < ac || total >= ac + bonus) return false;
+    if (this.moveUsesLeft(hero, feature) < (feature.cost || 1)) return false;
+    if (this.spendMove(hero, feature) < 0) return false;
+    hero.acBonus = (hero.acBonus || 0) + bonus;
+    hero.reactionUsed = true;
+    this.emit({
+      t: 'reaction',
+      featureId: feature.id,
+      featureName: feature.name,
+      shield: true,
+      amount: bonus,
+      ac: this.effectiveAc(),
+      uses: this.moveUsesLeft(hero, feature),
+      usesMax: feature.usesMax,
+      narr: '護盾術擋下攻擊（用去一個法術位）'
+    });
+    return true;
+  };
+
   Engine.prototype.runEnemyTurn = function (index) {
     var enemy = this.encounter.enemies[index];
     var hero = this.character;
@@ -3652,6 +3714,7 @@
     var rolled = rollD20(this.rng, mode);
     var face = rolled.face;
     var total = face + enemy.atk;
+    this.maybeCastShield(hero, face, total);
     var ac = this.effectiveAc();
     var hit = face !== 1 && (face === 20 || total >= ac);
     var crit = hit && face === 20;
@@ -3723,6 +3786,7 @@
     c.dodging = false;
     c.acBonus = 0;
     c.sneakUsed = false;
+    c.reactionUsed = false;
   };
 
   Engine.prototype.openTurn = function () {
@@ -4548,6 +4612,7 @@
     if (character.hp < 0) character.hp = 0;
     if (!Number.isInteger(character.acBonus) || character.acBonus < 0) character.acBonus = 0;
     if (!Number.isInteger(character.tempHp) || character.tempHp < 0) character.tempHp = 0;
+    character.reactionUsed = character.reactionUsed === true;
 
     this.pregenIndex = save.pregenIndex;
     this.character = character;

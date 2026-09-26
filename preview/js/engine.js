@@ -35,7 +35,7 @@
   };
 
   var SCENE_TYPES = ['beat', 'check', 'combat', 'checkpoint', 'end'];
-  var SAVE_VERSION = 6;
+  var SAVE_VERSION = 7;
   var HERO_INITIATIVE_BONUS = 2;
   var ITEM_KINDS = ['gear', 'key', 'consumable'];
   var ENDING_TYPES = ['lose', 'main', 'variant', 'class', 'secret'];
@@ -648,6 +648,37 @@
       var pre = adventure && adventure.pregens && adventure.pregens[next.pregenIndex];
       if (!pre) return next;
       refreshSavedBuild(c, pre);
+      return next;
+    },
+    // The weapon used to be named 神聖打擊. That name now belongs to the passive,
+    // so a saved feature or attack with the old name must not sit beside it.
+    6: function (save, adventure) {
+      var next = deepCopy(save);
+      next.v = 7;
+      var c = next.character;
+      if (!c || typeof c !== 'object') return next;
+      c.divineStrikeUsed = false;
+      var pre = adventure && adventure.pregens && adventure.pregens[next.pregenIndex];
+      if (!pre) return next;
+      refreshSavedBuild(c, pre);
+      var takenId = {};
+      var takenName = {};
+      (c.passives || []).forEach(function (p) {
+        if (!p || typeof p.id !== 'string') return;
+        takenId[p.id] = 1;
+        if (typeof p.name === 'string') takenName[p.name] = 1;
+      });
+      c.features = (c.features || []).filter(function (f) {
+        if (!f) return false;
+        if (takenId[f.id] || takenName[f.name]) return false;
+        return true;
+      });
+      var seenPassive = {};
+      c.passives = (c.passives || []).filter(function (p) {
+        if (!p || typeof p.id !== 'string' || !p.id || seenPassive[p.id]) return false;
+        seenPassive[p.id] = 1;
+        return true;
+      });
       return next;
     }
   };
@@ -2126,13 +2157,44 @@
             if (!Number.isInteger(pool.uses) || pool.uses < 1) err(qw + ' 的 uses 必須是正整數。');
           });
         }
+        var passiveIds = {};
+        var passiveNames = {};
         if (p.passives !== undefined) {
           if (!Array.isArray(p.passives)) err(pw + ' 的 passives 必須是陣列。');
           else p.passives.forEach(function (pass, pi) {
-            if (!pass || typeof pass.id !== 'string' || !pass.id) err(pw + ' 的被動 #' + pi + ' 缺少 id。');
-            if (!pass || typeof pass.name !== 'string' || !pass.name) err(pw + ' 的被動 #' + pi + ' 缺少 name。');
+            var bw = pw + ' 的被動 #' + pi;
+            if (!pass || typeof pass.id !== 'string' || !pass.id) { err(bw + ' 缺少 id。'); return; }
+            if (passiveIds[pass.id]) err(bw + ' 的 id 重複。');
+            passiveIds[pass.id] = 1;
+            if (typeof pass.name !== 'string' || !pass.name) { err(bw + ' 缺少 name。'); return; }
+            if (passiveNames[pass.name]) err(bw + ' 的名稱與另一個被動重複。');
+            passiveNames[pass.name] = 1;
+            if (pass.dice !== undefined && !parseDice(pass.dice)) err(bw + ' 的 dice 不是合法骰子字串。');
+            if (pass.summary !== undefined) {
+              if (typeof pass.summary !== 'string' || charLen(pass.summary) < 1 || charLen(pass.summary) > 14) {
+                err(bw + ' 的 summary 必須是 1 到 14 字。');
+              } else {
+                SUMMARY_BAN.forEach(function (needle) {
+                  if (pass.summary.indexOf(needle) >= 0) err(bw + ' 的 summary 含有口語字「' + needle + '」。');
+                });
+              }
+            }
+            if (pass.detail !== undefined) {
+              if (typeof pass.detail !== 'string' || !pass.detail) err(bw + ' 缺少 detail。');
+              else SUMMARY_BAN.forEach(function (needle) {
+                if (pass.detail.indexOf(needle) >= 0) err(bw + ' 的 detail 含有口語字「' + needle + '」。');
+              });
+            }
+            if (pass.narr !== undefined) {
+              if (typeof pass.narr !== 'string' || charLen(pass.narr) < 1 || charLen(pass.narr) > 14) {
+                err(bw + ' 的 narr 必須是 1 到 14 字。');
+              } else SUMMARY_BAN.forEach(function (needle) {
+                if (pass.narr.indexOf(needle) >= 0) err(bw + ' 的 narr 含有口語字「' + needle + '」。');
+              });
+            }
           });
         }
+        if (p.attack && passiveNames[p.attack.name]) err(pw + ' 的攻擊名稱與被動同名。');
         if (!Array.isArray(p.features) || p.features.length < 1) {
           err(pw + ' 的 features 必須是至少一招的陣列。');
         } else {
@@ -2143,7 +2205,9 @@
             fw = pw + ' 的招式「' + f.id + '」';
             if (seenFeat[f.id]) err(fw + ' 的 id 重複。');
             seenFeat[f.id] = 1;
+            if (passiveIds[f.id]) err(fw + ' 的 id 與被動重複。');
             if (typeof f.name !== 'string' || !f.name) err(fw + ' 缺少 name。');
+            if (passiveNames[f.name]) err(fw + ' 的名稱與被動同名。');
             if (featureIsLegacy(f)) {
               if (f.uses !== 3) err(fw + ' 的 uses 必須是 3。');
               var et = f.effect.type;
@@ -2317,7 +2381,8 @@
       statuses: [],
       dodging: false,
       sneakUsed: false,
-      reactionUsed: false
+      reactionUsed: false,
+      divineStrikeUsed: false
     };
   }
 
@@ -2421,7 +2486,7 @@
       ac: 12, acBonus: 0, hp: 10, hp_max: 10, hpMaxReduction: 0, tempHp: 0,
       skills: [], attack: { name: '短劍', bonus: 2, damage: '1d4' },
       inventory: [], features: [], pools: {}, passives: [], statuses: [],
-      dodging: false, sneakUsed: false, reactionUsed: false, ally: true
+      dodging: false, sneakUsed: false, reactionUsed: false, divineStrikeUsed: false, ally: true
     };
   };
 
@@ -2457,6 +2522,7 @@
     this.character.dodging = false;
     this.character.sneakUsed = false;
     this.character.reactionUsed = false;
+    this.character.divineStrikeUsed = false;
   };
 
   Engine.prototype.restoreMoveUses = function (hero) {
@@ -3504,6 +3570,30 @@
       if (!f || !byId[f.group]) return;
       byId[f.group].moves.push(self.describeMove(f));
     });
+    var passiveMoves = [];
+    ((c && c.passives) || []).forEach(function (p) {
+      if (!p || !p.summary) return;
+      passiveMoves.push({
+        id: p.id,
+        name: p.name,
+        summary: p.summary,
+        detail: p.detail || p.summary,
+        group: 'passive',
+        atWill: true,
+        per: null,
+        timing: 'passive',
+        needsTarget: false,
+        costsTurn: false,
+        grey: false,
+        enabled: false,
+        reason: '自動生效',
+        usesLabel: '',
+        kind: 'passive'
+      });
+    });
+    if (passiveMoves.length) {
+      groups.push({ id: 'passive', label: '被動', open: false, moves: passiveMoves });
+    }
     if (inCombat) {
       byId.rescue.moves.push({
         id: 'defend',
@@ -3787,6 +3877,24 @@
     c.acBonus = 0;
     c.sneakUsed = false;
     c.reactionUsed = false;
+    c.divineStrikeUsed = false;
+  };
+
+  // Original adaptation of SRD 5.1 Divine Strike (8th level, 1d8, p.17):
+  // once each turn, the first weapon hit adds 1d4 radiant. Spells do not trigger it.
+  Engine.prototype.divineStrikeBonus = function (hero, crit) {
+    var passive = null;
+    (hero.passives || []).forEach(function (p) {
+      if (p && p.id === 'divine_strike') passive = p;
+    });
+    if (!passive || hero.divineStrikeUsed) return null;
+    hero.divineStrikeUsed = true;
+    return {
+      id: passive.id,
+      name: passive.name,
+      narr: passive.narr || '錘上迸出聖光。',
+      roll: rollDamage(passive.dice || '1d4', this.rng, !!crit)
+    };
   };
 
   Engine.prototype.openTurn = function () {
@@ -3852,10 +3960,13 @@
     var hit = !miss && (face === 20 || total >= acBefore);
     var crit = hit && face >= this.critFloor(hero);
     var parts = [];
+    var holy = null;
     if (hit) {
       var useWeapon = strikeSpec ? !!strikeSpec.uses_weapon : (!move || !!move.uses_weapon);
       var extra = strikeSpec ? strikeSpec.damage_dice : (move && move.damage_dice);
       if (useWeapon) parts.push(rollDamage(hero.attack.damage, this.rng, crit));
+      if (useWeapon) holy = this.divineStrikeBonus(hero, crit);
+      if (holy) parts.push(holy.roll);
       if (extra) parts.push(rollDamage(extra, this.rng, crit));
       if (move && move.mark) {
         target.mark = { dice: move.mark.bonus_dice, type: move.mark.damage_type || null };
@@ -3878,7 +3989,8 @@
     return {
       rolled: rolled, face: face, bonus: bonus, total: total, hit: hit, crit: crit,
       dmg: dmg, before: before, ac: acBefore, yielded: !!(target.yielded || group),
-      label: strikeSpec && strikeSpec.name ? strikeSpec.name : null
+      label: strikeSpec && strikeSpec.name ? strikeSpec.name : null,
+      holy: holy
     };
   };
 
@@ -3907,6 +4019,14 @@
       targetDown: target.hp <= 0,
       yielded: !!target.yielded
     });
+    if (strike.holy) {
+      this.emit({
+        t: 'passive',
+        passiveId: strike.holy.id,
+        passiveName: strike.holy.name,
+        narr: strike.holy.narr
+      });
+    }
   };
 
   Engine.prototype.doAttack = function (targetIndex) {
@@ -4408,7 +4528,10 @@
           };
         }),
         pools: c.pools || {},
-        statuses: (c.statuses || []).slice()
+        statuses: (c.statuses || []).slice(),
+        passives: (c.passives || []).filter(function (p) { return p && p.summary; }).map(function (p) {
+          return { id: p.id, name: p.name, summary: p.summary, detail: p.detail || '' };
+        })
       } : null,
       enemies: this.enemySnapshot()
     };
@@ -4613,6 +4736,7 @@
     if (!Number.isInteger(character.acBonus) || character.acBonus < 0) character.acBonus = 0;
     if (!Number.isInteger(character.tempHp) || character.tempHp < 0) character.tempHp = 0;
     character.reactionUsed = character.reactionUsed === true;
+    character.divineStrikeUsed = character.divineStrikeUsed === true;
 
     this.pregenIndex = save.pregenIndex;
     this.character = character;

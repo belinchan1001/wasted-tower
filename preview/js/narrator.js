@@ -206,6 +206,9 @@
         case 'initiative':
           pushRolls(out, ev);
           break;
+        case 'passive':
+          if (ev.narr) out.push({ tone: 'narr', text: ev.narr });
+          break;
         case 'reaction':
           if (ev.narr) {
             out.push({ tone: 'narr', text: ev.narr });
@@ -406,6 +409,8 @@
           break;
         case 'reaction_line':
           break;
+        case 'passive_line':
+          break;
         case 'move_refresh':
           out.push({ tone: 'narr', text: view.name + '歇了一歇，招式又能用了。傷口還在。' });
           break;
@@ -447,6 +452,7 @@
   // outside the narrator; the narrator itself receives no engine event object.
   function cueOf(event) {
     if (event.t === 'reaction' && event.narr) return 'reaction_line';
+    if (event.t === 'passive' && event.narr) return 'passive_line';
     if (event.t === 'scene') return 'scene_' + event.sceneType;
     if (event.t === 'hp') return event.delta < 0 ? 'hp_loss' : 'hp_gain';
     if (event.t === 'flee') return event.escaped ? 'flee' : 'flee_restart';

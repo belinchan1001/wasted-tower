@@ -4863,11 +4863,11 @@ function usesOfId(eng, id) {
 test('net and command hints say when to use them', function () {
   var expect = {
     net: '敵人血多、想爭取時間時用。',
-    command: '對通人語且未受傷的敵人最有效。'
+    command: '對通人語、血多的敵人用。'
   };
   var summaries = {
     net: '命中則束縛，不造成傷害',
-    command: '感知豁免，失敗則趨下'
+    command: '感知豁免，失敗則趴下'
   };
   Object.keys(expect).forEach(function (id) {
     var feat = null;
@@ -5106,7 +5106,7 @@ test('restrained and prone do not stack, and saves from WT4 through WT7 still lo
   assert.strictEqual(mira.character.pools.channel.uses, poolBefore);
   assert.strictEqual(usesOfId(mira, 'command'), 0);
   assert.strictEqual(mira.findStatus(cult, 'prone').hold, 1);
-  assert.ok(playerLog(cmd.events).indexOf('盜墓者趨下倒地，無法行動。') >= 0);
+  assert.ok(playerLog(cmd.events).indexOf('盜墓者趴下倒地，無法行動。') >= 0);
   var spent = mira.perform({ actor: 0, action: 'move', moveId: 'command', target: 0 });
   assert.strictEqual(spent.ok, false);
   mira.character.features.forEach(function (f) { if (f.id === 'command') f.uses = 1; });

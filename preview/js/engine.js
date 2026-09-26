@@ -130,7 +130,7 @@
       label: '倒地',
       line: '近戰攻擊它有優勢，遠程劣勢',
       ends: '它下次行動時站起',
-      endsHold: '趨下：跳過這次行動'
+      endsHold: '趴下：跳過這次行動'
     }
   };
   var MOVE_TARGETS = { self: 1, ally: 1, enemy: 1, enemies: 1 };
@@ -4011,7 +4011,7 @@
       prone.hold = 0;
       this.emit({
         t: 'status_skip', statusId: 'prone', targetName: enemy.name,
-        narr: enemy.name + '趨下倒地，無法行動。'
+        narr: enemy.name + '趴下倒地，無法行動。'
       });
       return;
     }
@@ -4382,7 +4382,7 @@
         save: feature.save, d20: rolled.face, dice: rolled.dice.slice(), mode: rolled.mode,
         bonus: bonus, total: total, dc: feature.dc, success: success, nat: rolled.face,
         targetName: foe.name, statusId: success ? null : 'prone',
-        narr: success ? (foe.name + '不受命令影響。') : (foe.name + '趨下倒地，無法行動。')
+        narr: success ? (foe.name + '不受命令影響。') : (foe.name + '趴下倒地，無法行動。')
       });
     } else {
       var ranged = this.strikeIsRanged(c, feature, null);

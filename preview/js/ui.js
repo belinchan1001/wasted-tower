@@ -81,7 +81,7 @@
   var engine = null;
   var logEl = null, statusEl = null, actionsEl = null;
   var trayMode = null; // null | 'items' | 'moves' | 'export' | 'attack' | {slot:n} | {featureId:id} | {confirmId:id}
-  var openGroups = { everyday: true, big: false, rescue: false };
+  var openGroups = { everyday: true, big: false, rescue: false, passive: true };
   var slot = new T.SaveSlot(browserStorage(), T.PREVIEW_STORAGE_KEYS.save);
   var saveNote = '';
   var endingCanvas = null;
@@ -269,6 +269,16 @@
         kFeat.appendChild(document.createTextNode('職業招式：'));
         kFeat.appendChild(el('b', null, moveNames));
         card.appendChild(kFeat);
+      }
+
+      var shownPassives = (p.passives || []).filter(function (pass) { return pass && pass.summary; });
+      if (shownPassives.length) {
+        var kPass = el('p', 'kv');
+        kPass.appendChild(document.createTextNode('被動：'));
+        kPass.appendChild(el('b', null, shownPassives.map(function (pass) {
+          return pass.name + '（' + pass.summary + '）';
+        }).join('、')));
+        card.appendChild(kPass);
       }
 
       var btn = el('button', 'btn primary', '選擇 ' + p.name);
@@ -483,6 +493,15 @@
       statusEl.appendChild(feat);
     }
 
+    if (c.passives && c.passives.length) {
+      var passiveRow = el('div', 'inv');
+      passiveRow.appendChild(el('span', 'lab', '被動'));
+      c.passives.forEach(function (p) {
+        passiveRow.appendChild(el('span', 'chip', p.name + '　' + p.summary));
+      });
+      statusEl.appendChild(passiveRow);
+    }
+
     var inv = el('div', 'inv');
     inv.appendChild(el('span', 'lab', '行囊'));
     if (!c.inventoryNames.length) {
@@ -641,7 +660,7 @@
       menu.appendChild(button('招式', '平時用、大招、救命', null, function () {
         var opening = trayMode !== 'moves' && !(trayMode && trayMode.confirmId);
         trayMode = opening ? 'moves' : null;
-        if (opening) openGroups = { everyday: true, big: false, rescue: false };
+        if (opening) openGroups = { everyday: true, big: false, rescue: false, passive: true };
         refresh();
       }, false));
       menu.appendChild(button('防守', '到下次行動前，敵人攻擊有劣勢', null, function () {

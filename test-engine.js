@@ -48,6 +48,8 @@ function arm(engine, targetHp) {
   var i;
   for (i = 0; i < before; i++) vals.push(1);
   vals.push(20);
+  var holy = (engine.character.passives || []).some(function (p) { return p && p.id === 'divine_strike'; });
+  if (holy) critDice += 2;
   for (i = 0; i < critDice; i++) vals.push(99);
   for (i = 0; i < after; i++) vals.push(1);
   engine.rng = seqRng(vals);
@@ -667,7 +669,7 @@ test('old save codes migrate and bad codes fail without throwing', function () {
   assert.strictEqual(upgraded.engine.playTimeKnown, false);
 
   var newer = engine.exportSave();
-  newer.v = 7;
+  newer.v = 8;
   var tooNew = T.loadGame(adventure, T.encodeSaveCode(newer));
   assert.strictEqual(tooNew.ok, false);
   assert.ok(/較新/.test(tooNew.error));
@@ -785,14 +787,14 @@ test('WT4 saves use the preview key, and WT3 or corrupt codes do not crash', fun
   var engine = new T.Engine(adventure, { seed: 90 });
   engine.start(0);
   var code = T.encodeSaveCode(engine.exportSave());
-  assert.strictEqual(code.indexOf('WT6.'), 0);
+  assert.strictEqual(code.indexOf('WT7.'), 0);
   assert.deepStrictEqual(engine.exportSave().character.statuses, []);
   assert.strictEqual(engine.exportSave().character.hpMaxReduction, 0);
   var slot = new T.SaveSlot(storage);
   assert.strictEqual(slot.key, 'wasted-tower-preview-save');
   assert.strictEqual(slot.write(code).ok, true);
   assert.deepStrictEqual(Object.keys(bag), ['wasted-tower-preview-save']);
-  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT6.'), 0);
+  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT7.'), 0);
   var back;
   assert.doesNotThrow(function () { back = T.loadGame(adventure, slot.read()); });
   assert.strictEqual(back.ok, true, back.error);
@@ -2168,7 +2170,7 @@ test('floor 1 depth: every class can fight or bypass, and checks cannot empty th
   var stored = scout.rollLog.filter(function (row) { return row.t === 'check'; }).pop();
   assert.deepStrictEqual(stored.lines, narrator.Mechanics.rollLines(advCheck));
   var code = T.encodeSaveCode(scout.exportSave());
-  assert.strictEqual(code.indexOf('WT6.'), 0);
+  assert.strictEqual(code.indexOf('WT7.'), 0);
   var back = T.loadGame(adventure, code);
   assert.strictEqual(back.ok, true, back.error);
   assert.deepStrictEqual(back.engine.done['check:f1_foyer_sneak'].dice, [7, 16]);
@@ -2852,7 +2854,7 @@ test('WT3 migrates, checkpoints restore uses only, and retry takes a new seed', 
   assert.deepStrictEqual(migrated.engine.character.statuses, []);
   assert.strictEqual(migrated.engine.character.hpMaxReduction, 0);
   var code = T.decodeSaveCode(T.encodeSaveCode(fighter.exportSave()));
-  assert.strictEqual(code.save.v, 6);
+  assert.strictEqual(code.save.v, 7);
   assert.strictEqual(code.save.rng.kind, 'seeded');
   assert.ok(Number.isInteger(code.save.rng.count));
 
@@ -3278,7 +3280,12 @@ function simulateClass(index, runs, options) {
     }
     if (usesOf(eng, 'sacred_flame') > 0) {
       var flame = 0.6 * 4.5;
-      var mace = hitChance(c.attack.bonus, foe.ref ? foe.ref.ac : foe.hp) * 5.5;
+      var weapon = 5.5;
+      var holyReady = (c.passives || []).some(function (p) {
+        return p && p.id === 'divine_strike' && !c.divineStrikeUsed;
+      });
+      if (holyReady) weapon += 2.5;
+      var mace = hitChance(c.attack.bonus, foe.ref ? foe.ref.ac : foe.hp) * weapon;
       if (flame > mace) return { actor: 0, action: 'move', moveId: 'sacred_flame', target: foe.index };
     }
     if (usesOf(eng, 'two_weapon') > 0) {
@@ -3305,6 +3312,49 @@ function simulateClass(index, runs, options) {
     }
     return seen;
   }
+  function runSecret(eng) {
+    var seen = 0;
+    var steps = 0;
+    var prefer = ['search_finn', 'search', 'fight', 'creep', 'side', 'take_loot', 'force', 'unlock', 'niche', 'take_holy', 'face_rival'];
+    while (eng.status === 'playing' && steps++ < 80) {
+      var sc = eng.scene;
+      if (!sc) break;
+      if (sc.type === 'combat') {
+        seen += fight(eng);
+        continue;
+      }
+      if (sc.type === 'check') {
+        forceCheck(eng);
+        continue;
+      }
+      if (sc.type === 'checkpoint') {
+        topUp(eng);
+        recover(eng);
+        cont(eng);
+        continue;
+      }
+      if (sc.type === 'end') break;
+      if (sc.type !== 'beat') break;
+      topUp(eng);
+      recover(eng);
+      var beforeId = eng.sceneId;
+      var beforeType = eng.scene.type;
+      answerInserted(eng);
+      if (eng.status !== 'playing') break;
+      if (!eng.scene || eng.scene.type !== 'beat' || eng.sceneId !== beforeId || eng.scene.type !== beforeType) continue;
+      var ids = choiceIds(eng);
+      var pick = null;
+      var pi;
+      for (pi = 0; pi < prefer.length; pi++) {
+        if (ids.indexOf(prefer[pi]) >= 0) { pick = prefer[pi]; break; }
+      }
+      if (!pick && eng.sceneId === 'pick_rival' && ids.length) pick = ids[0];
+      if (!pick && ids.length) pick = ids[0];
+      if (!pick) break;
+      choose(eng, pick);
+    }
+    return seen;
+  }
   for (r = 0; r < runs; r++) {
     engine = new T.Engine(adventure, { seed: 1000 + index * 100000 + r });
     engine.start(index);
@@ -3312,6 +3362,14 @@ function simulateClass(index, runs, options) {
     rounds = 0;
     guard = 0;
     try {
+      if (options.route === 'secret') {
+        rounds = runSecret(engine);
+        if (engine.status === 'secret_won') {
+          wins++;
+          roundSum += rounds;
+          finished++;
+        }
+      } else {
       choose(engine, 'rush');
       if (engine.sceneId === 'f1_foyer') {
         topUp(engine);
@@ -3365,6 +3423,7 @@ function simulateClass(index, runs, options) {
         roundSum += rounds;
         finished++;
       }
+      }
     } catch (e) {
       guard++;
     }
@@ -3389,6 +3448,12 @@ function printSimulator() {
     { policy: 'full', slots: 'B', sneak: '2d6', burning: '2d6', title: '戰前補滿，法術位 3，偷襲 2d6，燃燒之手 2d6' },
     { policy: 'full', slots: 'A', sneak: '2d6', burning: '2d6', title: '戰前補滿，法術位 2，偷襲 2d6，燃燒之手 2d6' }
   ];
+  if (process.env.SIM_FOCUS === 'shipped') {
+    variants = [
+      { policy: 'straight', slots: 'B', sneak: '2d6', burning: '3d6', title: '直打，法術位 3，偷襲 2d6，燃燒之手 3d6，護盾術自動（本版）' },
+      { policy: 'full', slots: 'B', sneak: '2d6', burning: '3d6', title: '戰前補滿（一兩點不喝藥水），法術位 3，偷襲 2d6，燃燒之手 3d6，護盾術自動（本版）' }
+    ];
+  }
   console.log('');
   console.log('模擬（每職業 ' + runs + ' 場，內部參考，不入遊戲）');
   variants.forEach(function (variant) {
@@ -3401,6 +3466,21 @@ function printSimulator() {
       console.log(name + '    ' + pct + '   ' + row.avg.toFixed(1));
     });
   });
+  if (process.env.SIM_FOCUS === 'shipped') {
+    [
+      { policy: 'straight', slots: 'B', sneak: '2d6', burning: '3d6', route: 'secret', title: '隱藏路線，直打，法術位 3，偷襲 2d6，燃燒之手 3d6，護盾術自動' },
+      { policy: 'full', slots: 'B', sneak: '2d6', burning: '3d6', route: 'secret', title: '隱藏路線，戰前補滿（一兩點不喝藥水），法術位 3，偷襲 2d6，燃燒之手 3d6，護盾術自動' }
+    ].forEach(function (variant) {
+      console.log(variant.title);
+      console.log('職業    通關率     平均回合');
+      names.forEach(function (name, i) {
+        var row = simulateClass(i, runs, variant);
+        var pct = ((row.wins / row.runs) * 100).toFixed(1) + '%';
+        while (pct.length < 8) pct = pct + ' ';
+        console.log(name + '    ' + pct + '   ' + row.avg.toFixed(1));
+      });
+    });
+  }
 }
 
 function playerLog(events) {
@@ -3973,7 +4053,12 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
     '戰士': { everyday: ['longsword'], big: ['power_strike'], rescue: ['second_wind', 'defend'] },
     '遊俠': { everyday: ['longbow'], big: ['aimed_shot', 'hunters_mark'], rescue: ['cure_wounds', 'defend'] },
     '盜賊': { everyday: ['shortsword', 'two_weapon'], big: ['shadow_attack'], rescue: ['uncanny_dodge', 'defend'] },
-    '牧師': { everyday: ['mace', 'sacred_flame'], big: ['guiding_bolt'], rescue: ['cure_wounds', 'healing_word', 'defend'] },
+    '牧師': {
+      everyday: ['mace', 'sacred_flame'],
+      big: ['guiding_bolt'],
+      rescue: ['cure_wounds', 'healing_word', 'defend'],
+      passive: ['divine_strike']
+    },
     '法師': {
       everyday: ['fire_bolt'],
       big: ['magic_missile', 'burning_hands', 'arcane_recovery'],
@@ -4200,7 +4285,7 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
   assert.strictEqual(loaded.engine.character.tempHp, 6);
   assert.strictEqual(loaded.engine.character.pools.slots.uses, 1);
   assert.strictEqual(loaded.engine.character.features.filter(function (f) { return f.id === 'arcane_recovery'; })[0].uses, 0);
-  assert.strictEqual(loaded.engine.exportSave().v, 6);
+  assert.strictEqual(loaded.engine.exportSave().v, 7);
 
   var old = keep.exportSave();
   old.v = 4;
@@ -4210,7 +4295,7 @@ test('move groups render the right moves, uses, saves, temp HP, and extra attack
   strikeLeft.uses = 1;
   var migrated = T.loadGame(adventure, T.encodeSaveCode(old));
   assert.strictEqual(migrated.ok, true, migrated.error);
-  assert.strictEqual(migrated.engine.exportSave().v, 6);
+  assert.strictEqual(migrated.engine.exportSave().v, 7);
   assert.strictEqual(migrated.engine.character.tempHp, 0);
   assert.ok(migrated.engine.character.features.some(function (f) { return f.id === 'false_life'; }));
   assert.ok(migrated.engine.character.features.some(function (f) { return f.id === 'fire_bolt'; }));
@@ -4409,7 +4494,7 @@ test('shield reacts only when +5 turns a hit into a miss', function () {
     row.costs_turn = true;
     var loaded = T.loadGame(adventure, T.encodeSaveCode(old));
     assert.strictEqual(loaded.ok, true, loaded.error);
-    assert.strictEqual(loaded.engine.exportSave().v, 6);
+    assert.strictEqual(loaded.engine.exportSave().v, 7);
     assert.strictEqual(loaded.engine.character.pools.slots.uses, 2);
     assert.strictEqual(loaded.engine.character.reactionUsed, false);
     var feat = loaded.engine.character.features.filter(function (f) { return f.id === 'shield'; })[0];
@@ -4425,6 +4510,233 @@ test('shield reacts only when +5 turns a hit into a miss', function () {
   }
   fromOld(5);
   fromOld(4);
+});
+
+test('mira divine strike adds 1d4 once per turn and old saves keep the passive', function () {
+  var LINE = '錘上迸出聖光。';
+  assert.ok(Array.from(LINE).length <= 14, LINE);
+  var bolt = adventure.pregens[3].features.filter(function (f) { return f.id === 'guiding_bolt'; })[0];
+  assert.strictEqual(bolt.damage_dice, '4d6');
+  assert.strictEqual(bolt.damage_type, 'radiant');
+  assert.ok(Array.from(bolt.summary).length <= 14, bolt.summary);
+
+  function fresh() {
+    var eng = new T.Engine(adventure, { seed: 21 });
+    eng.start(3);
+    eng.enterScene('f1_bandit');
+    heroFirst(eng);
+    eng.perform({ actor: 0, action: 'ambush', outcome: 'success' });
+    var foe = eng.encounter.enemies[0];
+    foe.yield = null;
+    foe.hp = 80;
+    foe.hp_max = 80;
+    foe.ac = 13;
+    return eng;
+  }
+  function attacks(events) {
+    return (events || []).filter(function (e) { return e.t === 'attack'; });
+  }
+
+  var flameEng = fresh();
+  flameEng.rng = seqRng([5, 6]);
+  var flame = flameEng.perform({ actor: 0, action: 'move', moveId: 'sacred_flame', target: 0 });
+  assert.strictEqual(flame.ok, true, flame.error);
+  var saved = flame.events.filter(function (e) { return e.t === 'save'; })[0];
+  assert.strictEqual(saved.amount, 6);
+  assert.strictEqual(saved.damage.rolls.length, 1);
+  assert.strictEqual(flameEng.character.divineStrikeUsed, false);
+  assert.ok(!flame.events.some(function (e) { return e.t === 'passive'; }));
+  assert.strictEqual(countLine(playerLog(flame.events), LINE), 0);
+
+  var eng = fresh();
+  var boltMove = eng.findMove(eng.character, 'guiding_bolt');
+  var mace = eng.findMove(eng.character, 'mace');
+  boltMove.costs_turn = false;
+  mace.costs_turn = false;
+  eng.rng = seqRng([12, 4, 3, 2, 1]);
+  var guided = eng.perform({ actor: 0, action: 'move', moveId: 'guiding_bolt', target: 0 });
+  assert.strictEqual(guided.ok, true, guided.error);
+  var boltHit = attacks(guided.events)[0];
+  assert.strictEqual(boltHit.hit, true);
+  assert.strictEqual(boltHit.damage.spec, '4d6');
+  assert.deepStrictEqual(boltHit.damage.rolls, [4, 3, 2, 1]);
+  assert.strictEqual(boltHit.damage.total, 10);
+  assert.strictEqual(eng.character.divineStrikeUsed, false);
+  assert.strictEqual(countLine(playerLog(guided.events), LINE), 0);
+  assert.strictEqual(eng.character.pools.channel.uses, 2);
+
+  eng.rng = seqRng([8, 14, 4, 2]);
+  var first = eng.perform({ actor: 0, action: 'move', moveId: 'mace', target: 0 });
+  assert.strictEqual(first.ok, true, first.error);
+  var firstHit = attacks(first.events)[0];
+  assert.strictEqual(firstHit.hit, true);
+  assert.strictEqual(firstHit.mode, 'advantage');
+  assert.strictEqual(firstHit.damage.spec, '1d6+2 + 1d4');
+  assert.deepStrictEqual(firstHit.damage.rolls, [4, 2]);
+  assert.strictEqual(firstHit.damage.total, 8);
+  assert.strictEqual(eng.character.divineStrikeUsed, true);
+  assert.strictEqual(countLine(playerLog(first.events), LINE), 1);
+  var passive = first.events.filter(function (e) { return e.t === 'passive'; })[0];
+  assert.strictEqual(passive.passiveId, 'divine_strike');
+  assert.ok(Array.from(passive.narr).length <= 14);
+
+  eng.rng = seqRng([11, 2]);
+  var second = eng.perform({ actor: 0, action: 'move', moveId: 'mace', target: 0 });
+  assert.strictEqual(second.ok, true, second.error);
+  var secondHit = attacks(second.events)[0];
+  assert.strictEqual(secondHit.hit, true);
+  assert.strictEqual(secondHit.mode, 'normal');
+  assert.strictEqual(secondHit.damage.spec, '1d6+2');
+  assert.deepStrictEqual(secondHit.damage.rolls, [2]);
+  assert.strictEqual(secondHit.damage.total, 4);
+  assert.strictEqual(eng.character.divineStrikeUsed, true);
+  assert.strictEqual(countLine(playerLog(second.events), LINE), 0);
+
+  var turn = fresh();
+  var turnMace = turn.findMove(turn.character, 'mace');
+  turnMace.costs_turn = false;
+  turn.rng = seqRng([1]);
+  var missed = turn.perform({ actor: 0, action: 'move', moveId: 'mace', target: 0 });
+  assert.strictEqual(missed.ok, true, missed.error);
+  assert.strictEqual(attacks(missed.events)[0].hit, false);
+  assert.strictEqual(turn.character.divineStrikeUsed, false);
+  assert.strictEqual(countLine(playerLog(missed.events), LINE), 0);
+  turn.rng = seqRng([10, 4, 3]);
+  var afterMiss = turn.perform({ actor: 0, action: 'move', moveId: 'mace', target: 0 });
+  assert.strictEqual(afterMiss.ok, true, afterMiss.error);
+  assert.strictEqual(attacks(afterMiss.events)[0].damage.spec, '1d6+2 + 1d4');
+  assert.strictEqual(attacks(afterMiss.events)[0].damage.total, 9);
+  turn.rng = seqRng([11, 2]);
+  var sameTurn = turn.perform({ actor: 0, action: 'move', moveId: 'mace', target: 0 });
+  assert.strictEqual(sameTurn.ok, true, sameTurn.error);
+  assert.strictEqual(attacks(sameTurn.events)[0].damage.spec, '1d6+2');
+  assert.strictEqual(attacks(sameTurn.events)[0].damage.total, 4);
+  turnMace.costs_turn = true;
+  var ended = turn.spendTurn();
+  assert.strictEqual(ended.ok, true, ended.error);
+  assert.strictEqual(turn.character.divineStrikeUsed, true);
+  turnMace.costs_turn = false;
+  turn.rng = seqRng([12, 5, 1]);
+  var again = turn.perform({ actor: 0, action: 'move', moveId: 'mace', target: 0 });
+  assert.strictEqual(again.ok, true, again.error);
+  var againHit = attacks(again.events)[0];
+  assert.strictEqual(againHit.hit, true);
+  assert.strictEqual(againHit.damage.spec, '1d6+2 + 1d4');
+  assert.deepStrictEqual(againHit.damage.rolls, [5, 1]);
+  assert.strictEqual(againHit.damage.total, 8);
+  assert.strictEqual(countLine(playerLog(again.events), LINE), 1);
+
+  var basic = fresh();
+  basic.rng = seqRng([15, 3, 2]);
+  var swing = basic.perform({ actor: 0, action: 'attack', target: 0 });
+  assert.strictEqual(swing.ok, true, swing.error);
+  var basicHit = attacks(swing.events)[0];
+  assert.strictEqual(basicHit.attackName, '釘頭錘');
+  assert.strictEqual(basicHit.damage.spec, '1d6+2 + 1d4');
+  assert.strictEqual(basicHit.damage.total, 7);
+  assert.strictEqual(countLine(playerLog(swing.events), LINE), 1);
+
+  var sheet = findSheetMove(eng, 'divine_strike');
+  assert.ok(sheet);
+  assert.strictEqual(sheet.name, '神聖打擊');
+  assert.strictEqual(sheet.summary, '每回合武器首擊');
+  assert.ok(sheet.detail);
+  assert.strictEqual(sheet.kind, 'passive');
+  assert.strictEqual(sheet.enabled, false);
+  assert.ok(Array.from(sheet.summary).length <= 14);
+  var groups = sheetMoves(eng);
+  assert.deepStrictEqual(groups.passive, ['divine_strike']);
+  assert.ok(groups.everyday.indexOf('divine_strike') < 0);
+  var open = eng.moveSheet();
+  open.groups.forEach(function (g) { g.open = true; });
+  var parent = { children: [], appendChild: function (c) { this.children.push(c); return c; } };
+  T.renderMoveGroups(fakeDocument(), parent, open, {});
+  var labels = collectText(parent);
+  assert.ok(labels.indexOf('神聖打擊') >= 0);
+  assert.ok(labels.indexOf('每回合武器首擊') >= 0);
+  assert.ok(labels.indexOf('被動') >= 0);
+  var state = eng.uiState();
+  assert.strictEqual(state.character.passives.length, 1);
+  assert.strictEqual(state.character.passives[0].name, '神聖打擊');
+  assert.strictEqual(state.character.attack.name, '釘頭錘');
+
+  function oldMira(version) {
+    var save = {
+      v: version,
+      adventureId: 'wasted_tower',
+      scriptVersion: 1,
+      pregenIndex: 3,
+      character: {
+        name: '米拉', cls: '牧師', race: '人類',
+        str: 14, dex: 10, con: 14, int: 8, wis: 16, cha: 12,
+        ac: 16, hp: 8, hp_max: 10, acBonus: 0,
+        skills: ['insight', 'religion', 'persuasion'],
+        inventory: ['cure_wounds', 'potion_heal'],
+        attack: { name: '神聖打擊', bonus: 4, damage: '1d6+2' },
+        features: [
+          { id: 'divine_strike', name: '神聖打擊', uses: 1, usesMax: 1, roll: 'attack', uses_weapon: true, damage_dice: '1d6+2' },
+          { id: 'old_strike', name: '神聖打擊', uses: 3, usesMax: 3, effect: { type: 'damage', amount: 4 } },
+          { id: 'guiding_bolt', name: '引導之矢', pool: 'channel', cost: 1, uses: 1, usesMax: 3, damage_dice: '2d6' },
+          { id: 'cure_wounds', name: '治療術', pool: 'channel', cost: 1, uses: 1, usesMax: 3 }
+        ],
+        pools: { channel: { id: 'channel', name: '神恩', uses: 1, usesMax: 3 } },
+        passives: [{ id: 'divine_strike', name: '神聖打擊', dice: '9d9' }]
+      },
+      sceneId: 'f1_gate',
+      flags: { cls_cleric: true },
+      done: {},
+      clearedCombats: {},
+      keyChoices: [],
+      status: 'playing',
+      lastCheckpoint: null,
+      playMs: 4,
+      rng: { kind: 'seeded', seed: 3, s: 3, count: 1 }
+    };
+    if (version < 6) delete save.character.reactionUsed;
+    if (version < 5) {
+      delete save.character.tempHp;
+      delete save.character.passives;
+    }
+    var loaded = T.loadGame(adventure, T.encodeSaveCode(save));
+    assert.strictEqual(loaded.ok, true, version + ' ' + (loaded.error || ''));
+    var c = loaded.engine.character;
+    assert.strictEqual(loaded.engine.exportSave().v, 7, String(version));
+    assert.strictEqual(c.attack.name, '釘頭錘', String(version));
+    assert.strictEqual(c.divineStrikeUsed, false, String(version));
+    var passiveRows = (c.passives || []).filter(function (p) { return p && (p.id === 'divine_strike' || p.name === '神聖打擊'); });
+    assert.strictEqual(passiveRows.length, 1, String(version));
+    assert.strictEqual(passiveRows[0].id, 'divine_strike');
+    assert.strictEqual(passiveRows[0].name, '神聖打擊');
+    assert.strictEqual(passiveRows[0].dice, '1d4');
+    assert.strictEqual(passiveRows[0].summary, '每回合武器首擊');
+    var named = (c.features || []).filter(function (f) { return f && (f.name === '神聖打擊' || f.id === 'divine_strike'); });
+    assert.strictEqual(named.length, 0, String(version));
+    var maces = (c.features || []).filter(function (f) { return f && f.name === '釘頭錘'; });
+    assert.strictEqual(maces.length, 1, String(version));
+    assert.ok(loaded.engine.findMove(c, 'mace'), String(version));
+    assert.strictEqual(loaded.engine.findMove(c, 'divine_strike'), null, String(version));
+    var guidedFeat = loaded.engine.findMove(c, 'guiding_bolt');
+    assert.strictEqual(guidedFeat.damage_dice, '4d6', String(version));
+    assert.strictEqual(c.pools.channel.uses, 1, String(version));
+    loaded.engine.enterScene('f1_bandit');
+    heroFirst(loaded.engine);
+    loaded.engine.perform({ actor: 0, action: 'ambush', outcome: 'success' });
+    loaded.engine.encounter.enemies[0].yield = null;
+    loaded.engine.encounter.enemies[0].hp = 40;
+    loaded.engine.encounter.enemies[0].hp_max = 40;
+    loaded.engine.rng = seqRng([14, 2, 2]);
+    var hit = loaded.engine.perform({ actor: 0, action: 'attack', target: 0 });
+    assert.strictEqual(hit.ok, true, version + ' ' + hit.error);
+    var row = hit.events.filter(function (e) { return e.t === 'attack'; })[0];
+    assert.strictEqual(row.attackName, '釘頭錘');
+    assert.strictEqual(row.damage.spec, '1d6+2 + 1d4');
+    assert.strictEqual(countLine(playerLog(hit.events), LINE), 1);
+    var broken = loaded.engine.perform({ actor: 0, action: 'move', moveId: 'divine_strike', target: 0 });
+    assert.strictEqual(broken.ok, false);
+  }
+  oldMira(4);
+  oldMira(5);
+  oldMira(6);
 });
 
 if (failed) {

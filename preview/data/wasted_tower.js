@@ -558,6 +558,19 @@
         "cure_wounds",
         "potion_heal"
       ],
+      "passives": [
+        // 原創改動。SRD 5.1 Divine Strike 是 8 級、1d8（p.17）。此處改為每回合第一次武器命中附加 1d4 光耀，法術不觸發。
+        {
+          "id": "divine_strike",
+          "name": "神聖打擊",
+          "dice": "1d4",
+          "damage_type": "radiant",
+          "once_per_turn": true,
+          "summary": "每回合武器首擊",
+          "detail": "每回合第一次以武器命中時，額外造成 1d4 光耀傷害。法術不會觸發。",
+          "narr": "錘上迸出聖光。"
+        }
+      ],
       "pools": [
         {
           "id": "channel",
@@ -598,15 +611,15 @@
           "id": "guiding_bolt",
           "name": "引導之矢",
           "group": "big",
-          "summary": "需命中，2d6，下擊優勢",
-          "detail": "d20＋5 法術命中，命中造成 2d6 光耀傷害；下一次攻擊該目標有優勢。",
+          "summary": "需命中，4d6，下擊優勢",
+          "detail": "d20＋5 法術命中，命中造成 4d6 光耀傷害；下一次攻擊該目標有優勢。",
           "pool": "channel",
           "cost": 1,
           "costs_turn": true,
           "target": "enemy",
           "roll": "spell_attack",
           "attack_bonus": 5,
-          "damage_dice": "2d6",
+          "damage_dice": "4d6",
           "damage_type": "radiant",
           "on_hit": {
             "next_attack_advantage": true

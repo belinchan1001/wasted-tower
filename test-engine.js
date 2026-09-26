@@ -595,7 +595,8 @@ test('features and consumables keep their old limits', function () {
   var strike = fighter.perform({ actor: 0, action: 'move', moveId: 'power_strike', target: 0 });
   assert.strictEqual(strike.ok, true, strike.error);
   assert.strictEqual(fighter.encounter.enemies[0].hp, 0);
-  assert.strictEqual(fighter.character.features[0].uses, 1);
+  var strikeMove = fighter.character.features.filter(function (f) { return f.id === 'power_strike'; })[0];
+  assert.strictEqual(strikeMove.uses, 1);
   assert.strictEqual(fighter.status, 'playing');
 });
 
@@ -665,7 +666,7 @@ test('old save codes migrate and bad codes fail without throwing', function () {
   assert.strictEqual(upgraded.engine.playTimeKnown, false);
 
   var newer = engine.exportSave();
-  newer.v = 5;
+  newer.v = 6;
   var tooNew = T.loadGame(adventure, T.encodeSaveCode(newer));
   assert.strictEqual(tooNew.ok, false);
   assert.ok(/較新/.test(tooNew.error));
@@ -783,14 +784,14 @@ test('WT4 saves use the preview key, and WT3 or corrupt codes do not crash', fun
   var engine = new T.Engine(adventure, { seed: 90 });
   engine.start(0);
   var code = T.encodeSaveCode(engine.exportSave());
-  assert.strictEqual(code.indexOf('WT4.'), 0);
+  assert.strictEqual(code.indexOf('WT5.'), 0);
   assert.deepStrictEqual(engine.exportSave().character.statuses, []);
   assert.strictEqual(engine.exportSave().character.hpMaxReduction, 0);
   var slot = new T.SaveSlot(storage);
   assert.strictEqual(slot.key, 'wasted-tower-preview-save');
   assert.strictEqual(slot.write(code).ok, true);
   assert.deepStrictEqual(Object.keys(bag), ['wasted-tower-preview-save']);
-  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT4.'), 0);
+  assert.strictEqual(bag['wasted-tower-preview-save'].indexOf('WT5.'), 0);
   var back;
   assert.doesNotThrow(function () { back = T.loadGame(adventure, slot.read()); });
   assert.strictEqual(back.ok, true, back.error);
@@ -836,7 +837,7 @@ test('WT4 saves use the preview key, and WT3 or corrupt codes do not crash', fun
   assert.strictEqual(migrated.ok, true, migrated && migrated.error);
   assert.deepStrictEqual(migrated.engine.character.statuses, []);
   assert.strictEqual(migrated.engine.character.hpMaxReduction, 0);
-  assert.strictEqual(migrated.engine.character.features.length, 2);
+  assert.strictEqual(migrated.engine.character.features.length, 3);
   var resumed;
   assert.doesNotThrow(function () { resumed = migrated.engine.resumeView(); });
   assert.strictEqual(resumed.ok, true, resumed && resumed.error);
@@ -2166,7 +2167,7 @@ test('floor 1 depth: every class can fight or bypass, and checks cannot empty th
   var stored = scout.rollLog.filter(function (row) { return row.t === 'check'; }).pop();
   assert.deepStrictEqual(stored.lines, narrator.Mechanics.rollLines(advCheck));
   var code = T.encodeSaveCode(scout.exportSave());
-  assert.strictEqual(code.indexOf('WT4.'), 0);
+  assert.strictEqual(code.indexOf('WT5.'), 0);
   var back = T.loadGame(adventure, code);
   assert.strictEqual(back.ok, true, back.error);
   assert.deepStrictEqual(back.engine.done['check:f1_foyer_sneak'].dice, [7, 16]);
@@ -2497,21 +2498,21 @@ function heroFirst(engine) {
 
 test('each class has exactly the two step-1 moves', function () {
   var expect = {
-    '戰士': ['power_strike', 'second_wind'],
-    '遊俠': ['aimed_shot', 'hunters_mark'],
-    '盜賊': ['shadow_attack', 'uncanny_dodge'],
-    '牧師': ['cure_wounds', 'guiding_bolt'],
-    '法師': ['magic_missile', 'shield']
+    '戰士': ['longsword', 'power_strike', 'second_wind'],
+    '遊俠': ['longbow', 'aimed_shot', 'hunters_mark', 'cure_wounds'],
+    '盜賊': ['shortsword', 'two_weapon', 'shadow_attack', 'uncanny_dodge'],
+    '牧師': ['mace', 'sacred_flame', 'guiding_bolt', 'cure_wounds', 'healing_word'],
+    '法師': ['fire_bolt', 'magic_missile', 'burning_hands', 'arcane_recovery', 'shield', 'false_life']
   };
   adventure.pregens.forEach(function (p) {
     var ids = p.features.map(function (f) { return f.id; });
     assert.deepStrictEqual(ids, expect[p['class']], p['class']);
-    assert.strictEqual(p.features.length, 2);
     p.features.forEach(function (f) {
       assert.ok(f.roll, f.id);
       assert.ok(f.target, f.id);
       assert.strictEqual(typeof f.costs_turn, 'boolean', f.id);
-      assert.ok(Number.isInteger(f.uses) || (f.pool && Number.isInteger(f.cost)), f.id);
+      assert.ok(f.at_will || f.per === 'night' || Number.isInteger(f.uses) || (f.pool && Number.isInteger(f.cost)), f.id);
+      assert.ok(f.summary && Array.from(f.summary).length <= 14, f.id);
     });
   });
   var legacy = {
@@ -2805,21 +2806,21 @@ test('WT3 migrates, checkpoints restore uses only, and retry takes a new seed', 
   var migrated = T.loadGame(adventure, T.encodeSaveCode(old));
   assert.strictEqual(migrated.ok, true, migrated.error);
   var ids = migrated.engine.character.features.map(function (f) { return f.id; });
-  assert.deepStrictEqual(ids, ['power_strike', 'second_wind']);
+  assert.deepStrictEqual(ids, ['longsword', 'power_strike', 'second_wind']);
   assert.deepStrictEqual(migrated.engine.character.statuses, []);
   assert.strictEqual(migrated.engine.character.hpMaxReduction, 0);
   var code = T.decodeSaveCode(T.encodeSaveCode(fighter.exportSave()));
-  assert.strictEqual(code.save.v, 4);
+  assert.strictEqual(code.save.v, 5);
   assert.strictEqual(code.save.rng.kind, 'seeded');
   assert.ok(Number.isInteger(code.save.rng.count));
 
   var rest = new T.Engine(adventure, { seed: 81 });
   rest.start(0);
   rest.character.hp = 6;
-  rest.character.features[0].uses = 0;
+  rest.character.features.forEach(function (f) { if (f.id === 'power_strike') f.uses = 0; });
   rest.enterScene('cp_f1');
   assert.strictEqual(rest.character.hp, 6);
-  assert.strictEqual(rest.character.features[0].uses, 2);
+  assert.strictEqual(rest.character.features.filter(function (f) { return f.id === 'power_strike'; })[0].uses, 2);
   assert.ok(rest.events.some(function (e) { return e.t === 'move_refresh' && e.healed === 0; }));
   assert.ok(rest.checkpointSnap);
   var seedAtRest = rest.rng.seed;
@@ -2844,7 +2845,7 @@ test('WT3 migrates, checkpoints restore uses only, and retry takes a new seed', 
   assert.strictEqual(rest.sceneId, 'cp_f1');
   assert.strictEqual(rest.status, 'playing');
   assert.strictEqual(rest.character.hp, 6);
-  assert.strictEqual(rest.character.features[0].uses, 2);
+  assert.strictEqual(rest.character.features.filter(function (f) { return f.id === 'power_strike'; })[0].uses, 2);
   assert.ok(Number.isInteger(rest.rng.seed) && rest.rng.seed > 0);
   assert.notStrictEqual(rest.rng.seed, seedAtRest);
   assert.notStrictEqual(rest.rng.seed, diedSeed || 0);
@@ -3095,7 +3096,15 @@ test('fleeing the floor-1 bandit does not reroll resolved hall checks', function
   assert.ok(choiceIds(bandit.engine).indexOf('climb') < 0);
 });
 
-function simulateClass(index, runs) {
+function hitChance(bonus, ac) {
+  var face, hits = 0;
+  for (face = 1; face <= 20; face++) {
+    if (face !== 1 && (face === 20 || face + bonus >= ac)) hits++;
+  }
+  return hits / 20;
+}
+function simulateClass(index, runs, options) {
+  options = options || {};
   var wins = 0;
   var roundSum = 0;
   var finished = 0;
@@ -3119,9 +3128,42 @@ function simulateClass(index, runs) {
     if (!found) return 0;
     return eng.moveUsesLeft(eng.character, found);
   }
+  function applyVariant(eng) {
+    var c = eng.character;
+    if (options.slots === 'A') {
+      ['channel', 'slots'].forEach(function (id) {
+        var pool = c.pools && c.pools[id];
+        if (!pool) return;
+        pool.usesMax = 2;
+        pool.uses = Math.min(pool.uses, 2);
+      });
+      (c.features || []).forEach(function (f) {
+        if (f.pool && c.pools[f.pool]) {
+          f.uses = c.pools[f.pool].uses;
+          f.usesMax = c.pools[f.pool].usesMax;
+        }
+      });
+    }
+    if (options.burning === '2d6') {
+      (c.features || []).forEach(function (f) {
+        if (f.id === 'burning_hands') f.damage_dice = '2d6';
+      });
+    }
+  }
+  function recover(eng) {
+    if (!eng.scene || eng.scene.type === 'combat') return;
+    if (usesOf(eng, 'arcane_recovery') <= 0) return;
+    var pool = eng.character.pools && eng.character.pools.slots;
+    if (!pool || pool.uses >= pool.usesMax) return;
+    eng.perform({ actor: 0, action: 'move', moveId: 'arcane_recovery' });
+  }
   function policy(eng) {
     var c = eng.character;
+    var living = eng.livingEnemies();
     var foe = lowest(eng);
+    if (c.hp <= Math.max(4, Math.floor(c.hp_max / 2)) && usesOf(eng, 'healing_word') > 0) {
+      return { actor: 0, action: 'move', moveId: 'healing_word' };
+    }
     if (c.hp * 2 <= c.hp_max && usesOf(eng, 'second_wind') > 0) {
       return { actor: 0, action: 'move', moveId: 'second_wind' };
     }
@@ -3132,14 +3174,28 @@ function simulateClass(index, runs) {
       });
       if (slot >= 0) return { actor: 0, action: 'item', slot: slot };
       if (usesOf(eng, 'cure_wounds') > 0) return { actor: 0, action: 'move', moveId: 'cure_wounds' };
+      if (!(c.tempHp > 0) && usesOf(eng, 'false_life') > 0) {
+        return { actor: 0, action: 'move', moveId: 'false_life' };
+      }
     }
     if (c.hp <= 4 && usesOf(eng, 'shield') > 0 && !(c.acBonus > 0)) {
       return { actor: 0, action: 'move', moveId: 'shield' };
     }
-    var moves = ['power_strike', 'aimed_shot', 'hunters_mark', 'shadow_attack', 'guiding_bolt', 'magic_missile'];
+    if (living.length >= 2 && usesOf(eng, 'burning_hands') > 0) {
+      return { actor: 0, action: 'move', moveId: 'burning_hands' };
+    }
+    var moves = ['shadow_attack', 'power_strike', 'hunters_mark', 'aimed_shot', 'guiding_bolt', 'magic_missile'];
     var m;
     for (m = 0; m < moves.length; m++) {
       if (usesOf(eng, moves[m]) > 0) return { actor: 0, action: 'move', moveId: moves[m], target: foe.index };
+    }
+    if (usesOf(eng, 'sacred_flame') > 0) {
+      var flame = 0.6 * 4.5;
+      var mace = hitChance(c.attack.bonus, foe.ref ? foe.ref.ac : foe.hp) * 5.5;
+      if (flame > mace) return { actor: 0, action: 'move', moveId: 'sacred_flame', target: foe.index };
+    }
+    if (usesOf(eng, 'two_weapon') > 0) {
+      return { actor: 0, action: 'move', moveId: 'two_weapon', target: foe.index };
     }
     return { actor: 0, action: 'attack', target: foe.index };
   }
@@ -3165,37 +3221,44 @@ function simulateClass(index, runs) {
   for (r = 0; r < runs; r++) {
     engine = new T.Engine(adventure, { seed: 1000 + index * 100000 + r });
     engine.start(index);
+    applyVariant(engine);
     rounds = 0;
     guard = 0;
     try {
       choose(engine, 'rush');
       if (engine.sceneId === 'f1_foyer') choose(engine, 'fight');
+      recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       answerInserted(engine);
       choose(engine, 'climb');
       forceCheck(engine);
       if (engine.sceneId === 'f1_bandit_front') choose(engine, 'fight');
+      recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       answerInserted(engine);
       cont(engine);
       choose(engine, 'up');
+      recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       answerInserted(engine);
       choose(engine, 'watch');
       forceCheck(engine);
+      recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       answerInserted(engine);
       cont(engine);
       choose(engine, 'smash');
       answerInserted(engine);
+      recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       answerInserted(engine);
       choose(engine, 'rush_boss');
+      recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       cont(engine);
@@ -3213,29 +3276,26 @@ function simulateClass(index, runs) {
 }
 
 function printSimulator() {
-  var runs = 2000;
+  var runs = parseInt(process.env.SIM_RUNS || '400', 10);
   var names = adventure.pregens.map(function (p) { return p['class']; });
-  var rows = [];
-  var flags = [];
-  names.forEach(function (name, i) {
-    var row = simulateClass(i, runs);
-    var rate = row.wins / row.runs;
-    var flag = '';
-    if (rate < 0.30) { flag = '低於 30%'; flags.push(name + ' ' + flag); }
-    else if (rate > 0.90) { flag = '高於 90%'; flags.push(name + ' ' + flag); }
-    rows.push({ name: name, rate: rate, avg: row.avg, flag: flag });
-  });
+  var variants = [
+    { slots: 'B', burning: '3d6', title: 'B 法術位 3，燃燒之手 3d6' },
+    { slots: 'A', burning: '3d6', title: 'A 法術位 2，燃燒之手 3d6' },
+    { slots: 'B', burning: '2d6', title: 'B 法術位 3，燃燒之手 2d6' },
+    { slots: 'A', burning: '2d6', title: 'A 法術位 2，燃燒之手 2d6' }
+  ];
   console.log('');
-  console.log('模擬（每職業 ' + runs + ' 場，內部參考）');
-  console.log('職業    通關率     平均回合    標記');
-  rows.forEach(function (row) {
-    var pct = (row.rate * 100).toFixed(1) + '%';
-    while (pct.length < 8) pct = pct + ' ';
-    var avg = row.avg.toFixed(1);
-    console.log(row.name + '    ' + pct + '   ' + avg + (row.flag ? '       ' + row.flag : ''));
+  console.log('模擬（每職業 ' + runs + ' 場，內部參考，不入遊戲）');
+  variants.forEach(function (variant) {
+    console.log(variant.title);
+    console.log('職業    通關率     平均回合');
+    names.forEach(function (name, i) {
+      var row = simulateClass(i, runs, variant);
+      var pct = ((row.wins / row.runs) * 100).toFixed(1) + '%';
+      while (pct.length < 8) pct = pct + ' ';
+      console.log(name + '    ' + pct + '   ' + row.avg.toFixed(1));
+    });
   });
-  if (flags.length) console.log('標記：' + flags.join('；'));
-  else console.log('標記：沒有職業低於 30% 或高於 90%。');
 }
 
 function playerLog(events) {
@@ -3759,6 +3819,318 @@ test('dice playback adds no audio, leaves root index.html, and still needs eight
     assert.ok(byId[id].omit_from_tally !== true, id);
   });
   assert.deepStrictEqual(byId.secret_win.when, { all_flags: ['secret_ready'] });
+});
+
+function sheetMoves(eng) {
+  var out = {};
+  eng.moveSheet().groups.forEach(function (g) {
+    out[g.id] = g.moves.map(function (m) { return m.id; });
+  });
+  return out;
+}
+function findSheetMove(eng, id) {
+  var found = null;
+  eng.moveSheet().groups.forEach(function (g) {
+    g.moves.forEach(function (m) { if (m.id === id) found = m; });
+  });
+  return found;
+}
+function fakeDocument() {
+  function node(tag) {
+    return {
+      tag: tag, className: '', textContent: '', children: [], attrs: {}, listeners: {},
+      appendChild: function (child) { this.children.push(child); return child; },
+      setAttribute: function (key, value) { this.attrs[key] = String(value); },
+      addEventListener: function (name, fn) { this.listeners[name] = fn; }
+    };
+  }
+  return {
+    createElement: function (tag) { var n = node(tag); n.tag = tag; return n; },
+    createTextNode: function (text) { return { text: String(text), children: [] }; }
+  };
+}
+function collectText(node, out) {
+  out = out || [];
+  if (node.text) out.push(node.text);
+  if (node.textContent) out.push(node.textContent);
+  (node.children || []).forEach(function (child) { collectText(child, out); });
+  return out;
+}
+function collectButtons(node, out) {
+  out = out || [];
+  if (node.tag === 'button' && node.attrs && node.attrs['data-move']) out.push(node);
+  (node.children || []).forEach(function (child) { collectButtons(child, out); });
+  return out;
+}
+
+test('move groups render the right moves, uses, saves, temp HP, and extra attacks', function () {
+  var expect = {
+    '戰士': { everyday: ['longsword'], big: ['power_strike'], rescue: ['second_wind', 'defend'] },
+    '遊俠': { everyday: ['longbow'], big: ['aimed_shot', 'hunters_mark'], rescue: ['cure_wounds', 'defend'] },
+    '盜賊': { everyday: ['shortsword', 'two_weapon'], big: ['shadow_attack'], rescue: ['uncanny_dodge', 'defend'] },
+    '牧師': { everyday: ['mace', 'sacred_flame'], big: ['guiding_bolt'], rescue: ['cure_wounds', 'healing_word', 'defend'] },
+    '法師': {
+      everyday: ['fire_bolt'],
+      big: ['magic_missile', 'burning_hands', 'arcane_recovery'],
+      rescue: ['shield', 'false_life', 'defend']
+    }
+  };
+  adventure.pregens.forEach(function (p, i) {
+    var eng = new T.Engine(adventure, { seed: 3 });
+    eng.start(i);
+    eng.enterScene('f1_rats');
+    heroFirst(eng);
+    var groups = sheetMoves(eng);
+    assert.deepStrictEqual(groups, expect[p['class']], p['class']);
+    eng.moveSheet().groups.forEach(function (g) {
+      assert.ok(g.moves.length >= 1, p['class'] + ' ' + g.id);
+      g.moves.forEach(function (m) {
+        assert.ok(Array.from(m.summary).length <= 14, m.id + ' ' + m.summary);
+        assert.ok(m.detail, m.id);
+      });
+    });
+    var sheet = eng.moveSheet();
+    sheet.groups.forEach(function (g) { g.open = true; });
+    var parent = { children: [], appendChild: function (c) { this.children.push(c); return c; } };
+    T.renderMoveGroups(fakeDocument(), parent, sheet, {});
+    var labels = collectText(parent);
+    p.features.forEach(function (f) {
+      assert.ok(labels.indexOf(f.name) >= 0, f.name);
+      assert.ok(labels.indexOf(f.summary) >= 0, f.summary);
+    });
+    assert.ok(labels.indexOf('防守') >= 0);
+    assert.ok(labels.indexOf('敵人攻擊你有劣勢') >= 0);
+  });
+
+  var fighter = new T.Engine(adventure, { seed: 4 });
+  fighter.start(0);
+  fighter.enterScene('f1_bandit');
+  heroFirst(fighter);
+  var power = fighter.character.features.filter(function (f) { return f.id === 'power_strike'; })[0];
+  power.uses = 0;
+  var spent = findSheetMove(fighter, 'power_strike');
+  assert.strictEqual(spent.grey, true);
+  assert.strictEqual(spent.usesLabel, '需休息');
+  assert.strictEqual(spent.enabled, false);
+  var open = fighter.moveSheet();
+  open.groups.forEach(function (g) { g.open = g.id === 'big'; });
+  var box = { children: [], appendChild: function (c) { this.children.push(c); return c; } };
+  T.renderMoveGroups(fakeDocument(), box, open, {});
+  var spentBtn = collectButtons(box).filter(function (b) { return b.attrs['data-move'] === 'power_strike'; })[0];
+  assert.ok(spentBtn);
+  assert.strictEqual(spentBtn.attrs['data-spent'], '1');
+  assert.ok(spentBtn.className.indexOf('spent') >= 0);
+  assert.ok(collectText(spentBtn).indexOf('需休息') >= 0);
+  assert.ok(collectText(spentBtn).indexOf('破甲重擊') >= 0);
+
+  ['cp_f1', 'cp_f2', 'cp_f3'].forEach(function (id) {
+    var rest = new T.Engine(adventure, { seed: 5 });
+    rest.start(0);
+    rest.character.features.forEach(function (f) { if (f.id === 'power_strike') f.uses = 0; });
+    rest.character.tempHp = 6;
+    rest.enterScene(id);
+    assert.strictEqual(rest.character.features.filter(function (f) { return f.id === 'power_strike'; })[0].uses, 2, id);
+    assert.strictEqual(rest.character.tempHp, 0, id);
+  });
+
+  var mage = new T.Engine(adventure, { seed: 6 });
+  mage.start(4);
+  var slots = mage.character.pools.slots;
+  slots.uses = 0;
+  mage.character.features.forEach(function (f) { if (f.pool === 'slots') f.uses = 0; });
+  var night = mage.character.features.filter(function (f) { return f.id === 'arcane_recovery'; })[0];
+  night.uses = 0;
+  mage.character.tempHp = 4;
+  mage.enterScene('cp_f2');
+  assert.strictEqual(mage.character.pools.slots.uses, 3);
+  assert.strictEqual(mage.character.features.filter(function (f) { return f.id === 'arcane_recovery'; })[0].uses, 0);
+  assert.strictEqual(mage.character.tempHp, 0);
+  mage.character.pools.slots.uses = 1;
+  mage.character.features.forEach(function (f) { if (f.pool === 'slots') f.uses = 1; });
+  mage.character.tempHp = 5;
+  mage.flags.respected_dead = true;
+  mage.enterScene('f3_altar');
+  var prayed = mage.perform({ type: 'choice', id: 'rest' });
+  assert.strictEqual(prayed.ok, true, prayed.error);
+  assert.strictEqual(mage.character.pools.slots.uses, 1);
+  assert.strictEqual(mage.character.features.filter(function (f) { return f.id === 'arcane_recovery'; })[0].uses, 0);
+  assert.strictEqual(mage.character.tempHp, 5);
+
+  var cleric = new T.Engine(adventure, { seed: 7 });
+  cleric.start(3);
+  cleric.enterScene('f1_bandit');
+  heroFirst(cleric);
+  cleric.perform({ actor: 0, action: 'ambush', outcome: 'success' });
+  cleric.encounter.enemies[0].yield = null;
+  cleric.encounter.enemies[0].hp = 20;
+  cleric.encounter.enemies[0].hp_max = 20;
+  cleric.rng = seqRng([5, 8]);
+  var flame = cleric.perform({ actor: 0, action: 'move', moveId: 'sacred_flame', target: 0 });
+  assert.strictEqual(flame.ok, true, flame.error);
+  var saved = flame.events.filter(function (e) { return e.t === 'save'; })[0];
+  assert.strictEqual(saved.success, false);
+  assert.strictEqual(saved.d20, 5);
+  assert.strictEqual(saved.bonus, 0);
+  assert.strictEqual(saved.dc, 13);
+  assert.strictEqual(saved.amount, 8);
+  assert.strictEqual(cleric.encounter.enemies[0].hp, 12);
+  var line = narrator.Mechanics.rollLines(saved).join('\n');
+  assert.ok(line.indexOf('d20 擲出 5') >= 0, line);
+  assert.ok(line.indexOf('難度 13') >= 0, line);
+  heroFirst(cleric);
+  cleric.rng = seqRng([15]);
+  var resisted = cleric.perform({ actor: 0, action: 'move', moveId: 'sacred_flame', target: 0 });
+  assert.strictEqual(resisted.ok, true, resisted.error);
+  var held = resisted.events.filter(function (e) { return e.t === 'save'; })[0];
+  assert.strictEqual(held.success, true);
+  assert.strictEqual(held.amount, 0);
+  assert.strictEqual(cleric.encounter.enemies[0].hp, 12);
+  assert.ok(!Object.prototype.hasOwnProperty.call(cleric.encounter.enemies[0], 'saves'));
+
+  var burn = new T.Engine(adventure, { seed: 8 });
+  burn.start(4);
+  burn.enterScene('f1_rats');
+  heroFirst(burn);
+  burn.perform({ actor: 0, action: 'ambush', outcome: 'success' });
+  burn.rng = seqRng([2, 2, 2, 10, 18, 4]);
+  var hands = burn.perform({ actor: 0, action: 'move', moveId: 'burning_hands' });
+  assert.strictEqual(hands.ok, true, hands.error);
+  var saves = hands.events.filter(function (e) { return e.t === 'save'; });
+  assert.strictEqual(saves.length, 3);
+  assert.strictEqual(saves[0].success, false);
+  assert.strictEqual(saves[0].amount, 6);
+  assert.strictEqual(saves[1].success, true);
+  assert.strictEqual(saves[1].amount, 3);
+  assert.strictEqual(saves[1].damage.total, 6);
+  assert.strictEqual(burn.character.pools.slots.uses, 2);
+  var beforeDice = burn.rng.rolled();
+  var animated = false;
+  Dice.present(burn, hands.events, {
+    animate: function (records) {
+      animated = true;
+      assert.strictEqual(records.length, 3);
+      assert.strictEqual(records[0].d20, 10);
+      assert.deepStrictEqual(records[0].dice, [10]);
+      assert.strictEqual(records[1].d20, 18);
+      var shown = Dice.createAnimation(records[1]).skip();
+      assert.deepStrictEqual(shown.faces, [18]);
+      assert.strictEqual(shown.kept, 18);
+      assert.strictEqual(burn.rng.rolled(), beforeDice);
+    }
+  });
+  assert.strictEqual(animated, true);
+  assert.strictEqual(burn.rng.rolled(), beforeDice);
+
+  var wiz = new T.Engine(adventure, { seed: 9 });
+  wiz.start(4);
+  wiz.character.hp = 8;
+  wiz.rng = seqRng([4]);
+  var life = wiz.perform({ type: 'move', moveId: 'false_life' });
+  assert.strictEqual(life.ok, true, life.error);
+  assert.strictEqual(wiz.character.tempHp, 8);
+  assert.strictEqual(wiz.character.hp, 8);
+  assert.strictEqual(wiz.character.pools.slots.uses, 2);
+  wiz.rng = seqRng([1]);
+  var again = wiz.perform({ type: 'move', moveId: 'false_life' });
+  assert.strictEqual(again.ok, true, again.error);
+  assert.strictEqual(wiz.character.tempHp, 8);
+  wiz.enterScene('f1_bandit');
+  wiz.character.tempHp = 3;
+  wiz.character.hp = 8;
+  wiz.rng = seqRng([15, 6]);
+  wiz.runEnemyTurn(0);
+  var swing = wiz.events.filter(function (e) { return e.t === 'enemy_attack'; })[0];
+  assert.strictEqual(swing.tempAbsorbed, 3);
+  assert.ok(wiz.character.hp < 8);
+  assert.strictEqual(wiz.character.tempHp, 0);
+  var hpAfter = wiz.character.hp;
+  wiz.enterScene('cp_f1');
+  assert.strictEqual(wiz.character.tempHp, 0);
+  assert.strictEqual(wiz.character.hp, hpAfter);
+
+  var rogue = new T.Engine(adventure, { seed: 10 });
+  rogue.start(2);
+  rogue.enterScene('f1_bandit');
+  heroFirst(rogue);
+  rogue.perform({ actor: 0, action: 'ambush', outcome: 'success' });
+  rogue.encounter.enemies[0].yield = null;
+  rogue.encounter.enemies[0].hp = 40;
+  rogue.encounter.enemies[0].hp_max = 40;
+  rogue.encounter.enemies[0].grantAdvantage = true;
+  rogue.rng = seqRng([15, 4, 3, 2, 1, 12, 1]);
+  var duo = rogue.perform({ actor: 0, action: 'move', moveId: 'two_weapon', target: 0 });
+  assert.strictEqual(duo.ok, true, duo.error);
+  var swings = duo.events.filter(function (e) { return e.t === 'attack'; });
+  assert.strictEqual(swings.length, 2);
+  assert.strictEqual(swings[0].attackName, '短劍');
+  assert.strictEqual(swings[0].hit, true);
+  assert.strictEqual(swings[0].mode, 'advantage');
+  assert.ok(swings[0].damage.rolls.length >= 3);
+  assert.strictEqual(swings[1].attackName, '匕首');
+  assert.strictEqual(swings[1].hit, true);
+  assert.strictEqual(swings[1].mode, 'normal');
+  assert.deepStrictEqual(swings[1].damage.rolls, [1]);
+  assert.strictEqual(swings[1].damage.total, 1);
+  assert.strictEqual(rogue.character.sneakUsed, true);
+  var pair = [];
+  Dice.present(rogue, duo.events, {
+    animate: function (records) {
+      records.forEach(function (rec) { if (rec.side === 'player') pair.push(rec); });
+    }
+  });
+  assert.strictEqual(pair.length, 2);
+  assert.strictEqual(pair[0].d20, swings[0].d20);
+  assert.strictEqual(Dice.createAnimation(pair[1]).skip().kept, swings[1].d20);
+
+  var keep = new T.Engine(adventure, { seed: 11 });
+  keep.start(4);
+  keep.character.tempHp = 6;
+  keep.character.pools.slots.uses = 1;
+  keep.character.features.forEach(function (f) {
+    if (f.pool === 'slots') f.uses = 1;
+    if (f.id === 'arcane_recovery') f.uses = 0;
+  });
+  var loaded = T.loadGame(adventure, T.encodeSaveCode(keep.exportSave()));
+  assert.strictEqual(loaded.ok, true, loaded.error);
+  assert.strictEqual(loaded.engine.character.tempHp, 6);
+  assert.strictEqual(loaded.engine.character.pools.slots.uses, 1);
+  assert.strictEqual(loaded.engine.character.features.filter(function (f) { return f.id === 'arcane_recovery'; })[0].uses, 0);
+  assert.strictEqual(loaded.engine.exportSave().v, 5);
+
+  var old = keep.exportSave();
+  old.v = 4;
+  delete old.character.tempHp;
+  old.character.features = old.character.features.filter(function (f) { return f.id !== 'false_life' && f.id !== 'fire_bolt'; });
+  var strikeLeft = old.character.features.filter(function (f) { return f.id === 'magic_missile'; })[0];
+  strikeLeft.uses = 1;
+  var migrated = T.loadGame(adventure, T.encodeSaveCode(old));
+  assert.strictEqual(migrated.ok, true, migrated.error);
+  assert.strictEqual(migrated.engine.exportSave().v, 5);
+  assert.strictEqual(migrated.engine.character.tempHp, 0);
+  assert.ok(migrated.engine.character.features.some(function (f) { return f.id === 'false_life'; }));
+  assert.ok(migrated.engine.character.features.some(function (f) { return f.id === 'fire_bolt'; }));
+  assert.strictEqual(migrated.engine.character.pools.slots.uses, 1);
+  assert.strictEqual(migrated.engine.character.features.filter(function (f) { return f.id === 'arcane_recovery'; })[0].uses, 0);
+
+  var shield = adventure.pregens[4].features.filter(function (f) { return f.id === 'shield'; })[0];
+  assert.strictEqual(shield.timing, 'ready');
+  assert.strictEqual(shield.costs_turn, true);
+  adventure.pregens.forEach(function (p) {
+    p.features.forEach(function (f) {
+      assert.ok(!f.status && !f.condition, f.id);
+      var blob = JSON.stringify(f);
+      ['prone', 'poisoned', 'charmed', 'frightened', 'restrained', 'unconscious', 'sleep', '倒地', '中毒', '魅惑', '昏睡'].forEach(function (word) {
+        assert.ok(blob.indexOf(word) < 0, f.id + ' ' + word);
+      });
+    });
+    assert.ok(!p.features.some(function (f) { return f.id === 'action_surge' || f.id === 'defense'; }));
+  });
+  adventure.scenes.forEach(function (sc) {
+    (sc.enemies || []).forEach(function (e) {
+      assert.ok(!Object.prototype.hasOwnProperty.call(e, 'saves'), sc.id);
+    });
+  });
+  assert.strictEqual(adventure.meta.required_for_secret.length, 8);
 });
 
 if (failed) {

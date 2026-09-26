@@ -293,8 +293,23 @@
       ],
       "features": [
         {
+          "id": "longsword",
+          "name": "長劍攻擊",
+          "group": "everyday",
+          "at_will": true,
+          "summary": "需命中，1d8+3 斬擊",
+          "detail": "d20＋5 對目標 AC，命中造成 1d8+3 斬擊傷害。",
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "attack",
+          "uses_weapon": true
+        },
+        {
           "id": "power_strike",
           "name": "破甲重擊",
+          "group": "big",
+          "summary": "需命中，+1d8，AC−2",
+          "detail": "d20＋5 對目標 AC，命中造成 1d8+3＋1d8 斬擊傷害，目標本場 AC −2。",
           "uses": 2,
           "costs_turn": true,
           "target": "enemy",
@@ -309,6 +324,9 @@
         {
           "id": "second_wind",
           "name": "喘息",
+          "group": "rescue",
+          "summary": "回復 1d10+2，不佔回合",
+          "detail": "回復 1d10+2 點生命，不佔用本回合行動。",
           "uses": 1,
           "costs_turn": false,
           "target": "self",
@@ -335,7 +353,7 @@
         "survival"
       ],
       "attack": {
-        "name": "短弓",
+        "name": "長弓",
         "bonus": 5,
         "damage": "1d8+3"
       },
@@ -343,10 +361,32 @@
         "potion_heal",
         "alchemist_fire"
       ],
+      "pools": [
+        {
+          "id": "ranger_spells",
+          "name": "遊俠法術",
+          "uses": 2
+        }
+      ],
       "features": [
+        {
+          "id": "longbow",
+          "name": "長弓射擊",
+          "group": "everyday",
+          "at_will": true,
+          "summary": "需命中，1d8+3 穿刺",
+          "detail": "d20＋5 對目標 AC，命中造成 1d8+3 穿刺傷害。",
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "attack",
+          "uses_weapon": true
+        },
         {
           "id": "aimed_shot",
           "name": "穿心一箭",
+          "group": "big",
+          "summary": "優勢，+1d8 穿刺",
+          "detail": "以優勢擲 d20 命中，命中後傷害額外加 1d8。",
           "uses": 2,
           "costs_turn": true,
           "target": "enemy",
@@ -359,7 +399,11 @@
         {
           "id": "hunters_mark",
           "name": "獵人印記",
-          "uses": 2,
+          "group": "big",
+          "summary": "標記：本場命中 +1d6",
+          "detail": "標記一名敵人並同時射出一箭；本場你每次命中該敵人，傷害額外加 1d6。",
+          "pool": "ranger_spells",
+          "cost": 1,
           "costs_turn": true,
           "target": "enemy",
           "roll": "attack",
@@ -368,6 +412,19 @@
             "bonus_dice": "1d6",
             "damage_type": "piercing"
           }
+        },
+        {
+          "id": "cure_wounds",
+          "name": "治療術",
+          "group": "rescue",
+          "summary": "回復 1d8+2",
+          "detail": "回復 1d8+2 點生命。",
+          "pool": "ranger_spells",
+          "cost": 1,
+          "costs_turn": true,
+          "target": "self",
+          "roll": "auto",
+          "heal_dice": "1d8+2"
         }
       ]
     },
@@ -409,8 +466,45 @@
       ],
       "features": [
         {
+          "id": "shortsword",
+          "name": "短劍攻擊",
+          "group": "everyday",
+          "at_will": true,
+          "summary": "需命中，1d6+3 穿刺",
+          "detail": "d20＋5 對目標 AC，命中造成 1d6+3 穿刺傷害；有優勢時觸發偷襲。",
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "attack",
+          "uses_weapon": true
+        },
+        {
+          "id": "two_weapon",
+          "name": "雙持攻擊",
+          "group": "everyday",
+          "at_will": true,
+          "summary": "兩擊：1d6+3 及 1d4",
+          "detail": "先以短劍攻擊，再以副手匕首攻擊一次（1d4 穿刺，不加屬性）。兩擊各自擲 d20。",
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "attack",
+          "strikes": [
+            {
+              "name": "短劍",
+              "uses_weapon": true
+            },
+            {
+              "name": "匕首",
+              "damage_dice": "1d4",
+              "damage_type": "piercing"
+            }
+          ]
+        },
+        {
           "id": "shadow_attack",
           "name": "暗影偷襲",
+          "group": "big",
+          "summary": "潛行成功則有優勢",
+          "detail": "先進行潛行檢定（難度等於 10 加敵人感知加值）；成功則本次攻擊有優勢，而且敵人下一次攻擊你有劣勢。",
           "uses": 3,
           "costs_turn": true,
           "target": "enemy",
@@ -421,6 +515,9 @@
         {
           "id": "uncanny_dodge",
           "name": "閃身",
+          "group": "rescue",
+          "summary": "受 4 點以上傷害減半",
+          "detail": "受到一次 4 點或以上的傷害時，自動把該次傷害減半。",
           "uses": 2,
           "costs_turn": false,
           "timing": "reaction",
@@ -453,7 +550,7 @@
         "persuasion"
       ],
       "attack": {
-        "name": "神聖打擊",
+        "name": "釘頭錘",
         "bonus": 4,
         "damage": "1d6+2"
       },
@@ -464,24 +561,45 @@
       "pools": [
         {
           "id": "channel",
-          "name": "神恩",
+          "name": "法術位",
           "uses": 3
         }
       ],
       "features": [
         {
-          "id": "cure_wounds",
-          "name": "聖療",
-          "pool": "channel",
-          "cost": 1,
+          "id": "mace",
+          "name": "釘頭錘",
+          "group": "everyday",
+          "at_will": true,
+          "summary": "需命中，1d6+2 鈍擊",
+          "detail": "d20＋4 對目標 AC，命中造成 1d6+2 鈍擊傷害。",
           "costs_turn": true,
-          "target": "ally",
-          "roll": "auto",
-          "heal_dice": "1d8+3"
+          "target": "enemy",
+          "roll": "attack",
+          "uses_weapon": true
+        },
+        {
+          "id": "sacred_flame",
+          "name": "聖焰",
+          "group": "everyday",
+          "at_will": true,
+          "summary": "敏捷豁免，1d8 光耀",
+          "detail": "目標進行敏捷豁免（難度 13），失敗受到 1d8 光耀傷害。不需擲命中。",
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "save",
+          "save": "dex",
+          "dc": 13,
+          "on_success": "none",
+          "damage_dice": "1d8",
+          "damage_type": "radiant"
         },
         {
           "id": "guiding_bolt",
           "name": "引導之矢",
+          "group": "big",
+          "summary": "需命中，2d6，下擊優勢",
+          "detail": "d20＋5 法術命中，命中造成 2d6 光耀傷害；下一次攻擊該目標有優勢。",
           "pool": "channel",
           "cost": 1,
           "costs_turn": true,
@@ -493,6 +611,32 @@
           "on_hit": {
             "next_attack_advantage": true
           }
+        },
+        {
+          "id": "cure_wounds",
+          "name": "治療術",
+          "group": "rescue",
+          "summary": "回復 1d8+6",
+          "detail": "回復 1d8+6 點生命（已計生命門徒）。",
+          "pool": "channel",
+          "cost": 1,
+          "costs_turn": true,
+          "target": "ally",
+          "roll": "auto",
+          "heal_dice": "1d8+6"
+        },
+        {
+          "id": "healing_word",
+          "name": "治癒真言",
+          "group": "rescue",
+          "summary": "回復 1d4+6，不佔回合",
+          "detail": "回復 1d4+6 點生命（已計生命門徒），不佔用本回合行動。",
+          "pool": "channel",
+          "cost": 1,
+          "costs_turn": false,
+          "target": "self",
+          "roll": "auto",
+          "heal_dice": "1d4+6"
         }
       ]
     },
@@ -538,8 +682,25 @@
       ],
       "features": [
         {
+          "id": "fire_bolt",
+          "name": "火焰箭",
+          "group": "everyday",
+          "at_will": true,
+          "summary": "需命中，1d8+2 火焰",
+          "detail": "d20＋4 法術命中，命中造成 1d8+2 火焰傷害。",
+          "costs_turn": true,
+          "target": "enemy",
+          "roll": "spell_attack",
+          "attack_bonus": 4,
+          "damage_dice": "1d8+2",
+          "damage_type": "fire"
+        },
+        {
           "id": "magic_missile",
           "name": "魔法飛彈",
+          "group": "big",
+          "summary": "三發必中，各 1d4+1",
+          "detail": "射出三發飛彈，每發必定命中，造成 1d4+1 力場傷害，可分配給不同敵人。",
           "pool": "slots",
           "cost": 1,
           "costs_turn": true,
@@ -550,8 +711,42 @@
           "damage_type": "force"
         },
         {
+          "id": "burning_hands",
+          "name": "燃燒之手",
+          "group": "big",
+          "summary": "全體豁免，3d6 火焰",
+          "detail": "所有敵人進行敏捷豁免（難度 13），失敗受到 3d6 火焰傷害，成功減半。",
+          "pool": "slots",
+          "cost": 1,
+          "costs_turn": true,
+          "target": "enemies",
+          "roll": "save",
+          "save": "dex",
+          "dc": 13,
+          "on_success": "half",
+          "damage_dice": "3d6",
+          "damage_type": "fire"
+        },
+        {
+          "id": "arcane_recovery",
+          "name": "奧術回復",
+          "group": "big",
+          "summary": "戰鬥外回復 1 個法術位",
+          "detail": "只能在戰鬥以外使用：回復 1 個已用的法術位。整晚只可使用一次。",
+          "per": "night",
+          "combat": false,
+          "costs_turn": false,
+          "target": "self",
+          "roll": "auto",
+          "restore_pool": "slots",
+          "restore_amount": 1
+        },
+        {
           "id": "shield",
           "name": "護盾術",
+          "group": "rescue",
+          "summary": "直到下次行動，AC +5",
+          "detail": "消耗一個法術位。直到你下次行動前，AC +5。",
           "pool": "slots",
           "cost": 1,
           "costs_turn": true,
@@ -563,6 +758,19 @@
             "amount": 5,
             "until": "next_turn"
           }
+        },
+        {
+          "id": "false_life",
+          "name": "虛假生命",
+          "group": "rescue",
+          "summary": "臨時生命 1d4+4",
+          "detail": "獲得 1d4+4 點臨時生命，受傷時先扣除；到下一個休息點消失。",
+          "pool": "slots",
+          "cost": 1,
+          "costs_turn": true,
+          "target": "self",
+          "roll": "auto",
+          "temp_hp_dice": "1d4+4"
         }
       ]
     }

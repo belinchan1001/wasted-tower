@@ -19,7 +19,7 @@
 
   function recordFromEvent(ev) {
     if (!ev) return null;
-    if (ev.t !== 'check' && ev.t !== 'attack' && ev.t !== 'enemy_attack') return null;
+    if (ev.t !== 'check' && ev.t !== 'attack' && ev.t !== 'enemy_attack' && ev.t !== 'save') return null;
     if (!Number.isInteger(ev.d20) || ev.d20 < 1 || ev.d20 > 20) return null;
     var dice = [];
     if (Array.isArray(ev.dice)) {
@@ -40,8 +40,11 @@
 
   function normalizeRecord(roll) {
     if (!roll || typeof roll !== 'object') return null;
+    var kind = roll.kind || 'check';
+    if (kind !== 'check' && kind !== 'attack' && kind !== 'enemy_attack' && kind !== 'save') kind = 'check';
+    if (roll.side === 'enemy' && kind !== 'save') kind = 'enemy_attack';
     return recordFromEvent({
-      t: roll.side === 'enemy' ? 'enemy_attack' : (roll.kind || 'check'),
+      t: kind,
       d20: roll.d20,
       dice: roll.dice,
       mode: roll.mode

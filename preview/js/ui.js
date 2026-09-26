@@ -80,7 +80,8 @@
   // ---------------------------------------------------------------- state
   var engine = null;
   var logEl = null, statusEl = null, actionsEl = null;
-  var trayMode = null; // null | 'items' | 'export' | {slot:n} | {featureId:id}
+  var trayMode = null; // null | 'items' | 'moves' | 'export' | 'attack' | {slot:n} | {featureId:id} | {confirmId:id}
+  var openGroups = { everyday: true, big: false, rescue: false };
   var slot = new T.SaveSlot(browserStorage(), T.PREVIEW_STORAGE_KEYS.save);
   var saveNote = '';
   var endingCanvas = null;
@@ -261,7 +262,7 @@
 
       if (p.features && p.features.length) {
         var moveNames = p.features.filter(function (f) { return f.timing !== 'reaction'; }).map(function (f) {
-          if (f.pool) return f.name;
+          if (f.at_will || f.pool || f.per === 'night') return f.name;
           return f.name + ' ×' + f.uses;
         }).join('、');
         var kFeat = el('p', 'kv');
@@ -451,7 +452,9 @@
     fill.style.width = (ratio * 100) + '%';
     bar.appendChild(fill);
     hp.appendChild(bar);
-    hp.appendChild(el('span', null, c.hp + '/' + c.hp_max));
+    var hpText = c.hp + '/' + c.hp_max;
+    if (c.tempHp) hpText += '（臨時 ' + c.tempHp + '）';
+    hp.appendChild(el('span', null, hpText));
     var acLab = '　AC ' + c.ac;
     if (c.acBonus) acLab += '（+' + c.acBonus + '）';
     hp.appendChild(el('span', 'lab', acLab));
@@ -460,7 +463,21 @@
     if (c.features && c.features.length) {
       var feat = el('div', 'inv');
       feat.appendChild(el('span', 'lab', '招式'));
+      var shownPool = {};
       c.features.forEach(function (f) {
+        if (f.atWill || f.timing === 'reaction') return;
+        if (f.pool && c.pools && c.pools[f.pool]) {
+          if (shownPool[f.pool]) return;
+          shownPool[f.pool] = 1;
+          var pool = c.pools[f.pool];
+          feat.appendChild(el('span', 'chip' + (pool.uses <= 0 ? ' none' : ''), pool.name + ' ' + pool.uses + '/' + pool.usesMax));
+          return;
+        }
+        if (f.per === 'night') {
+          feat.appendChild(el('span', 'chip' + (f.uses <= 0 ? ' none' : ''), f.name + (f.uses > 0 ? ' 可用' : ' 今晚已用')));
+          return;
+        }
+        if (f.uses == null) return;
         feat.appendChild(el('span', 'chip' + (f.uses <= 0 ? ' none' : ''), f.name + ' ' + f.uses + '/' + f.usesMax));
       });
       statusEl.appendChild(feat);
@@ -589,26 +606,15 @@
 
     // Outside combat, heals and items stay on the main row.
     if (st.sceneType === 'beat' || st.sceneType === 'check') {
-      if (featureActs.length === 1) {
-        var fa = featureActs[0];
-        var fHint = fa.effect === 'heal'
-          ? ((fa.amount ? ('回復 ' + fa.amount) : '回復') + '　剩餘 ' + fa.uses + '/' + fa.usesMax)
-                  : fa.effect === 'damage' ? ('自動命中傷害 ' + fa.amount + '　剩餘 ' + fa.uses + '/' + fa.usesMax)
-                  : ('本場戰鬥 AC +' + fa.amount + '　剩餘 ' + fa.uses + '/' + fa.usesMax);
-        if (!fa.enabled && fa.reason) fHint = fa.reason + '　剩餘 ' + fa.uses + '/' + fa.usesMax;
-        main.appendChild(button(fa.featureName, fHint, null, function () {
-          if (!fa.enabled) { handle(engine.perform({ type: 'use_feature', featureId: fa.featureId })); return; }
+      featureActs.forEach(function (fa) {
+        if (!fa.enabled) return;
+        var hint = fa.summary || '';
+        if (fa.usesLabel) hint = hint ? (hint + '　' + fa.usesLabel) : fa.usesLabel;
+        main.appendChild(button(fa.featureName, hint || null, null, function () {
           if (fa.needsTarget) { trayMode = { featureId: fa.featureId }; refresh(); return; }
           act({ type: 'use_feature', featureId: fa.featureId });
         }, false));
-      } else if (featureActs.length > 1) {
-        featureActs.forEach(function (fa) {
-          main.appendChild(button(fa.featureName, '剩餘 ' + fa.uses + '/' + fa.usesMax, null, function () {
-            if (fa.needsTarget) { trayMode = { featureId: fa.featureId }; refresh(); return; }
-            act({ type: 'use_feature', featureId: fa.featureId });
-          }, !fa.enabled));
-        });
-      }
+      });
     }
 
     if (st.sceneType === 'beat' || st.sceneType === 'check') {
@@ -632,10 +638,12 @@
         if (attackActs.length === 1) act({ actor: 0, action: 'attack', target: attackActs[0].target });
         else { trayMode = 'attack'; refresh(); }
       }, attackActs.length === 0));
-      menu.appendChild(button('招式', featureActs.length ? '查看可用招式' : '沒有招式', null, function () {
-        trayMode = trayMode === 'moves' ? null : 'moves';
+      menu.appendChild(button('招式', '平時用、大招、救命', null, function () {
+        var opening = trayMode !== 'moves' && !(trayMode && trayMode.confirmId);
+        trayMode = opening ? 'moves' : null;
+        if (opening) openGroups = { everyday: true, big: false, rescue: false };
         refresh();
-      }, featureActs.length === 0));
+      }, false));
       menu.appendChild(button('防守', '到下次行動前，敵人攻擊有劣勢', null, function () {
         act({ actor: 0, action: 'defend' });
       }));
@@ -684,19 +692,46 @@
         }));
       });
       tray.appendChild(button('取消', null, 'ghost', function () { trayMode = null; refresh(); }));
-    } else if (trayMode === 'moves') {
-      tray.appendChild(el('h3', null, '用哪一招？'));
-      featureActs.forEach(function (fa) {
-        var hint = '剩餘 ' + fa.uses + '/' + fa.usesMax;
-        if (!fa.costsTurn) hint += '　不消耗回合';
-        if (!fa.enabled && fa.reason) hint = fa.reason + '　' + hint;
-        tray.appendChild(button(fa.featureName, hint, null, function () {
-          if (!fa.enabled) { handle(engine.perform({ actor: 0, action: 'move', moveId: fa.featureId })); return; }
-          if (fa.needsTarget) { trayMode = { featureId: fa.featureId }; refresh(); return; }
-          act({ actor: 0, action: 'move', moveId: fa.featureId });
-        }, false));
-      });
-      tray.appendChild(button('取消', null, 'ghost', function () { trayMode = null; refresh(); }));
+    } else if (trayMode === 'moves' || (trayMode && trayMode.confirmId)) {
+      var sheet = engine.moveSheet();
+      if (trayMode === 'moves') {
+        tray.appendChild(el('h3', null, '招式'));
+        sheet.groups.forEach(function (g) { g.open = !!openGroups[g.id]; });
+        T.renderMoveGroups(document, tray, sheet, {
+          onToggle: function (id) {
+            openGroups[id] = !openGroups[id];
+            refresh();
+          },
+          onMove: function (move) {
+            trayMode = { confirmId: move.id };
+            refresh();
+          }
+        });
+        tray.appendChild(button('取消', null, 'ghost', function () { trayMode = null; refresh(); }));
+      } else {
+        var picked = null;
+        sheet.groups.forEach(function (g) {
+          g.moves.forEach(function (m) { if (m.id === trayMode.confirmId) picked = m; });
+        });
+        tray.appendChild(el('h3', null, picked ? picked.name : '招式'));
+        if (picked) {
+          tray.appendChild(el('p', 'hint', picked.detail || picked.summary || ''));
+          if (picked.usesLabel) tray.appendChild(el('p', 'hint', picked.usesLabel));
+          if (picked.enabled) {
+            tray.appendChild(button('確認使用', picked.summary || null, 'primary', function () {
+              if (picked.kind === 'defend') { act({ actor: 0, action: 'defend' }); return; }
+              if (picked.needsTarget) { trayMode = { featureId: picked.id }; refresh(); return; }
+              act({ actor: 0, action: 'move', moveId: picked.id });
+            }));
+          } else if (picked.reason) {
+            tray.appendChild(el('p', 'save-note', picked.reason));
+          }
+        }
+        tray.appendChild(button('返回', null, 'ghost', function () {
+          trayMode = 'moves';
+          refresh();
+        }));
+      }
     } else if (trayMode === 'items') {
       tray.appendChild(el('h3', null, '使用哪一件？'));
       itemActs.forEach(function (a) {

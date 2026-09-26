@@ -116,6 +116,14 @@ body{
 .combat-menu{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .combat-menu > .btn{min-height:56px;font-size:18px;text-align:center;padding:14px 10px}
 .combat-menu > .btn.span{grid-column:1 / -1}
+.move-group{border:1px solid var(--line);border-radius:12px;background:var(--panel2);overflow:hidden}
+.move-group + .move-group{margin-top:8px}
+.move-toggle{width:100%;min-height:52px;font-size:18px;font-weight:700;text-align:left;border:0;border-radius:0;background:transparent}
+.move-list{display:flex;flex-direction:column;gap:8px;padding:0 8px 8px}
+.move-list > .btn.move{min-height:64px;padding:12px 14px;font-size:17px;line-height:1.35}
+.move-list > .btn.move small{display:block;margin-top:2px}
+.move-list > .btn.move .uses{color:var(--accent);font-size:13px}
+.move-list > .btn.move.spent{opacity:.45}
 .credits{max-width:720px;margin:28px auto;padding:8px 8px 40px}
 .credits h1{margin:0 0 12px;font-size:28px;letter-spacing:.08em;color:var(--accent)}
 .credits p{margin:0 0 14px}
@@ -198,7 +206,7 @@ textarea.code{
   <h1>授權與鳴謝</h1>
   <p>《廢塔一夜》部分戰鬥規則（例如優勢、劣勢、狀態、豁免、傷害類型，以及部分招式、道具與敵人能力）改編自下列規則文件，並經刪減、調整數值與翻譯為中文。</p>
   <p class="attrib">This work includes material taken from the System Reference Document 5.1 (“SRD 5.1”) by Wizards of the Coast LLC and available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License available at https://creativecommons.org/licenses/by/4.0/legalcode.</p>
-  <p>故事、角色、地點與敵人名稱屬本作原創。</p>
+  <p>故事、角色、地點與敵人名稱屬本作原創，並加入原創能力。</p>
 </template>
 <script src="data/wasted_tower.js"></script>
 <script src="js/engine.js"></script>

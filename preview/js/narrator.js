@@ -53,10 +53,19 @@
       return '先攻。d20 擲出 ' + row.roll + '，加值 ' + sign(row.bonus || 0) + '，總數 ' + row.total;
     });
   }
+  function saveRollLines(ev) {
+    if (ev.d20 == null) return [];
+    var ability = (T.ABILITY_LABEL && T.ABILITY_LABEL[ev.save]) || '屬性';
+    var result = ev.success ? '成功' : '失敗';
+    if (ev.nat === 20 || ev.d20 === 20) result = '自然 20，' + result;
+    else if (ev.nat === 1 || ev.d20 === 1) result = '自然 1，' + result;
+    return ['d20 擲出 ' + ev.d20 + '，' + ability + '豁免 ' + sign(ev.bonus || 0) + '，總數 ' + ev.total + '，難度 ' + ev.dc + '，' + result];
+  }
   function rollLines(ev) {
     if (!ev) return [];
     if (ev.t === 'check') return checkRollLines(ev);
     if (ev.t === 'attack' || ev.t === 'enemy_attack') return attackRollLines(ev);
+    if (ev.t === 'save') return saveRollLines(ev);
     if (ev.t === 'initiative') return initiativeRollLines(ev);
     return [];
   }
@@ -141,6 +150,30 @@
                   '　（剩餘 ' + ev.uses + '/' + ev.usesMax + '）'
           });
           break;
+        case 'save':
+          pushRolls(out, ev);
+          if (ev.amount > 0 && ev.damage) {
+            var saveHurt = '〔傷害〕' + ev.damage.spec + '：' + diceText(ev.damage) + ' ＝ ' + ev.damage.total;
+            if (ev.success && ev.onSuccess === 'half') saveHurt += '，豁免成功減半為 ' + ev.amount;
+            saveHurt += '　→　' + ev.targetName + ' ' + ev.targetHpBefore + ' → ' + ev.targetHp + '/' + ev.targetHpMax;
+            out.push({ tone: 'roll', text: saveHurt });
+          }
+          break;
+        case 'feature_temp':
+          out.push({
+            tone: 'good',
+            text: '〔特性〕' + ev.featureName + '：臨時生命 ' + ev.tempHp +
+                  (ev.gained < ev.amount ? '（取較高，沒有疊加）' : '') +
+                  '　（剩餘 ' + (ev.uses == null ? '—' : ev.uses + '/' + ev.usesMax) + '）'
+          });
+          break;
+        case 'feature_recover':
+          out.push({
+            tone: 'good',
+            text: '〔特性〕' + ev.featureName + '：' + ev.poolName + '回復 ' + ev.amount +
+                  '　→　剩餘 ' + ev.uses + '/' + ev.usesMax + '。今晚已用過一次。'
+          });
+          break;
         case 'feature_ac':
           out.push({
             tone: 'good',
@@ -158,6 +191,7 @@
             out.push({
               tone: 'bad',
               text: '〔傷害〕' + ev.damage.spec + '：' + diceText(ev.damage) + ' ＝ ' + ev.damage.total +
+                    (ev.tempAbsorbed ? '（臨時生命承受 ' + ev.tempAbsorbed + '）' : '') +
                     '　→　生命 ' + ev.hp + '/' + ev.hp_max
             });
           }
@@ -333,6 +367,13 @@
         case 'feature_heal':
           out.push({ tone: 'narr', text: view.name + '運起職業能力，傷口收斂了。（' + view.hp + '/' + view.hp_max + '）' });
           break;
+        case 'save':
+          if (d) {
+            out.push({ tone: 'narr', text: '難度 ' + d.dc + '。' });
+            out.push({ tone: 'narr', text: d.d20 + ' ＋ ' + (d.bonus || 0) + ' ＝ ' + d.total +
+              (d.outcome === 'success' ? '，豁免成功。' : '，豁免失敗。') });
+          }
+          break;
         case 'feature_ac':
           out.push({ tone: 'narr', text: view.name + '運起職業能力，防禦暫時堅固起來。' });
           break;
@@ -435,6 +476,10 @@
         return { kind: 'feature_heal', d20: 0, total: event.healed, outcome: 'heal', amount: event.healed };
       case 'feature_ac':
         return { kind: 'feature_ac', d20: 0, total: event.amount, outcome: 'buff', amount: event.amount };
+      case 'save':
+        return { kind: 'save', d20: event.d20, total: event.total, dc: event.dc, bonus: event.bonus || 0,
+                 dice: event.dice || null, mode: event.mode || 'normal', nat: event.d20,
+                 outcome: event.success ? 'success' : 'fail', amount: event.amount || 0 };
       default:
         return null;
     }

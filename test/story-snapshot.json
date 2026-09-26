@@ -99,7 +99,7 @@
         "survival"
       ],
       "attack": {
-        "name": "短弓",
+        "name": "長弓",
         "bonus": 5,
         "damage": "1d8+3"
       },
@@ -154,7 +154,7 @@
         "persuasion"
       ],
       "attack": {
-        "name": "神聖打擊",
+        "name": "釘頭錘",
         "bonus": 4,
         "damage": "1d6+2"
       },

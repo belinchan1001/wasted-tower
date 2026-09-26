@@ -2482,6 +2482,9 @@ test('player-facing sources do not name a tabletop trademark', function () {
   ['README.md', 'preview/index.html', 'preview/data/wasted_tower.js'].forEach(function (file) {
     assert.ok(fs.readFileSync(path.join(__dirname, file), 'utf8').indexOf(sentence) >= 0, file);
   });
+  var originalAbilities = '故事、角色、地點與敵人名稱屬本作原創，並加入原創能力。';
+  var previewHtml = fs.readFileSync(path.join(__dirname, 'preview/index.html'), 'utf8');
+  assert.ok(previewHtml.indexOf(originalAbilities) >= 0);
 });
 
 function heroFirst(engine) {
@@ -2634,6 +2637,44 @@ test('massive damage stops at 1 only from full HP, and is separate from enemy yi
   hero.runEnemyTurn(0);
   assert.strictEqual(hero.character.hp, 0);
   assert.strictEqual(hero.status, 'lost');
+});
+
+test('temporary HP does not stand in for full HP, and a full heal restores massive-damage protection', function () {
+  var low = new T.Engine(adventure, { seed: 451 });
+  low.start(0);
+  low.character.hp = 6;
+  low.character.tempHp = 4;
+  assert.ok(low.character.tempHp > 0);
+  assert.ok(low.character.hp < low.character.hp_max);
+  low.enterScene('f1_bandit');
+  low.encounter.enemies[0].damage = '1d6+20';
+  low.rng = seqRng([15, 1]);
+  low.runEnemyTurn(0);
+  var blow = low.events.filter(function (e) { return e.t === 'enemy_attack'; })[0];
+  assert.strictEqual(blow.tempAbsorbed, 4);
+  assert.strictEqual(blow.massive, false);
+  assert.strictEqual(low.character.hp, 0);
+  assert.strictEqual(low.status, 'lost');
+
+  var healed = new T.Engine(adventure, { seed: 452 });
+  healed.start(0);
+  healed.character.hp = 6;
+  healed.character.tempHp = 4;
+  healed.rng = seqRng([10]);
+  var wind = healed.perform({ type: 'move', moveId: 'second_wind' });
+  assert.strictEqual(wind.ok, true, wind.error);
+  assert.strictEqual(healed.character.hp, healed.character.hp_max);
+  assert.strictEqual(healed.character.tempHp, 4);
+  healed.enterScene('f1_bandit');
+  healed.encounter.enemies[0].damage = '1d6+20';
+  healed.rng = seqRng([15, 1]);
+  healed.runEnemyTurn(0);
+  var again = healed.events.filter(function (e) { return e.t === 'enemy_attack'; })[0];
+  assert.strictEqual(again.massive, true);
+  assert.strictEqual(again.tempAbsorbed, 4);
+  assert.strictEqual(healed.character.hp, 1);
+  assert.strictEqual(healed.character.tempHp, 0);
+  assert.strictEqual(healed.status, 'playing');
 });
 
 test('rats flee when one remains, and a killing blow on the last one stops at 1', function () {
@@ -3149,6 +3190,38 @@ function simulateClass(index, runs, options) {
         if (f.id === 'burning_hands') f.damage_dice = '2d6';
       });
     }
+    if (options.sneak === '1d6') {
+      (c.passives || []).forEach(function (p) {
+        if (p && p.id === 'sneak_attack') p.dice = '1d6';
+      });
+    }
+  }
+  function topUp(eng) {
+    if (options.policy !== 'full') return;
+    if (!eng.scene || eng.scene.type === 'combat' || eng.status !== 'playing') return;
+    var guard = 0;
+    while (eng.character.hp < eng.character.hp_max && guard++ < 12) {
+      var action = null;
+      var ids = ['healing_word', 'cure_wounds', 'second_wind'];
+      var m;
+      for (m = 0; m < ids.length; m++) {
+        if (usesOf(eng, ids[m]) > 0) {
+          action = { actor: 0, action: 'move', moveId: ids[m] };
+          break;
+        }
+      }
+      if (!action) {
+        var slot = -1;
+        eng.character.inventory.forEach(function (id, i) {
+          if (slot < 0 && (id === 'potion_heal' || id === 'potion_heal_2' || id === 'cure_wounds')) slot = i;
+        });
+        if (slot >= 0) action = { actor: 0, action: 'item', slot: slot };
+      }
+      if (!action) return;
+      var before = eng.character.hp;
+      var res = eng.perform(action);
+      if (!res.ok || eng.character.hp <= before) return;
+    }
   }
   function recover(eng) {
     if (!eng.scene || eng.scene.type === 'combat') return;
@@ -3226,25 +3299,33 @@ function simulateClass(index, runs, options) {
     guard = 0;
     try {
       choose(engine, 'rush');
-      if (engine.sceneId === 'f1_foyer') choose(engine, 'fight');
+      if (engine.sceneId === 'f1_foyer') {
+        topUp(engine);
+        choose(engine, 'fight');
+      }
       recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       answerInserted(engine);
       choose(engine, 'climb');
       forceCheck(engine);
-      if (engine.sceneId === 'f1_bandit_front') choose(engine, 'fight');
+      if (engine.sceneId === 'f1_bandit_front') {
+        topUp(engine);
+        choose(engine, 'fight');
+      }
       recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       answerInserted(engine);
       cont(engine);
+      topUp(engine);
       choose(engine, 'up');
       recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       answerInserted(engine);
       choose(engine, 'watch');
+      topUp(engine);
       forceCheck(engine);
       recover(engine);
       rounds += fight(engine);
@@ -3252,11 +3333,13 @@ function simulateClass(index, runs, options) {
       answerInserted(engine);
       cont(engine);
       choose(engine, 'smash');
+      topUp(engine);
       answerInserted(engine);
       recover(engine);
       rounds += fight(engine);
       if (engine.status !== 'playing') throw new Error('lost');
       answerInserted(engine);
+      topUp(engine);
       choose(engine, 'rush_boss');
       recover(engine);
       rounds += fight(engine);
@@ -3279,10 +3362,18 @@ function printSimulator() {
   var runs = parseInt(process.env.SIM_RUNS || '400', 10);
   var names = adventure.pregens.map(function (p) { return p['class']; });
   var variants = [
-    { slots: 'B', burning: '3d6', title: 'B 法術位 3，燃燒之手 3d6' },
-    { slots: 'A', burning: '3d6', title: 'A 法術位 2，燃燒之手 3d6' },
-    { slots: 'B', burning: '2d6', title: 'B 法術位 3，燃燒之手 2d6' },
-    { slots: 'A', burning: '2d6', title: 'A 法術位 2，燃燒之手 2d6' }
+    { policy: 'straight', slots: 'B', sneak: '2d6', burning: '3d6', title: '直打，法術位 3，偷襲 2d6，燃燒之手 3d6（本版）' },
+    { policy: 'straight', slots: 'A', sneak: '2d6', burning: '3d6', title: '直打，法術位 2，偷襲 2d6，燃燒之手 3d6' },
+    { policy: 'straight', slots: 'B', sneak: '1d6', burning: '3d6', title: '直打，法術位 3，偷襲 1d6，燃燒之手 3d6' },
+    { policy: 'straight', slots: 'A', sneak: '1d6', burning: '3d6', title: '直打，法術位 2，偷襲 1d6，燃燒之手 3d6' },
+    { policy: 'full', slots: 'B', sneak: '2d6', burning: '3d6', title: '戰前補滿，法術位 3，偷襲 2d6，燃燒之手 3d6' },
+    { policy: 'full', slots: 'A', sneak: '2d6', burning: '3d6', title: '戰前補滿，法術位 2，偷襲 2d6，燃燒之手 3d6' },
+    { policy: 'full', slots: 'B', sneak: '1d6', burning: '3d6', title: '戰前補滿，法術位 3，偷襲 1d6，燃燒之手 3d6' },
+    { policy: 'full', slots: 'A', sneak: '1d6', burning: '3d6', title: '戰前補滿，法術位 2，偷襲 1d6，燃燒之手 3d6' },
+    { policy: 'straight', slots: 'B', sneak: '2d6', burning: '2d6', title: '直打，法術位 3，偷襲 2d6，燃燒之手 2d6' },
+    { policy: 'straight', slots: 'A', sneak: '2d6', burning: '2d6', title: '直打，法術位 2，偷襲 2d6，燃燒之手 2d6' },
+    { policy: 'full', slots: 'B', sneak: '2d6', burning: '2d6', title: '戰前補滿，法術位 3，偷襲 2d6，燃燒之手 2d6' },
+    { policy: 'full', slots: 'A', sneak: '2d6', burning: '2d6', title: '戰前補滿，法術位 2，偷襲 2d6，燃燒之手 2d6' }
   ];
   console.log('');
   console.log('模擬（每職業 ' + runs + ' 場，內部參考，不入遊戲）');
